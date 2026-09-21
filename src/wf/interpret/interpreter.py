@@ -135,6 +135,39 @@ class Interpreter:
             title=title or str(inputs.get("topic") or wf.metadata.name),
             case_name=case_name,
         )
+        return self.run_existing(
+            run,
+            wf,
+            inputs,
+            mode,
+            findings=findings,
+            expectation=expectation,
+            budget=budget,
+            depth=depth,
+        )
+
+    def run_existing(
+        self,
+        run: Run,
+        wf: Workflow,
+        inputs: dict[str, Any],
+        mode: Mode,
+        *,
+        findings: list[Finding] | None = None,
+        expectation: list[dict[str, Any]] | None = None,
+        budget: BudgetTracker | None = None,
+        depth: int = 0,
+    ) -> RunResult:
+        """Execute against a run record that already exists (the API creates it first so
+        the id can be handed back before the work starts)."""
+        if findings is None:
+            findings = validate(wf, self.ws).findings
+        open_findings = [f for f in findings if f.status == "open"]
+        if mode == "live" and open_findings:
+            raise OpenFindings(open_findings)
+        if budget is None:
+            b = wf.spec.budget
+            budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
         for f in open_findings:
             self.ledger.finding(run, f)
         if expectation:
@@ -202,6 +235,7 @@ class Interpreter:
             spent_minutes=budget.spent_minutes,
             error=error,
         )
+        self.last_result = result
         return result
 
     # -- steps -------------------------------------------------------------
