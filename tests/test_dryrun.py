@@ -56,31 +56,17 @@ def test_dry_run_against_a_past_case_reports_the_first_divergence(sample_ws, tmp
 
 
 def test_two_runs_diff_at_the_level_of_decisions(sample_ws, tmp_path):
-    a = runner(sample_ws, tmp_path / "a", deep_research_script("accept")).run(
-        "deep-research", {"topic": "Durable execution platforms for AI agents: who leads and why"}
-    )
-    r = runner(sample_ws, tmp_path / "b", deep_research_script("go_deeper"))
-    b = r.run(
-        "deep-research", {"topic": "Durable execution platforms for AI agents: who leads and why"}
-    )
-    # both runs must live in the same database to be compared
-    diff = r.diff(a.run_id, b.run_id) if r.db is not None and False else None
-    if diff is None:
-        # compare snapshots directly across the two stores
-        from wf.dryrun import diff_runs
+    topic = {"topic": "Durable execution platforms for AI agents: who leads and why"}
+    r = runner(sample_ws, tmp_path, deep_research_script("accept"))
+    a = r.run("deep-research", topic)
+    a2 = r.run("deep-research", topic)
+    same = r.diff(a.run_id, a2.run_id)
+    assert same.first_divergence is None and same.same_control_flow
 
-        ra = runner(sample_ws, tmp_path / "a", deep_research_script("accept"))
-        a = ra.run(
-            "deep-research",
-            {"topic": "Durable execution platforms for AI agents: who leads and why"},
-        )
-        b2 = ra.run(
-            "deep-research",
-            {"topic": "Durable execution platforms for AI agents: who leads and why"},
-        )
-        same = ra.diff(a.run_id, b2.run_id)
-        assert same.first_divergence is None and same.same_control_flow
-        diff = diff_runs(ra.snapshot(a.run_id), r.snapshot(b.run_id))
+    # same definition, same fixtures; only the reviewer's judgement differs
+    r.activities.model = ScriptedModel(deep_research_script("go_deeper"))
+    b = r.run("deep-research", topic)
+    diff = r.diff(a.run_id, b.run_id)
     assert diff.first_divergence == "review"
     review = next(s for s in diff.steps if s.step_id == "review")
     assert review.summary_a["verdict"] == "accept" and review.summary_b["verdict"] == "go_deeper"
