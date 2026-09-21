@@ -42,6 +42,7 @@ packages = ["src/wf"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:starlette.testclient"]
 
 [tool.ruff]
 line-length = 100
@@ -51,3 +52,6 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/wf/api/app.py" = ["B008"]  # FastAPI's Body(...) defaults are the framework idiom
