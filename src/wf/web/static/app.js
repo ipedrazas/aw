@@ -1,0 +1,168 @@
+/* Small helpers, no build step. */
+async function postJSON(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || ("Request failed (" + r.status + ")"));
+  return data;
+}
+function say(el, text, isError) {
+  if (!el) { if (isError) alert(text); return; }
+  el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
+}
+
+/* Technical details switch, remembered per browser. */
+(function () {
+  const on = localStorage.getItem("wf.tech") === "1";
+  if (on) document.body.classList.add("show-tech");
+  document.querySelectorAll("[data-tech-switch]").forEach(cb => {
+    cb.checked = on;
+    cb.addEventListener("change", () => {
+      document.body.classList.toggle("show-tech", cb.checked);
+      localStorage.setItem("wf.tech", cb.checked ? "1" : "0");
+    });
+  });
+})();
+
+/* Toggle any element by id. */
+document.querySelectorAll("[data-toggle]").forEach(b => {
+  b.addEventListener("click", () => { const t = document.getElementById(b.dataset.toggle); if (t) t.classList.toggle("hidden"); });
+});
+
+/* Start a run of a saved workflow. */
+document.querySelectorAll("form[data-run-workflow]").forEach(f => {
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const name = f.dataset.runWorkflow, msg = f.querySelector("[data-msg]");
+    const topic = (f.querySelector("[name=topic]") || {}).value || "", caseName = (f.querySelector("[name=case]") || {}).value || "";
+    const body = caseName ? {case: caseName} : {inputs: {topic: topic}};
+    if (!caseName && topic.trim().length < 10) return say(msg, "Give a topic of at least ten characters, or pick a past case.", true);
+    say(msg, "Starting…");
+    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(name) + "/runs", body); location.href = "/runs/" + d.run_id; }
+    catch (err) { say(msg, err.message, true); }
+  });
+});
+
+/* New draft from a description or a document. */
+(function () {
+  const f = document.querySelector("form[data-new-audit]"); if (!f) return;
+  const ta = f.querySelector("textarea[name=document]"), msg = f.querySelector("[data-msg]");
+  f.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
+    const src = document.getElementById(b.dataset.sample); if (src) ta.value = src.textContent;
+    const nm = f.querySelector("[name=name]"); if (nm && !nm.value) nm.value = "deep-research-process";
+  }));
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    say(msg, "Reading your process and drafting the steps. This can take a minute…");
+    f.querySelector("button[type=submit]").disabled = true;
+    try { const d = await postJSON("/api/audits", {document: ta.value, name: (f.querySelector("[name=name]") || {}).value || null}); location.href = "/audits/" + d.id; }
+    catch (err) { say(msg, err.message, true); f.querySelector("button[type=submit]").disabled = false; }
+  });
+})();
+
+/* Audit page: chat, answers, undo, save, dry run. */
+(function () {
+  const root = document.querySelector("[data-audit]"); if (!root) return;
+  const id = root.dataset.audit, base = "/api/audits/" + id;
+  const reload = () => location.reload();
+
+  const chat = document.querySelector("form[data-chat]");
+  if (chat) chat.addEventListener("submit", async e => {
+    e.preventDefault();
+    const inp = chat.querySelector("input"), msg = chat.querySelector("[data-msg]");
+    if (!inp.value.trim()) return;
+    say(msg, "Thinking…"); inp.disabled = true;
+    try { await postJSON(base + "/chat", {message: inp.value}); reload(); }
+    catch (err) { say(msg, err.message, true); inp.disabled = false; }
+  });
+
+  document.querySelectorAll("form[data-answer]").forEach(f => f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
+    let answer = null;
+    if (kind === "choice" || kind === "bool") {
+      const c = f.querySelector("input[type=radio]:checked"); if (!c) return say(msg, "Pick one first.", true);
+      answer = JSON.parse(c.value);
+    } else if (kind === "multi") {
+      answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
+      if (!answer.length) return say(msg, "Pick at least one.", true);
+    } else if (kind === "number") {
+      const v = f.querySelector("input[type=number]").value; if (v === "") return say(msg, "Enter a number.", true);
+      answer = Number(v);
+    } else {
+      answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
+    }
+    say(msg, "Saving…");
+    try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(); }
+    catch (err) { say(msg, err.message, true); }
+  }));
+
+  document.querySelectorAll("[data-reopen]").forEach(b => b.addEventListener("click", () => {
+    const t = document.getElementById(b.dataset.reopen); if (t) { t.classList.remove("hidden"); b.classList.add("hidden"); }
+  }));
+
+  document.querySelectorAll("[data-undo]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await postJSON(base + "/undo", {seq: Number(b.dataset.undo)}); reload(); }
+    catch (err) { alert(err.message); b.disabled = false; }
+  }));
+
+  const save = document.querySelector("[data-save]");
+  if (save) save.addEventListener("click", async () => {
+    save.disabled = true;
+    try { await postJSON(base + "/save", {}); reload(); } catch (err) { alert(err.message); save.disabled = false; }
+  });
+
+  const tryForm = document.querySelector("form[data-try]");
+  if (tryForm) tryForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const msg = tryForm.querySelector("[data-msg]");
+    const caseName = (tryForm.querySelector("[name=case]") || {}).value || "", topic = (tryForm.querySelector("[name=topic]") || {}).value || "";
+    if (!caseName && topic.trim().length < 10) return say(msg, "Give a topic of at least ten characters, or pick a past case.", true);
+    say(msg, "Saving and starting a dry run…");
+    try {
+      await postJSON(base + "/save", {});
+      const d = await postJSON(base + "/dry-run", caseName ? {case: caseName} : {topic: topic});
+      location.href = "/runs/" + d.run_id;
+    } catch (err) { say(msg, err.message, true); }
+  });
+
+  document.querySelectorAll("[data-goto]").forEach(a => a.addEventListener("click", e => {
+    const t = document.getElementById(a.dataset.goto); if (!t) return;
+    e.preventDefault(); t.scrollIntoView({behavior: "smooth", block: "center"});
+    t.classList.add("q-target"); setTimeout(() => t.classList.remove("q-target"), 2500);
+  }));
+})();
+
+/* Run page: refresh while running. */
+(function () {
+  const el = document.querySelector("[data-run-refresh]"); if (!el) return;
+  const id = el.dataset.runRefresh;
+  setInterval(async () => {
+    try { const r = await fetch("/api/runs/" + id); const d = await r.json(); if (d.status !== "running") location.reload(); else location.reload(); }
+    catch (e) { /* try again next tick */ }
+  }, 3000);
+})();
+
+/* Runs list: filter tabs and compare. */
+(function () {
+  const tabs = document.querySelectorAll("[data-filter]"); if (!tabs.length) return;
+  tabs.forEach(t => t.addEventListener("click", () => {
+    tabs.forEach(x => x.classList.remove("active")); t.classList.add("active");
+    const want = t.dataset.filter;
+    document.querySelectorAll("tr[data-status]").forEach(row => {
+      const s = row.dataset.status, group = s === "done" ? "done" : s === "running" ? "running" : s === "waiting" ? "needs" : "stopped";
+      row.classList.toggle("hidden", want !== "all" && group !== want);
+    });
+  }));
+  const cmp = document.querySelector("form[data-compare]");
+  if (cmp) cmp.addEventListener("submit", e => {
+    e.preventDefault();
+    const a = cmp.querySelector("[name=a]").value, b = cmp.querySelector("[name=b]").value;
+    if (a && b && a !== b) location.href = "/runs/" + a + "/diff/" + b;
+  });
+})();
+
+/* Compare select on a run page. */
+document.querySelectorAll("select[data-compare-with]").forEach(s => s.addEventListener("change", () => {
+  if (s.value) location.href = "/runs/" + s.dataset.compareWith + "/diff/" + s.value;
+}));

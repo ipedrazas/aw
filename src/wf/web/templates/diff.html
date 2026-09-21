@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import step_word %}
+{% block title %}Two runs compared{% endblock %}
+{% block bar_title %}<span class="mono">{{ a.workflow }}</span> · two runs compared{% endblock %}
+{% block bar_right %}<span class="muted">${{ "%.2f" | format(diff.cost_a) }} vs ${{ "%.2f" | format(diff.cost_b) }}</span>{% endblock %}
+{% block content %}
+<h1>Two runs of the same definition</h1>
+<p class="sub">Steps, limits, gates and checks are identical. Only the judgement inside steps varies.</p>
+{% if diff.first_divergence %}
+  <div class="banner">First step to differ: {{ diff.first_divergence }}{% if not diff.same_control_flow %} · the runs took different paths{% endif %}</div>
+{% else %}
+  <div class="banner banner-grey">Same decisions all the way.</div>
+{% endif %}
+
+<div class="tbl">
+<table>
+  <thead><tr><th style="width:18%">Step</th><th>Run A · <a href="/runs/{{ a.id }}">{{ a.title }}</a> <span class="mono small muted">{{ a.id[:8] }}</span></th><th>Run B · <a href="/runs/{{ b.id }}">{{ b.title }}</a> <span class="mono small muted">{{ b.id[:8] }}</span></th></tr></thead>
+  <tbody>
+  {% for s in diff.steps %}
+  <tr class="{{ 'differs' if s.differs }}">
+    <td><strong>{{ s.title }}</strong>{% if s.differs %}<div class="small" style="color:var(--yellow-ink)">{{ s.what_differs | join('; ') }}</div>{% else %}<div class="small muted">Same</div>{% endif %}</td>
+    {% for side in ["a", "b"] %}
+    <td>
+      <div>{{ step_word(s["status_" + side]) }}</div>
+      {% set summ = s["summary_" + side] %}
+      {% if summ %}<ul class="kv">{% for k, v in summ.items() %}<li><span class="muted">{{ k | replace('_', ' ') }}</span><span class="mono">{{ v }}</span></li>{% endfor %}</ul>{% endif %}
+      {% for g in s["guesses_" + side] %}<div class="dec-guess small" style="margin-top:4px">Guessed: {{ g }}</div>{% endfor %}
+      {% for d in s["decisions_" + side] %}<div class="dec small">{{ d }}</div>{% endfor %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  <tr><td><strong>Cost</strong></td><td class="mono">${{ "%.2f" | format(diff.cost_a) }}</td><td class="mono">${{ "%.2f" | format(diff.cost_b) }}</td></tr>
+  </tbody>
+</table>
+</div>
+{% endblock %}

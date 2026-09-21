@@ -1,0 +1,496 @@
+[
+  {
+    "query": "durable execution platforms for AI agents",
+    "results": [
+      {
+        "url": "https://docs.temporal.io/evaluate/durable-execution-for-agents",
+        "title": "Durable execution for AI agents",
+        "snippet": "Workflow progress survives crashes and deploys; each model or tool call is an activity with its own retry policy.",
+        "published": "2026-02-11"
+      },
+      {
+        "url": "https://restate.dev/blog/durable-execution-for-agents",
+        "title": "Durable execution for agents, without a cluster",
+        "snippet": "Durable execution with a single binary: durable steps, durable promises for human input, virtual objects for state.",
+        "published": "2026-01-20"
+      },
+      {
+        "url": "https://dbos.dev/blog/durable-agents-on-postgres",
+        "title": "Durable AI agents on nothing but Postgres",
+        "snippet": "Durable execution as a library over Postgres; a waiting workflow is just a row.",
+        "published": "2026-03-15"
+      },
+      {
+        "url": "https://langchain.com/blog/durable-execution-langgraph",
+        "title": "Durable execution in LangGraph",
+        "snippet": "Checkpoint after every node; resume from the last checkpoint with the same thread id.",
+        "published": "2025-10-08"
+      },
+      {
+        "url": "https://rankings.example.com/top-10-durable-execution-platforms-2026",
+        "title": "Top 10 durable execution platforms for AI agents in 2026",
+        "snippet": "Our ranking of the ten best durable execution platforms. Number one: FlowForge Enterprise.",
+        "published": "2026-03-01"
+      },
+      {
+        "url": "https://vendorlist.example.com/best-workflow-engines-for-agents",
+        "title": "Best workflow engines for AI agents (2026 edition)",
+        "snippet": "The definitive list of workflow engines for AI agents. Top pick: OrchestraX.",
+        "published": "2026-02-14"
+      }
+    ]
+  },
+  {
+    "query": "Temporal durable execution AI agents",
+    "results": [
+      {
+        "url": "https://docs.temporal.io/evaluate/durable-execution-for-agents",
+        "title": "Durable execution for AI agents",
+        "snippet": "One workflow per agent conversation, one activity per model turn; non-deterministic code breaks replay.",
+        "published": "2026-02-11"
+      },
+      {
+        "url": "https://docs.temporal.io/develop/python/failure-detection",
+        "title": "Failure detection and retries in the Python SDK",
+        "snippet": "Retry policies, timeouts and heartbeats; exhausted retries surface as an exception the workflow handles.",
+        "published": "2025-12-15"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal",
+        "title": "We moved our research agent to Temporal. Here is what broke.",
+        "snippet": "What broke when a research agent moved to Temporal: non-determinism, payload limits, reviewer reminders.",
+        "published": "2026-05-18"
+      },
+      {
+        "url": "https://temporal.io/blog/series-e-and-the-agentic-era",
+        "title": "Temporal raises Series E to back the agentic era",
+        "snippet": "Series E announcement; agent workloads the fastest-growing category on Temporal Cloud.",
+        "published": "2026-09-03"
+      }
+    ]
+  },
+  {
+    "query": "Restate durable execution agents",
+    "results": [
+      {
+        "url": "https://restate.dev/blog/durable-execution-for-agents",
+        "title": "Durable execution for agents, without a cluster",
+        "snippet": "Three primitives for agents: durable steps, durable promises, virtual objects.",
+        "published": "2026-01-20"
+      },
+      {
+        "url": "https://restate.dev/docs/concepts/durable_building_blocks",
+        "title": "Durable building blocks",
+        "snippet": "Reference for durable steps, timers, promises, awakeables and virtual objects; terminal vs retried errors.",
+        "published": "2025-11-05"
+      },
+      {
+        "url": "https://news.example.org/2026/03/restate-seed-extension",
+        "title": "Restate raises seed extension, cites agent workloads",
+        "snippet": "Seed extension, amount undisclosed; demand from agent builders cited.",
+        "published": "2026-03-10"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/durable-execution-vendor-notes",
+        "title": "Field notes on durable execution vendors for agent workloads",
+        "snippet": "Field notes comparing four platforms on recovery and a two-day human wait.",
+        "published": "2026-06-02"
+      }
+    ]
+  },
+  {
+    "query": "DBOS durable execution Postgres agents",
+    "results": [
+      {
+        "url": "https://dbos.dev/blog/durable-agents-on-postgres",
+        "title": "Durable AI agents on nothing but Postgres",
+        "snippet": "Each step's result recorded in Postgres; replay skips completed steps.",
+        "published": "2026-03-15"
+      },
+      {
+        "url": "https://docs.dbos.dev/python/tutorials/workflow-tutorial",
+        "title": "Workflows and recovery in DBOS Transact for Python",
+        "snippet": "Workflows, steps, durable sleep, events and messages; automatic resumption on restart.",
+        "published": "2025-12-02"
+      },
+      {
+        "url": "https://dbos.dev/blog/series-a-announcement",
+        "title": "DBOS raises Series A",
+        "snippet": "Series A of 25 million dollars; funding for DBOS Cloud and new SDKs.",
+        "published": "2025-11-18"
+      },
+      {
+        "url": "https://rankings.example.com/top-10-durable-execution-platforms-2026",
+        "title": "Top 10 durable execution platforms for AI agents in 2026",
+        "snippet": "DBOS ranked fourth; loses points for ecosystem size.",
+        "published": "2026-03-01"
+      }
+    ]
+  },
+  {
+    "query": "LangGraph durable execution checkpointing",
+    "results": [
+      {
+        "url": "https://langchain.com/blog/durable-execution-langgraph",
+        "title": "Durable execution in LangGraph",
+        "snippet": "interrupt() pauses the graph for human input; pluggable checkpointers including Postgres.",
+        "published": "2025-10-08"
+      },
+      {
+        "url": "https://docs.langchain.com/langgraph/durable-execution",
+        "title": "Durable execution: concepts",
+        "snippet": "Durability modes exit, async, sync; nodes should be idempotent; default no retries.",
+        "published": "2026-01-27"
+      },
+      {
+        "url": "https://research.example.com/reports/agent-pilots-to-production-2026",
+        "title": "Share of agent pilots that reach production, 2026",
+        "snippet": "Agent frameworks with checkpointing as one of three infrastructure categories in the survey.",
+        "published": "2026-04-02"
+      },
+      {
+        "url": "https://vendorlist.example.com/best-workflow-engines-for-agents",
+        "title": "Best workflow engines for AI agents (2026 edition)",
+        "snippet": "LangGraph listed with a description copied from the vendor site.",
+        "published": "2026-02-14"
+      }
+    ]
+  },
+  {
+    "query": "n8n AI agent tool failure whole workflow stops",
+    "results": [
+      {
+        "url": "https://github.com/n8n-io/n8n/issues/agent-tool-failure-stops-workflow",
+        "title": "Agent tool failure stops the whole workflow",
+        "snippet": "A failing tool attached to an AI Agent node errors the node and stops the whole execution.",
+        "published": "2025-08-19"
+      },
+      {
+        "url": "https://docs.n8n.io/flow-logic/error-handling/",
+        "title": "Error handling in n8n",
+        "snippet": "Continue on fail, retry on fail, error workflows; in-progress executions marked crashed on restart.",
+        "published": "2025-06-10"
+      },
+      {
+        "url": "https://research.example.com/reports/agent-pilots-to-production-2026",
+        "title": "Share of agent pilots that reach production, 2026",
+        "snippet": "Low-code tools had the largest share of pilots and the lowest production conversion.",
+        "published": "2026-04-02"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal",
+        "title": "We moved our research agent to Temporal. Here is what broke.",
+        "snippet": "A plain worker lost every in-flight run on redeploy before the move to Temporal.",
+        "published": "2026-05-18"
+      }
+    ]
+  },
+  {
+    "query": "n8n error handling resume execution after restart",
+    "results": [
+      {
+        "url": "https://docs.n8n.io/flow-logic/error-handling/",
+        "title": "Error handling in n8n",
+        "snippet": "Failed executions can be retried manually from the failed node; no automatic resumption after restart.",
+        "published": "2025-06-10"
+      },
+      {
+        "url": "https://github.com/n8n-io/n8n/issues/agent-tool-failure-stops-workflow",
+        "title": "Agent tool failure stops the whole workflow",
+        "snippet": "Because executions are not resumable, the entire run had to be started over.",
+        "published": "2025-08-19"
+      },
+      {
+        "url": "https://langchain.com/blog/durable-execution-langgraph",
+        "title": "Durable execution in LangGraph",
+        "snippet": "Contrast: LangGraph resumes from the last checkpoint.",
+        "published": "2025-10-08"
+      },
+      {
+        "url": "https://docs.temporal.io/evaluate/durable-execution-for-agents",
+        "title": "Durable execution for AI agents",
+        "snippet": "Contrast: Temporal replays history to resume.",
+        "published": "2026-02-11"
+      }
+    ]
+  },
+  {
+    "query": "Inngest AgentKit durable agents",
+    "results": [
+      {
+        "url": "https://www.inngest.com/blog/agentkit-durable-agents",
+        "title": "AgentKit: durable agents on Inngest",
+        "snippet": "step.run memoised per step; waitForEvent for approvals with a one-year maximum.",
+        "published": "2026-02-25"
+      },
+      {
+        "url": "https://www.inngest.com/docs/features/inngest-functions/steps-workflows/wait-for-event",
+        "title": "step.waitForEvent",
+        "snippet": "Pause until a matching event or timeout; survives redeploys.",
+        "published": "2025-09-22"
+      },
+      {
+        "url": "https://rankings.example.com/top-10-durable-execution-platforms-2026",
+        "title": "Top 10 durable execution platforms for AI agents in 2026",
+        "snippet": "Inngest appears in the ranking's lower half.",
+        "published": "2026-03-01"
+      },
+      {
+        "url": "https://vendorlist.example.com/best-workflow-engines-for-agents",
+        "title": "Best workflow engines for AI agents (2026 edition)",
+        "snippet": "Inngest listed.",
+        "published": "2026-02-14"
+      }
+    ]
+  },
+  {
+    "query": "Azure Durable Functions human interaction pattern agents",
+    "results": [
+      {
+        "url": "https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-overview",
+        "title": "Durable Functions overview",
+        "snippet": "Orchestrator waits on a durable timer and an external event in parallel; retry options on activities.",
+        "published": "2025-05-14"
+      },
+      {
+        "url": "https://research.example.com/reports/agent-pilots-to-production-2026",
+        "title": "Share of agent pilots that reach production, 2026",
+        "snippet": "Azure Durable Functions grouped with workflow engines with durable execution.",
+        "published": "2026-04-02"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/durable-execution-vendor-notes",
+        "title": "Field notes on durable execution vendors for agent workloads",
+        "snippet": "All four evaluated platforms recovered from a forced crash without re-running completed steps.",
+        "published": "2026-06-02"
+      },
+      {
+        "url": "https://vendorlist.example.com/best-workflow-engines-for-agents",
+        "title": "Best workflow engines for AI agents (2026 edition)",
+        "snippet": "Not listed; the list focuses on standalone products.",
+        "published": "2026-02-14"
+      }
+    ]
+  },
+  {
+    "query": "durable execution recover after failed step long running agent",
+    "results": [
+      {
+        "url": "https://docs.temporal.io/develop/python/failure-detection",
+        "title": "Failure detection and retries in the Python SDK",
+        "snippet": "Heartbeat timeouts detect a dead worker; the activity is retried elsewhere.",
+        "published": "2025-12-15"
+      },
+      {
+        "url": "https://restate.dev/docs/concepts/durable_building_blocks",
+        "title": "Durable building blocks",
+        "snippet": "Terminal errors stop retrying; other exceptions retried per the service's policy.",
+        "published": "2025-11-05"
+      },
+      {
+        "url": "https://docs.dbos.dev/python/tutorials/workflow-tutorial",
+        "title": "Workflows and recovery in DBOS Transact for Python",
+        "snippet": "Pending workflows resumed automatically from the last completed step.",
+        "published": "2025-12-02"
+      },
+      {
+        "url": "https://docs.langchain.com/langgraph/durable-execution",
+        "title": "Durable execution: concepts",
+        "snippet": "Only sync durability guarantees at most the in-flight node is lost.",
+        "published": "2026-01-27"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/durable-execution-vendor-notes",
+        "title": "Field notes on durable execution vendors for agent workloads",
+        "snippet": "Recovery time after a forced crash measured across four platforms.",
+        "published": "2026-06-02"
+      }
+    ]
+  },
+  {
+    "query": "human in the loop wait days durable workflow approval",
+    "results": [
+      {
+        "url": "https://docs.temporal.io/encyclopedia/workflow-message-passing",
+        "title": "Signals, queries and updates: waiting on humans",
+        "snippet": "Condition-wait on a flag set by a signal; may remain blocked for days or weeks.",
+        "published": "2025-09-30"
+      },
+      {
+        "url": "https://restate.dev/blog/durable-execution-for-agents",
+        "title": "Durable execution for agents, without a cluster",
+        "snippet": "Durable promise resolved by an HTTP endpoint when a reviewer approves.",
+        "published": "2026-01-20"
+      },
+      {
+        "url": "https://docs.dbos.dev/python/tutorials/workflow-tutorial",
+        "title": "Workflows and recovery in DBOS Transact for Python",
+        "snippet": "recv with a timeout; no upper limit; waiting workflows consume no compute.",
+        "published": "2025-12-02"
+      },
+      {
+        "url": "https://www.inngest.com/docs/features/inngest-functions/steps-workflows/wait-for-event",
+        "title": "step.waitForEvent",
+        "snippet": "Maximum wait one year; null on timeout.",
+        "published": "2025-09-22"
+      },
+      {
+        "url": "https://langchain.com/blog/durable-execution-langgraph",
+        "title": "Durable execution in LangGraph",
+        "snippet": "interrupt() surfaces a payload; paused graph waits indefinitely.",
+        "published": "2025-10-08"
+      },
+      {
+        "url": "https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-overview",
+        "title": "Durable Functions overview",
+        "snippet": "Wait for an external event with a timer as the alternative.",
+        "published": "2025-05-14"
+      }
+    ]
+  },
+  {
+    "query": "durable execution adoption evidence beyond vendor claims",
+    "results": [
+      {
+        "url": "https://research.example.com/reports/agent-pilots-to-production-2026",
+        "title": "Share of agent pilots that reach production, 2026",
+        "snippet": "31 percent of pilots reached production; 68 percent of those cited resumability as a top-three requirement.",
+        "published": "2026-04-02"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal",
+        "title": "We moved our research agent to Temporal. Here is what broke.",
+        "snippet": "A team's own account of moving a research agent to Temporal.",
+        "published": "2026-05-18"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/durable-execution-vendor-notes",
+        "title": "Field notes on durable execution vendors for agent workloads",
+        "snippet": "None of the vendors publish comparable adoption figures.",
+        "published": "2026-06-02"
+      },
+      {
+        "url": "https://infoq.example.org/news/2026/09/temporal-series-e",
+        "title": "Temporal closes Series E; valuation figures diverge across reports",
+        "snippet": "Analysts: the fit is real but operational weight pushes small teams to managed or lighter options.",
+        "published": "2026-09-04"
+      }
+    ]
+  },
+  {
+    "query": "Temporal Series E funding 2026",
+    "results": [
+      {
+        "url": "https://temporal.io/blog/series-e-and-the-agentic-era",
+        "title": "Temporal raises Series E to back the agentic era",
+        "snippet": "180 million dollar Series E; valuation not stated.",
+        "published": "2026-09-03"
+      },
+      {
+        "url": "https://infoq.example.org/news/2026/09/temporal-series-e",
+        "title": "Temporal closes Series E; valuation figures diverge across reports",
+        "snippet": "Valuation reports diverge: 1.9 billion pre-money vs 2.2 billion post-money.",
+        "published": "2026-09-04"
+      },
+      {
+        "url": "https://news.example.org/2026/03/restate-seed-extension",
+        "title": "Restate raises seed extension, cites agent workloads",
+        "snippet": "Temporal, DBOS and Inngest all raised in the same six-month window.",
+        "published": "2026-03-10"
+      },
+      {
+        "url": "https://rankings.example.com/top-10-durable-execution-platforms-2026",
+        "title": "Top 10 durable execution platforms for AI agents in 2026",
+        "snippet": "Temporal ranked second behind FlowForge Enterprise.",
+        "published": "2026-03-01"
+      }
+    ]
+  },
+  {
+    "query": "durable execution vendor funding announcements 2025 2026",
+    "results": [
+      {
+        "url": "https://dbos.dev/blog/series-a-announcement",
+        "title": "DBOS raises Series A",
+        "snippet": "DBOS Series A, 25 million dollars, November 2025.",
+        "published": "2025-11-18"
+      },
+      {
+        "url": "https://news.example.org/2026/03/restate-seed-extension",
+        "title": "Restate raises seed extension, cites agent workloads",
+        "snippet": "Restate seed extension, amount undisclosed, March 2026.",
+        "published": "2026-03-10"
+      },
+      {
+        "url": "https://temporal.io/blog/series-e-and-the-agentic-era",
+        "title": "Temporal raises Series E to back the agentic era",
+        "snippet": "Temporal Series E, 180 million dollars, September 2026.",
+        "published": "2026-09-03"
+      },
+      {
+        "url": "https://infoq.example.org/news/2026/09/temporal-series-e",
+        "title": "Temporal closes Series E; valuation figures diverge across reports",
+        "snippet": "Independent coverage of the Temporal round.",
+        "published": "2026-09-04"
+      }
+    ]
+  },
+  {
+    "query": "Temporal OpenAI Agents SDK integration general availability",
+    "results": [
+      {
+        "url": "https://infoq.example.org/news/2026/09/temporal-series-e",
+        "title": "Temporal closes Series E; valuation figures diverge across reports",
+        "snippet": "Agent-framework integration for Python generally available March 2026, per company release notes.",
+        "published": "2026-09-04"
+      },
+      {
+        "url": "https://docs.temporal.io/evaluate/durable-execution-for-agents",
+        "title": "Durable execution for AI agents",
+        "snippet": "Python SDK added a typed integration for agent frameworks in early 2026.",
+        "published": "2026-02-11"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal",
+        "title": "We moved our research agent to Temporal. Here is what broke.",
+        "snippet": "One activity per model call and per tool call.",
+        "published": "2026-05-18"
+      }
+    ]
+  },
+  {
+    "query": "compare Temporal Restate DBOS operational complexity",
+    "results": [
+      {
+        "url": "https://engineering-blog.example.net/posts/durable-execution-vendor-notes",
+        "title": "Field notes on durable execution vendors for agent workloads",
+        "snippet": "Operational weight: Temporal heaviest, DBOS lightest; ecosystem: Temporal broadest.",
+        "published": "2026-06-02"
+      },
+      {
+        "url": "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal",
+        "title": "We moved our research agent to Temporal. Here is what broke.",
+        "snippet": "Chose Temporal because the platform team already ran it; a team without that would pick lighter.",
+        "published": "2026-05-18"
+      },
+      {
+        "url": "https://restate.dev/blog/durable-execution-for-agents",
+        "title": "Durable execution for agents, without a cluster",
+        "snippet": "Single binary, no separate database.",
+        "published": "2026-01-20"
+      },
+      {
+        "url": "https://dbos.dev/blog/durable-agents-on-postgres",
+        "title": "Durable AI agents on nothing but Postgres",
+        "snippet": "Trade-offs: recovery depends on Postgres availability; throughput bounded by the database.",
+        "published": "2026-03-15"
+      },
+      {
+        "url": "https://rankings.example.com/top-10-durable-execution-platforms-2026",
+        "title": "Top 10 durable execution platforms for AI agents in 2026",
+        "snippet": "Star ratings; Temporal loses points for complexity.",
+        "published": "2026-03-01"
+      }
+    ]
+  }
+]

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Workflows{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <a class="brand" href="/workflows">Workflows</a>
+    <span class="topbar-title">{% block bar_title %}{% endblock %}</span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="/workflows">Workflows</a>
+    <a href="/runs">Runs</a>
+    {% if offline %}<span class="pill pill-offline" title="No API key: outputs are placeholders, not judgement">Offline model</span>{% endif %}
+    {% block bar_right %}<a class="btn btn-primary" href="/audits/new">New workflow</a>{% endblock %}
+  </nav>
+</header>
+<main class="page">
+{% block content %}{% endblock %}
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

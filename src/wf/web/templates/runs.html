@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, step_squares %}
+{% block title %}Runs{% endblock %}
+{% block bar_title %}Runs{% endblock %}
+{% block bar_right %}<span class="muted">Spent in total: ${{ "%.2f" | format(runs | sum(attribute="cost")) }}</span>{% endblock %}
+{% block content %}
+{% set needs = runs | selectattr("status", "equalto", "waiting") | list | length %}
+<div class="card-head">
+  <div class="tabs">
+    <button class="active" data-filter="all">All</button>
+    <button data-filter="needs">Needs you{% if needs %} {{ needs }}{% endif %}</button>
+    <button data-filter="running">Running</button>
+    <button data-filter="done">Done</button>
+    <button data-filter="stopped">Stopped</button>
+  </div>
+  <a class="btn btn-primary" href="/workflows">Start a run</a>
+</div>
+
+<div class="tbl">
+<table>
+  <thead><tr><th>Run and topic</th><th>Status</th><th>Steps</th><th style="text-align:right">Cost</th></tr></thead>
+  <tbody>
+  {% if not runs %}<tr><td colspan="4" class="muted">No runs yet. Open a workflow and run it with a topic.</td></tr>{% endif %}
+  {% for r in runs %}
+  <tr data-status="{{ r.status }}">
+    <td class="{{ 'indent' if r.parent_run_id }}">
+      <a href="/runs/{{ r.id }}"><strong>{{ r.title }}</strong></a>
+      <div class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else r.mode }}{% if r.parent_run_id %} · follow-up, level {{ r.depth }}{% endif %}{% if r.case_name %} · case: {{ r.case_name }}{% endif %} · started {{ (r.started_at or '')[:16] | replace('T', ' ') }}</div>
+    </td>
+    <td>{{ status_pill(r.status) }}</td>
+    <td>{{ step_squares(r.steps) }}</td>
+    <td style="text-align:right">${{ "%.2f" | format(r.cost or 0) }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="legend"><span><span class="sq sq-done"></span>Done</span><span><span class="sq sq-waiting"></span>Needs you</span><span><span class="sq sq-running"></span>Running</span><span><span class="sq"></span>Not started</span><span><span class="sq sq-skipped"></span>Skipped</span><span><span class="sq sq-failed"></span>Could not finish</span></div>
+
+{% if runs | length > 1 %}
+<div class="card" style="margin-top:18px">
+  <h3>Compare two runs</h3>
+  <p class="small muted">Steps, limits and checks stay identical between runs. The diff shows where the judgement inside them differed.</p>
+  <form data-compare class="actions">
+    <select name="a" style="width:auto">{% for r in runs %}<option value="{{ r.id }}">{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
+    <span class="muted">against</span>
+    <select name="b" style="width:auto">{% for r in runs %}<option value="{{ r.id }}" {{ 'selected' if loop.index == 2 }}>{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
+    <button class="btn" type="submit">Compare</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

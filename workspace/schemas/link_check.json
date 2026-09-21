@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Link check",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sources", "open_count", "total", "checked_at", "vantage"],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["line", "claim", "url", "link_opens", "status"],
+        "properties": {
+          "line": { "type": "integer" },
+          "claim": { "type": "string" },
+          "url": { "type": "string" },
+          "link_opens": { "type": "boolean" },
+          "status": { "type": "integer" }
+        }
+      }
+    },
+    "open_count": { "type": "integer" },
+    "total": { "type": "integer" },
+    "checked_at": { "type": "string" },
+    "vantage": { "type": "string" }
+  }
+}

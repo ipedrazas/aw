@@ -1,0 +1,71 @@
+{
+  "https://docs.temporal.io/evaluate/durable-execution-for-agents": {
+    "status": 200
+  },
+  "https://docs.temporal.io/encyclopedia/workflow-message-passing": {
+    "status": 200
+  },
+  "https://temporal.io/blog/series-e-and-the-agentic-era": {
+    "status": 200
+  },
+  "https://infoq.example.org/news/2026/09/temporal-series-e": {
+    "status": 200
+  },
+  "https://restate.dev/blog/durable-execution-for-agents": {
+    "status": 200
+  },
+  "https://restate.dev/docs/concepts/durable_building_blocks": {
+    "status": 200
+  },
+  "https://dbos.dev/blog/durable-agents-on-postgres": {
+    "status": 200
+  },
+  "https://docs.dbos.dev/python/tutorials/workflow-tutorial": {
+    "status": 200
+  },
+  "https://langchain.com/blog/durable-execution-langgraph": {
+    "status": 200
+  },
+  "https://docs.langchain.com/langgraph/durable-execution": {
+    "status": 200
+  },
+  "https://github.com/n8n-io/n8n/issues/agent-tool-failure-stops-workflow": {
+    "status": 200
+  },
+  "https://docs.n8n.io/flow-logic/error-handling/": {
+    "status": 301
+  },
+  "https://www.inngest.com/blog/agentkit-durable-agents": {
+    "status": 200
+  },
+  "https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-overview": {
+    "status": 200
+  },
+  "https://research.example.com/reports/agent-pilots-to-production-2026": {
+    "status": 404
+  },
+  "https://engineering-blog.example.net/posts/we-moved-our-agent-to-temporal": {
+    "status": 200
+  },
+  "https://engineering-blog.example.net/posts/durable-execution-vendor-notes": {
+    "status": 200
+  },
+  "https://rankings.example.com/top-10-durable-execution-platforms-2026": {
+    "status": 200
+  },
+  "https://vendorlist.example.com/best-workflow-engines-for-agents": {
+    "status": 200
+  },
+  "https://news.example.org/2026/03/restate-seed-extension": {
+    "status": 200
+  },
+  "https://dbos.dev/blog/series-a-announcement": {
+    "status": 200
+  },
+  "https://docs.temporal.io/develop/python/failure-detection": {
+    "status": 200
+  },
+  "https://www.inngest.com/docs/features/inngest-functions/steps-workflows/wait-for-event": {
+    "status": 200
+  }
+}

@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wf
+      POSTGRES_PASSWORD: wf
+      POSTGRES_DB: wf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wf -d wf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WF_DATABASE_URL: postgresql+psycopg://wf:wf@db:5432/wf
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      WF_WORKSPACE: /app/workspace
+    volumes:
+      - ./workspace:/app/workspace
+      - wfvar:/app/var
+
+volumes:
+  pgdata:
+  wfvar:

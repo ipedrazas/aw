@@ -1,0 +1,168 @@
+# deep-research.workflow.yaml
+#
+# The customer's n8n "Deep Research" workflow, rewritten so that everything
+# that decides the outcome (instructions, models, tools, recursion, budget)
+# is declared, pinned and visible to the person running it.
+
+apiVersion: workflows.tavon.io/v1alpha1
+kind: Workflow
+
+metadata:
+  name: deep-research
+  version: 4
+  description: Research a topic, write a sourced report, check it, optionally go deeper, deliver a PDF.
+
+spec:
+  inputs:
+    topic:
+      type: string
+      required: true
+      min_length: 10
+    depth:
+      type: integer
+      default: 0
+      internal: true            # set by the runtime when the workflow calls itself
+
+  # One budget for the whole tree, including any follow-up research.
+  budget:
+    max_usd: 12
+    max_minutes: 45
+    shared_with_children: true
+    on_exceeded: pause_and_ask
+
+  defaults:
+    # Earned autonomy: a step pauses for the user until its output has been
+    # accepted as-is N runs in a row. Any change to what drives the step
+    # resets the count.
+    trust:
+      policy: earned
+      promote_after: 3
+      reset_on: [skill, model, tools, input_schema, output_schema]
+    decision_log: optional      # agents may emit {decision, reason} entries
+    on_error: pause_and_explain # never fail silently; say what broke and offer resume/retry
+
+  steps:
+
+    - id: plan
+      kind: agent
+      title: Plan the research brief
+      model: claude-sonnet-5
+      skill: skills/research-brief.md@3
+      input:
+        topic: ${inputs.topic}
+      output:
+        schema: schemas/brief.json   # questions[], in_scope, excluded, source_preferences
+      shows_user: [output, decisions]
+      decision_log: required
+      trust:
+        policy: earned
+        promote_after: 5             # highest-leverage step: a bad brief poisons everything after it
+
+    - id: research
+      kind: agent
+      title: Research
+      model: claude-sonnet-5
+      skill: skills/deep-researcher.md@7
+      tools:
+        exa.search:       { max_calls: 25 }
+        exa.get_contents: { max_calls: 40 }
+      input:
+        brief: ${steps.plan.output}
+      output:
+        schema: schemas/findings.json
+      shows_user: [decisions, output.sources_summary]
+      decision_log: required         # what it searched, kept, dropped, and why it stopped
+
+    - id: write
+      kind: agent
+      title: Write the report
+      model: claude-opus-5
+      skill: skills/report-writer.md@2
+      input:
+        brief: ${steps.plan.output}
+        findings: ${steps.research.output}
+      output:
+        schema: schemas/report.json  # body_md, sources[{line, claim, url}]
+      shows_user: [output]
+
+    - id: check_links
+      kind: check                    # deterministic, no model involved
+      title: Check links
+      run: checks/http_resolves.py
+      input:
+        sources: ${steps.write.output.sources}
+      writes: sources[].link_opens   # true | false
+      checks:
+        - The URL responds with 2xx or 3xx within 10 seconds
+      does_not_check:                # shown to the user next to the result
+        - Whether the page supports the claim
+        - How reliable or recent the source is
+      on_fail: annotate              # annotate | pause | fail
+      trust:
+        policy: auto
+
+    - id: review
+      kind: agent
+      title: Review
+      model: claude-opus-5
+      skill: skills/report-reviewer.md@3
+      input:
+        brief: ${steps.plan.output}
+        report: ${steps.write.output}
+        link_check: ${steps.check_links.output}
+      output:
+        schema: schemas/review.json  # verdict: accept | revise | go_deeper, gaps[], followup_topics[]
+      shows_user: [output.verdict, output.gaps, decisions]
+      decision_log: required
+
+    # The recursion is a declared step, not a tool the reviewer can call at will.
+    - id: go_deeper
+      kind: subworkflow
+      title: Go deeper
+      when: ${steps.review.output.verdict == "go_deeper"}
+      workflow: deep-research@4
+      for_each: ${steps.review.output.followup_topics}
+      with:
+        topic: ${item.topic}
+        depth: ${inputs.depth + 1}
+      limits:
+        max_depth: 2                 # a child at depth 2 cannot propose further research
+        max_fanout: 3
+        budget: inherit              # draws from the parent's max_usd / max_minutes
+      shows_user: [followup_topics, estimated_cost, remaining_budget, depth]
+      trust:
+        policy: always_ask           # never promoted to unattended
+
+    - id: assemble
+      kind: tool
+      title: Assemble PDF
+      run: tools/render_pdf
+      input:
+        reports:
+          - ${steps.write.output}
+          - ${steps.go_deeper.outputs[*].report}
+        link_check: ${steps.check_links.output}
+      output:
+        artifact: report.pdf
+      side_effects: none
+      trust:
+        policy: auto
+
+  # Regression testing the user never has to set up.
+  evals:
+    baselines:
+      source: user_marked_good       # "Mark this report as good" in the run view
+      keep_last: 20
+    on_change:                       # any edit that triggers a trust reset
+      rerun_on: last_5_baselines
+      sandbox:
+        subworkflows: stub           # show what would be started, don't start it
+        side_effects: disabled
+      compare:
+        - reviewer_verdict
+        - followup_topics_count
+        - source_count
+        - link_opens_ratio
+        - report_structure
+        - estimated_cost
+      present_as: diff_before_apply  # the change is not live until the user keeps it

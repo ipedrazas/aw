@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rendered PDF",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact", "pages", "simulated"],
+  "properties": {
+    "artifact": { "type": "string" },
+    "pages": { "type": "integer" },
+    "simulated": { "type": "boolean" }
+  }
+}

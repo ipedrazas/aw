@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "body_md", "sources"],
+  "properties": {
+    "title": { "type": "string" },
+    "body_md": { "type": "string" },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["line", "claim", "url"],
+        "properties": {
+          "line": { "type": "integer" },
+          "claim": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import trust_pill, tech_switch %}
+{% set s = data.summary %}
+{% block title %}{{ s.title }}{% endblock %}
+{% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
+{% block bar_right %}<span class="muted">{{ s.step_count }} steps, {{ s.model_count }} models, {{ s.skill_count }} instruction files</span>{% endblock %}
+{% block content %}
+<div class="card-head" style="margin-bottom:14px">
+  <div><h1>{{ s.title }}</h1>{% if s.title != s.name %}<p class="sub" style="margin:0">{{ s.name }}</p>{% endif %}</div>
+  <div class="actions">
+    {{ tech_switch() }}
+    <button class="btn" data-toggle="yaml">Open YAML</button>
+    <button class="btn btn-primary" data-toggle="runform">Run with a topic</button>
+  </div>
+</div>
+
+<div id="runform" class="card hidden">
+  <form data-run-workflow="{{ name }}">
+    <div class="grid2">
+      <div><label class="small muted">A topic</label><input type="text" name="topic" placeholder="What should it research? At least ten characters."></div>
+      <div><label class="small muted">Or a past case with a known outcome</label>
+        <select name="case"><option value="">Pick a case</option>{% for c in data.cases %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">Start a dry run</button><span class="small muted">Real judgement, recorded sources, nothing sent anywhere.</span><span data-msg class="small"></span></div>
+  </form>
+</div>
+<pre id="yaml" class="hidden">{{ data.yaml }}</pre>
+
+<div class="tbl">
+<table>
+  <thead><tr><th>Step</th><th class="tech-col">Model</th><th class="tech-col">Instructions</th><th>What you see</th><th>How it runs</th></tr></thead>
+  <tbody>
+  {% for st in data.steps %}
+  <tr>
+    <td>
+      <div><strong>{{ st.n }}. {{ st.title }}</strong>{% if st.origin %}<span class="tag" title="{{ st.origin_reason or '' }}">{{ st.origin }}</span>{% endif %}</div>
+      <div class="small muted">{{ st.kind_label }}{% if st.technical.tools %}, up to {{ st.technical.tools.values() | sum }} lookups{% endif %}{% if st.leaves_system %}, sends something outside{% endif %}</div>
+      {% if st.description %}<div class="small">{{ st.description }}</div>{% endif %}
+      {% if st.when %}<div class="when">{{ st.when }}</div>{% endif %}
+      {% if st.does_not_check %}<div class="small muted">Does not check: {{ st.does_not_check | join('; ') }}.</div>{% endif %}
+    </td>
+    <td class="tech-col mono">{{ st.technical.model or "None" }}</td>
+    <td class="tech-col mono">{{ st.technical.skill or st.technical.run or st.technical.workflow or "—" }}</td>
+    <td>{{ st.shows }}</td>
+    <td>{{ trust_pill(st.trust) }}<div class="small muted">{{ st.trust_detail }}</div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="grid3">
+  <div class="card"><h3>Can it call itself?</h3><p style="margin:0">{{ s.recursion }}</p></div>
+  <div class="card"><h3>Spending limit</h3><p style="margin:0">{% if s.budget %}{{ s.budget }}. {{ s.budget_on_exceeded }}{% else %}None declared. Nothing here can start more work, so none is needed.{% endif %}</p></div>
+  <div class="card"><h3>Open questions</h3>
+    {% if not data.questions %}<p style="margin:0">None. Every required field is answered, so this can run for real.</p>
+    {% else %}{% for g in data.questions %}<div class="small muted" style="margin-top:6px">{{ g.title }}</div><ul style="margin:4px 0 0 18px;padding:0">{% for f in g.findings %}<li>{{ f.question }}{% if f.step_id %} <span class="muted small">({{ f.step_id }})</span>{% endif %}</li>{% endfor %}</ul>{% endfor %}{% endif %}
+  </div>
+</div>
+{% endblock %}
