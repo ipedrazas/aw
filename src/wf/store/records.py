@@ -31,7 +31,9 @@ class WorkflowVersion(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200), index=True)
     version: Mapped[int] = mapped_column(Integer)
-    commit: Mapped[str | None] = mapped_column(String(80))  # a git sha, or sha256:<hex> when there is no git
+    commit: Mapped[str | None] = mapped_column(
+        String(80)
+    )  # a git sha, or sha256:<hex> when there is no git
     schema_version: Mapped[str] = mapped_column(String(64))
     definition_yaml: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
