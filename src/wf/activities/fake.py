@@ -31,7 +31,8 @@ def fill(schema: dict[str, Any], hints: dict[str, Any] | None = None) -> Any:
             for k, sub in schema.get("properties", {}).items()
         }
     if t == "array":
-        return []
+        n = int(schema.get("minItems", 0) or 0)
+        return [fill(schema.get("items", {"type": "string"})) for _ in range(n)]
     if t == "integer":
         return 0
     if t == "number":

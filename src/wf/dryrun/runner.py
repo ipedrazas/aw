@@ -41,6 +41,12 @@ class DryRunReport(BaseModel):
         lines = [f"Run {self.run_id[:8]}: {self.title} [{self.mode}] {self.status}", ""]
         if self.error:
             lines += [f"Error: {self.error}", ""]
+        for s in self.steps:
+            if s.get("status") == "failed":
+                why = s.get("error") or next(
+                    (d["reason"] for d in s.get("decisions", []) if d["kind"] == "control"), ""
+                )
+                lines += [f"Step \u201c{s.get('title')}\u201d failed: {why}", ""]
         lines.append(f"## Where it had to guess ({len(self.guesses)})")
         for g in self.guesses:
             lines.append(f"- [{g['step_id']}] {g['text']} — {g['reason']}")
