@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Workflows{% endblock %}
+{% block content %}
+<div class="card-head"><h1>Workflows</h1><a class="btn btn-primary" href="/audits/new">New workflow</a></div>
+<p class="sub">Each one is a process made explicit: every step, limit and check is declared, and every decision is recorded.</p>
+
+{% if not workflows %}<div class="card">No workflows yet. Describe a process or paste a document to start one.</div>{% endif %}
+{% for w in workflows %}
+<div class="card">
+  {% if w.error %}
+    <h2>{{ w.name }}</h2><p class="muted">This definition could not be read: {{ w.error }}</p>
+  {% else %}
+  <div class="card-head">
+    <h2><a href="/workflows/{{ w.name }}">{{ w.title }}</a></h2>
+    {% if w.open_findings %}<span class="pill pill-yellow">{{ w.open_findings }} question{{ '' if w.open_findings == 1 else 's' }} open</span>
+    {% else %}<span class="pill pill-green">No open questions</span>{% endif %}
+  </div>
+  <p class="muted" style="margin:0 0 6px">{{ w.step_count }} steps{% if w.system_step_count %}, {{ w.system_step_count }} of them suggested{% endif %}. Version {{ w.version }}.</p>
+  {% if w.budget %}<p class="small muted" style="margin:0">Spending limit: {{ w.budget }}.</p>{% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2 style="margin-top:28px">Drafts</h2>
+<p class="sub">Processes being described or imported. Not runnable until their questions are answered.</p>
+{% if not audits %}<div class="card muted">No drafts yet.</div>{% endif %}
+{% for a in audits %}
+<div class="card">
+  <div class="card-head">
+    <h3><a href="/audits/{{ a.id }}">{{ a.title or a.name }}</a></h3>
+    <span class="pill {{ 'pill-green' if a.status == 'saved' else 'pill-grey' }}">{{ 'Saved' if a.status == 'saved' else 'Draft, not saved' }}</span>
+  </div>
+  <p class="small muted" style="margin:0">{{ a.steps }} steps, {{ a.open }} question{{ '' if a.open == 1 else 's' }} open.</p>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% from "_macros.html" import question, tech_switch, status_pill %}
+{% block title %}{{ audit.title if audit else "New workflow" }}{% endblock %}
+{% block bar_title %}{{ audit.title if audit else "New workflow" }} <span class="muted small">{{ ("Saved" if audit.status == "saved" else "Draft, not saved") if audit else "Not started" }}</span>{% endblock %}
+{% block bar_right %}
+  {% if audit %}
+    <button class="btn" data-save>Save draft</button>
+    <button class="btn btn-primary" data-toggle="tryform">Save and try it on a topic</button>
+  {% endif %}
+{% endblock %}
+{% block content %}
+{% if audit %}<div data-audit="{{ audit.id }}"></div>{% endif %}
+
+{% if audit %}
+<div id="tryform" class="card hidden">
+  <form data-try>
+    <div class="grid2">
+      <div><label class="small muted">A topic to try it on</label><input type="text" name="topic" placeholder="At least ten characters"></div>
+      <div><label class="small muted">Or a past case with a known outcome</label>
+        <select name="case"><option value="">Pick a case</option>{% for c in cases %}<option value="{{ c.name }}">{{ c.title }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">Save and start a dry run</button><span class="small muted">Where it has to guess, it says so. Nothing is sent anywhere.</span><span data-msg class="small"></span></div>
+  </form>
+</div>
+{% endif %}
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-head"><h2>Describe the process</h2>{% if audit %}<span class="small muted">{{ audit.name }}</span>{% endif %}</div>
+    {% if not audit %}
+      <form data-new-audit>
+        <p class="small muted">Say how you do it today, in your own words, or paste the document you already have. The draft on the right is built from what you say; what you do not say becomes a question.</p>
+        <p><textarea name="document" style="min-height:260px" placeholder="I want to research a topic in depth. Search the web, write me a report with the sources and links, check the links work, and let me go deeper if something is missing. Then put it all in a PDF."></textarea></p>
+        <p><label class="small muted">Name</label><input type="text" name="name" placeholder="deep-research"></p>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Make the draft</button>
+          {% for d in docs %}{% if loop.first %}<button class="btn" type="button" data-sample="doc-{{ loop.index }}">Use the sample document</button>{% endif %}{% endfor %}
+          <span data-msg class="small muted"></span>
+        </div>
+        {% for d in docs %}
+          {% if loop.first and d.constructed %}<p class="small muted">The sample is a constructed example for the demo, not a customer document.</p>{% endif %}
+          <script type="text/plain" id="doc-{{ loop.index }}">{{ d.text }}</script>
+        {% endfor %}
+      </form>
+    {% else %}
+      <div class="chat">
+        {% for m in audit.chat %}
+          <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
+          {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
+          {% if m.point_to_finding %}<a class="small" href="#q-{{ m.point_to_finding }}" data-goto="q-{{ m.point_to_finding }}">Take me to that question</a>{% endif %}
+        {% endfor %}
+      </div>
+      <form class="chat-form" data-chat>
+        <input type="text" placeholder="Ask about the draft, or tell me what to change" autocomplete="off">
+        <button class="btn btn-primary" type="submit">Send</button>
+      </form>
+      <div data-msg class="small muted" style="margin-top:6px"></div>
+      {% if audit.runs %}
+        <h3 style="margin-top:20px">Dry runs of this draft</h3>
+        {% for r in audit.runs %}<div class="change"><span><a href="/runs/{{ r.id }}">{{ r.title }}</a> <span class="mono muted small">{{ r.id[:8] }}</span></span><span>{{ status_pill(r.status) }} <span class="muted">${{ "%.2f" | format(r.cost or 0) }}</span></span></div>{% endfor %}
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div>
+    {% if audit %}
+    <div class="card">
+      <div class="card-head">
+        <div><h2>What will happen</h2><p class="sub" style="margin:0">{{ audit.summary.step_count }} steps, in your words.{% if audit.summary.system_step_count %} {{ audit.summary.system_step_count }} of them {{ 'is' if audit.summary.system_step_count == 1 else 'are' }} mine, marked.{% endif %}</p></div>
+        {{ tech_switch() }}
+      </div>
+      <ol class="steps">
+        {% for st in audit.steps %}
+        <li>
+          <span class="n">{{ st.n }}</span>
+          <span>
+            <div class="t">{{ st.title }}{% if st.origin %}<span class="tag" title="{{ st.origin_reason or '' }}">{{ st.origin }}</span>{% endif %}</div>
+            {% if st.description %}<div>{{ st.description }}</div>{% endif %}
+            {% if st.when %}<div class="when">{{ st.when }}</div>{% endif %}
+            {% if st.does_not_check %}<div class="small muted">This one can't tell you: {{ st.does_not_check | join('; ') | lower }}.</div>{% endif %}
+            <div class="tech mono">{{ st.kind }}{% if st.technical.model %} · {{ st.technical.model }}{% endif %}{% if st.technical.skill %} · {{ st.technical.skill }}{% endif %}{% if st.technical.run %} · {{ st.technical.run }}{% endif %}{% if st.technical.when %} · when {{ st.technical.when }}{% endif %}</div>
+          </span>
+          <span class="small muted">{{ st.trust }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>What you expect</h2><span class="muted">{{ audit.counts.answered }} of {{ audit.counts.total }} answered</span></div>
+      {% if not audit.questions %}<p class="muted">Nothing left to ask. The draft says everything the system needs.</p>{% endif %}
+      {% for g in audit.questions %}
+        <h3 style="margin-top:14px">{{ g.title }}</h3>
+        {% for f in g.findings %}{{ question(f, audit.id) }}{% endfor %}
+      {% endfor %}
+      {% if audit.answered %}
+        <details style="margin-top:14px"><summary>Answered ({{ audit.answered | length }})</summary>
+          {% for f in audit.answered %}
+            <div class="q answered"><div class="qtext">{{ f.question }}</div>
+              <div class="small">You answered: <span class="mono">{{ f.answer if f.answer is string else (f.answer | tojson) }}</span>
+                <button class="btn btn-sm" type="button" data-reopen="re-{{ f.id }}">Change</button></div>
+              <div id="re-{{ f.id }}" class="hidden">{{ question(f, audit.id) }}</div>
+            </div>
+          {% endfor %}
+        </details>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Changes</h2><span class="muted small">Every edit has a reason and can be undone.</span></div>
+      {% if not audit.changes %}<p class="muted">No changes yet.</p>{% endif %}
+      {% for c in audit.changes | reverse %}
+        <div class="change {{ 'undone' if c.undone }}">
+          <span>{{ c.reason }} <span class="mono muted small">{{ c.path }}</span> <span class="small muted">({{ {'answer': 'your answer', 'assistant': 'from the chat', 'user': 'you'}.get(c.by, c.by) }})</span></span>
+          {% if not c.undone %}<button class="btn btn-sm" type="button" data-undo="{{ c.seq }}">Undo</button>{% else %}<span class="small muted">Undone</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card muted">
+      <h2>What will happen</h2>
+      <p>The steps appear here, in your words, once the draft is made. Steps the system adds are marked, and every gap in what you described becomes a question below.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if audit %}
+<details class="card">
+  <summary><strong>Your document beside the definition</strong> <span class="muted small">{{ audit.diff.counts.stated }} from your document, {{ audit.diff.counts.assumed }} assumed, {{ audit.diff.counts.open }} open, {{ audit.diff.counts.answered }} answered</span></summary>
+  <div class="grid2" style="margin-top:14px">
+    <div>
+      <h3>What you wrote</h3>
+      {% for p in audit.diff.passages if p.kind != "heading" %}
+        <div class="passage"><span class="pid">{{ p.id }}{% if p.heading %} · {{ p.heading }}{% endif %}</span><div>{{ p.text }}</div>
+          {% for pr in p.produced %}<span class="pill pill-grey">{{ pr.label }}</span> {% endfor %}</div>
+      {% endfor %}
+    </div>
+    <div>
+      <h3>What is now explicit</h3>
+      {% for st in audit.diff.steps %}
+        <div class="passage"><strong>{{ st.title }}</strong> <span class="muted small">{{ st.kind }}{% if st.passage %} · from {{ st.passage }}{% endif %}</span>
+          {% if st.origin and st.origin.by == "system" %}<span class="tag">{{ {'suggested': 'I suggested this', 'split': 'I split your step', 'answered': 'From your answer'}.get(st.origin.kind, st.origin.kind) }}</span>{% endif %}
+          {% for f in st.fields %}
+            <div class="field"><span>{{ f.label }}: <span class="mono small">{{ f.value if f.value is not none else "—" }}</span></span>
+              {% if f.status == "stated" %}<span class="pill pill-green">From your document</span>
+              {% elif f.status == "assumed" %}<span class="pill pill-yellow">We assumed</span>
+              {% elif f.status == "open" %}<a href="#q-{{ f.finding_id }}" data-goto="q-{{ f.finding_id }}" class="pill pill-orange">Question open</a>
+              {% else %}<span class="pill pill-blue">You answered</span>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

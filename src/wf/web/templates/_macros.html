@@ -1,0 +1,57 @@
+{% macro trust_pill(label) -%}
+  {%- if label in ("Asks you", "Always asks you") -%}<span class="pill pill-yellow">{{ label }}</span>
+  {%- elif label == "Automatic" -%}<span class="pill pill-grey">{{ label }}</span>
+  {%- else -%}<span class="pill pill-green">{{ label }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro status_pill(status) -%}
+  {%- set words = {"running": "Running", "done": "Done: PDF ready", "failed": "Stopped: something broke", "paused_budget": "Paused: spending limit", "waiting": "Needs you", "skipped": "Skipped", "paused": "Paused"} -%}
+  {%- set cls = {"running": "pill-blue", "done": "pill-green", "failed": "pill-red", "paused_budget": "pill-red", "waiting": "pill-yellow", "skipped": "pill-grey", "paused": "pill-yellow"} -%}
+  <span class="pill {{ cls.get(status, 'pill-grey') }}">{{ words.get(status, status) }}</span>
+{%- endmacro %}
+
+{% macro step_word(status) -%}
+  {{ {"done": "Done", "running": "Running", "skipped": "Skipped", "failed": "Could not finish", "waiting": "Waiting for you", None: "Not started"}.get(status, status or "Not started") }}
+{%- endmacro %}
+
+{% macro step_squares(steps) -%}
+  {% for s in steps %}<span class="sq sq-{{ s.status or 'none' }}" title="{{ s.step_id }}: {{ s.status or 'not started' }}"></span>{% endfor %}
+{%- endmacro %}
+
+{% macro tech_switch() -%}
+  <label class="switch"><input type="checkbox" data-tech-switch> Show technical details</label>
+{%- endmacro %}
+
+{% macro question(f, audit_id) -%}
+  <div class="q" id="q-{{ f.id }}">
+    <div class="qtext">{{ f.question }}</div>
+    {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
+    {% if f.source_text %}<div class="says">The document says: “{{ f.source_text }}”</div>{% endif %}
+    <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}">
+      {% if f.answer_kind in ("choice", "bool") %}
+        <div class="opts">
+          {% for o in f.options %}
+            <label class="opt"><input type="radio" name="a-{{ f.id }}" value='{{ o.value | tojson }}'>
+              <span>{{ o.label }}{% if o.consequence %}<div class="cons">{{ o.consequence }}</div>{% endif %}</span></label>
+          {% endfor %}
+          {% if f.answer_kind == "bool" and not f.options %}
+            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="true"> Yes</label>
+            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="false"> No</label>
+          {% endif %}
+        </div>
+      {% elif f.answer_kind == "multi" %}
+        <div class="opts">
+          {% for o in f.options %}
+            <label class="opt"><input type="checkbox" value='{{ o.value | tojson }}'><span>{{ o.label }}{% if o.consequence %}<div class="cons">{{ o.consequence }}</div>{% endif %}</span></label>
+          {% endfor %}
+        </div>
+      {% elif f.answer_kind == "number" %}
+        <p><input type="number" placeholder="A number"></p>
+      {% else %}
+        <p><textarea placeholder="{{ 'One per line' if f.answer_kind == 'list' else 'Your answer, in your words' }}"></textarea>
+        {% if f.answer_kind == "list" %}<span class="small muted">One per line.</span>{% endif %}</p>
+      {% endif %}
+      <div class="actions"><button class="btn btn-sm btn-primary" type="submit">Answer</button><span data-msg class="small muted"></span></div>
+    </form>
+  </div>
+{%- endmacro %}

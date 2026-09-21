@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, step_word, tech_switch %}
+{% set rep = run.report %}
+{% block title %}Run: {{ run.title }}{% endblock %}
+{% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% endif %}{% endblock %}
+{% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
+{% block content %}
+{% if run.status == "running" %}<div data-run-refresh="{{ run.id }}"></div>{% endif %}
+<div class="rail">
+  <aside>
+    <ol class="railsteps">
+      {% for s in run.steps %}
+      <li class="{{ 'active' if s.status in ('running', 'waiting') }}">
+        <span class="dot dot-{{ s.status }}">{{ '✓' if s.status == 'done' else loop.index }}</span>
+        <span><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></span>
+      </li>
+      {% endfor %}
+    </ol>
+    <div style="margin-top:14px">{{ tech_switch() }}</div>
+    {% if others %}
+    <div style="margin-top:14px"><label class="small muted">Compare with another run</label>
+      <select data-compare-with="{{ run.id }}"><option value="">Pick a run</option>{% for o in others %}<option value="{{ o.id }}">{{ o.title }} ({{ o.id[:8] }})</option>{% endfor %}</select></div>
+    {% endif %}
+  </aside>
+
+  <section>
+    {% if run.status == "running" %}
+      <div class="banner"><span>Still running. This page refreshes on its own.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% elif run.status == "failed" %}
+      <div class="banner banner-red"><span>The run stopped: {{ run.error or "a step could not finish. See the step below." }}</span><span>{{ status_pill(run.status) }}</span></div>
+    {% elif run.status == "paused_budget" %}
+      <div class="banner banner-red"><span>Paused at the spending limit. Nothing more runs until you say so.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% elif run.status == "waiting" %}
+      <div class="banner"><span>Waiting for you. A step needs approval before anything leaves the system.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% else %}
+      <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Guess points first, then what you expected, then the result.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-head"><h2>Where it had to guess</h2><span class="muted">{{ rep.guesses | length }}</span></div>
+      <p class="sub">Each guess is a place your process is silent, found by running it rather than reading it.</p>
+      {% if not rep.guesses %}<p style="margin:0">It never had to guess. Every required field was answered.</p>{% endif %}
+      {% for g in rep.guesses %}
+        <div class="guess">
+          <div class="small muted">{{ g.step_title }}</div>
+          <div><strong>{{ g.text }}</strong></div>
+          <div>{{ g.reason }}</div>
+          {% if g.question %}<div class="small" style="margin-top:4px">The question: <em>{{ g.question }}</em></div>{% endif %}
+          {% if g.alternatives %}<div class="chips">{% for a in g.alternatives %}<span class="chip">{{ a }}</span>{% endfor %}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if rep.expectations %}
+    <div class="card">
+      <h2>Against what you expected</h2>
+      {% if rep.first_divergence %}<div class="banner" style="margin:10px 0">First step to go a different way: {{ rep.first_divergence.step }}{% if rep.first_divergence.why %} — {{ rep.first_divergence.why }}{% endif %}</div>
+      {% else %}<p class="muted">It went the same way you remember.</p>{% endif %}
+      <table>
+        <thead><tr><th>Step</th><th>What</th><th>You expected</th><th>This run</th><th></th></tr></thead>
+        <tbody>{% for e in rep.expectations %}
+          <tr><td>{{ e.step }}</td><td>{{ e.field | replace('output.', '') | replace('_', ' ') }}</td><td class="mono">{{ e.expected }}</td><td class="mono">{{ e.actual if e.actual is not none else "—" }}</td>
+            <td>{% if e.matched %}<span class="pill pill-green">Same</span>{% else %}<span class="pill pill-red">Different</span>{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% set open_f = rep.findings | selectattr("status", "equalto", "open") | list %}
+    {% if open_f %}
+    <div class="card">
+      <div class="card-head"><h2>Open questions</h2><span class="muted">{{ open_f | length }}</span></div>
+      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{{ f.step_id or 'the whole workflow' }}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% for s in run.steps %}
+    <div class="card">
+      <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
+      {% if s.error %}<div class="dec-ignored">{{ s.error }}</div>{% endif %}
+      {% set decs = s.decisions | selectattr("kind", "equalto", "decision") | list %}
+      {% if decs %}<h4 class="small muted" style="margin:8px 0 4px">What it decided</h4>
+        {% for d in decs %}<div class="dec"><strong>{{ d.text }}</strong>{% if d.reason %}<div class="small">{{ d.reason }}</div>{% endif %}{% if d.alternatives %}<div class="chips">{% for a in d.alternatives %}<span class="chip">{{ a }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}
+      {% endif %}
+      {% for d in s.decisions if d.kind == "guess" %}<div class="dec-guess" style="margin-top:8px"><strong>Guessed: {{ d.text }}</strong><div class="small">{{ d.reason }}</div></div>{% endfor %}
+      {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
+      {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
+      {% if s.output is not none %}<details style="margin-top:8px"><summary>What it produced</summary><pre>{{ s.output | tojson(indent=2) }}</pre></details>{% endif %}
+      <div class="tech mono" style="margin-top:6px">{{ s.kind }}{% if s.model %} · {{ s.model }}{% endif %}{% if s.instruction_ref %} · {{ s.instruction_ref }}{% endif %}{% if s.instruction_commit %} · {{ s.instruction_commit[:10] }}{% endif %}{% if s.tool_calls %} · {{ s.tool_calls | length }} tool calls{% endif %}{% if s.duration_s %} · {{ "%.1f" | format(s.duration_s) }}s{% endif %}</div>
+    </div>
+    {% endfor %}
+
+    <div class="card">
+      <h2>Artefacts</h2>
+      {% if not rep.artifacts %}<p class="muted" style="margin:0">Nothing produced{{ ' yet' if run.status == 'running' else '' }}.</p>{% endif %}
+      {% for a in rep.artifacts %}
+        <div class="change"><span>{% if a.simulated %}<span class="sim">SIMULATED</span> {% endif %}<a href="/api/runs/{{ run.id }}/artifacts/{{ a.id }}">{{ a.name }}</a></span><span class="mono small muted">{{ a.sha256[:12] }}</span></div>
+      {% endfor %}
+      {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}
