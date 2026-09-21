@@ -1,0 +1,28 @@
+name: durable-execution
+title: Durable execution platforms for AI agents
+inputs:
+  topic: "Durable execution platforms for AI agents: who leads and why"
+what_happened: |
+  This report went out in spring 2026. The brief had three questions: which platforms
+  offer durable execution for long-running agent workflows, how each recovers after a
+  failed step or a long human wait, and what evidence of adoption exists beyond the
+  vendors' own claims. The researcher found fourteen sources; thirteen links opened when
+  we checked. The one source for adoption rates was an analyst page, and its link died
+  a few weeks after delivery. The reviewer accepted the report on the first pass without
+  asking for more research, so no follow-up research was run and the report was sent as
+  written. About a fortnight later the client came back asking how each platform handles
+  a human approval that takes days, which the report had not covered. We treated that as
+  a new request.
+expectation:
+  - step: review
+    field: output.verdict
+    equals: accept
+    why: The reviewer accepted the report without asking for more research.
+  - step: check_links
+    field: output.open_count
+    equals: 13
+    why: 13 of the 14 links opened when we checked.
+  - step: go_deeper
+    field: status
+    equals: skipped
+    why: No follow-up research was started.

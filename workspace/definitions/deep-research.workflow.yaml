@@ -1,0 +1,189 @@
+# Deep research, rewritten so that everything that decides the outcome
+# (instructions, models, tools, recursion, budget) is declared, pinned and
+# visible to the person running it.
+
+apiVersion: workflows.tavon.io/v1alpha1
+kind: Workflow
+
+metadata:
+  name: deep-research
+  version: 4
+  description: Research a topic, write a sourced report, check it, optionally go deeper, deliver a PDF.
+
+spec:
+  inputs:
+    topic:
+      type: string
+      required: true
+      min_length: 10
+    depth:
+      type: integer
+      default: 0
+      internal: true            # set by the runtime when the workflow calls itself
+
+  # What this workflow hands back when another workflow starts it.
+  outputs:
+    report: ${steps.write.output}
+    verdict: ${steps.review.output.verdict}
+
+  # One budget for the whole tree, including any follow-up research.
+  budget:
+    max_usd: 12
+    max_minutes: 45
+    shared_with_children: true
+    on_exceeded: pause_and_ask
+
+  defaults:
+    trust:
+      policy: earned
+      promote_after: 3
+      reset_on: [skill, model, tools, input_schema, output_schema]
+    decision_log: optional
+    on_error: pause_and_explain
+
+  steps:
+
+    - id: plan
+      kind: agent
+      title: Work out what to look for
+      description: Turns your topic into the questions to answer, and what to leave out.
+      model: claude-sonnet-5
+      skill: skills/research-brief.md@3
+      input:
+        topic: ${inputs.topic}
+      output:
+        schema: schemas/brief.json
+      shows_user: [output, decisions]
+      decision_log: required
+      trust:
+        policy: earned
+        promote_after: 5             # a bad brief poisons everything after it
+      origin:
+        by: system
+        kind: suggested
+        reason: You see what it will look for before it spends anything, and can correct it there.
+
+    - id: research
+      kind: agent
+      title: Search for sources
+      description: Searches, reads what it finds, and keeps what is worth citing.
+      model: claude-sonnet-5
+      skill: skills/deep-researcher.md@7
+      tools:
+        search: { max_calls: 25 }
+        get_contents: { max_calls: 40 }
+      input:
+        brief: ${steps.plan.output}
+      output:
+        schema: schemas/findings.json
+      shows_user: [decisions, output.sources_summary]
+      decision_log: required
+
+    - id: write
+      kind: agent
+      title: Write the report
+      description: With a table of every claim and where it came from.
+      model: claude-opus-5
+      skill: skills/report-writer.md@2
+      input:
+        brief: ${steps.plan.output}
+        findings: ${steps.research.output}
+      output:
+        schema: schemas/report.json
+      shows_user: [output]
+
+    - id: check_links
+      kind: check
+      title: Check the links
+      description: Marks any link that does not open.
+      run: checks.http_resolves
+      input:
+        sources: ${steps.write.output.sources}
+      output:
+        schema: schemas/link_check.json
+      checks:
+        - The URL responds with 2xx or 3xx within 10 seconds
+      does_not_check:
+        - Whether the page supports the claim
+        - How reliable or recent the source is
+      on_fail: annotate
+      shows_user: [output]
+      trust:
+        policy: auto
+
+    - id: review
+      kind: agent
+      title: Review the report
+      description: Says whether it is finished, needs an edit, or is missing something.
+      model: claude-opus-5
+      skill: skills/report-reviewer.md@3
+      input:
+        brief: ${steps.plan.output}
+        report: ${steps.write.output}
+        link_check: ${steps.check_links.output}
+      output:
+        schema: schemas/review.json
+        continue_on:
+          verdict: [accept]          # "accept" needs no branch: the run carries on to the PDF
+      shows_user: [output.verdict, output.gaps, decisions]
+      decision_log: required
+
+    - id: revise
+      kind: agent
+      title: Apply the reviewer's edits
+      description: Rewrites the report where the reviewer asked for changes.
+      when: ${steps.review.output.verdict == "revise"}
+      model: claude-opus-5
+      skill: skills/report-reviser.md@1
+      input:
+        report: ${steps.write.output}
+        review: ${steps.review.output}
+      output:
+        schema: schemas/report.json
+      shows_user: [output]
+      origin:
+        by: system
+        kind: split
+        reason: Your review step had two outcomes in one. Editing is now its own step.
+
+    # The recursion is a declared step, not a tool the reviewer can call at will.
+    - id: go_deeper
+      kind: subworkflow
+      title: Go deeper, if you say so
+      description: Researches what is missing. It asks you first, every time.
+      when: ${steps.review.output.verdict == "go_deeper"}
+      workflow: deep-research@4
+      for_each: ${steps.review.output.followup_topics}
+      with:
+        topic: ${item.topic}
+        depth: ${inputs.depth + 1}
+      limits:
+        max_depth: 2                 # a child at depth 2 cannot propose further research
+        max_fanout: 3
+        budget: inherit              # draws from the parent's max_usd / max_minutes
+      shows_user: [followup_topics, estimated_cost, remaining_budget, depth]
+      trust:
+        policy: always_ask           # never promoted to unattended
+      origin:
+        by: system
+        kind: split
+        reason: Going deeper starts more research, so it is its own step with its own limits.
+
+    - id: assemble
+      kind: tool
+      title: Put it all in a PDF
+      description: Includes any follow-up reports. Nothing is sent anywhere.
+      run: tools.render_pdf
+      input:
+        report: ${steps.write.output}
+        revision: ${steps.revise.output}
+        followups: ${steps.go_deeper.outputs[*].report}
+        link_check: ${steps.check_links.output}
+      output:
+        schema: schemas/pdf.json
+        artifact: report.pdf
+      side_effects: none
+      requires_approval: false
+      shows_user: [output]
+      trust:
+        policy: auto

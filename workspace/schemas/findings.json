@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["searches_run", "sources_summary", "findings", "dropped"],
+  "properties": {
+    "searches_run": { "type": "integer" },
+    "sources_summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question_index", "claim", "url", "title", "quality"],
+        "properties": {
+          "question_index": { "type": "integer" },
+          "claim": { "type": "string" },
+          "url": { "type": "string" },
+          "title": { "type": "string" },
+          "quality": { "type": "string", "enum": ["primary", "secondary", "vendor"] }
+        }
+      }
+    },
+    "dropped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "reason"],
+        "properties": { "url": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    }
+  }
+}
