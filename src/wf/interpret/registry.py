@@ -48,7 +48,19 @@ def http_resolves(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_pdf(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
-    report = input.get("revision") or input.get("report") or {}
+    report = input.get("revision") or input.get("report")
+    if report is None:
+        report = (
+            next(
+                (
+                    v
+                    for v in input.values()
+                    if isinstance(v, dict) and ("body_md" in v or "title" in v)
+                ),
+                None,
+            )
+            or {}
+        )
     if input.get("revision"):
         ctx.note(
             "Used the revised report, not the first draft.",
@@ -99,3 +111,54 @@ TOOLS: dict[str, Callable[[RunnerContext, dict[str, Any]], dict[str, Any]]] = {
 }
 
 ARTIFACT_TOOLS = {"tools.render_pdf": ("artifact", "application/pdf")}
+
+# What each routine produces. A draft that names a routine gets this shape for its output.
+RUNNER_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "checks.http_resolves": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["sources", "open_count", "total", "checked_at", "vantage"],
+        "properties": {
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["line", "claim", "url", "link_opens", "status"],
+                    "properties": {
+                        "line": {"type": "integer"},
+                        "claim": {"type": "string"},
+                        "url": {"type": "string"},
+                        "link_opens": {"type": "boolean"},
+                        "status": {"type": "integer"},
+                    },
+                },
+            },
+            "open_count": {"type": "integer"},
+            "total": {"type": "integer"},
+            "checked_at": {"type": "string"},
+            "vantage": {"type": "string"},
+        },
+    },
+    "tools.render_pdf": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["artifact", "pages", "simulated"],
+        "properties": {
+            "artifact": {"type": "string"},
+            "pages": {"type": "integer"},
+            "simulated": {"type": "boolean"},
+        },
+    },
+    "tools.send_email": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["delivered", "recorded"],
+        "properties": {
+            "delivered": {"type": "boolean"},
+            "recorded": {"type": "boolean"},
+            "to": {"type": "string"},
+            "subject": {"type": "string"},
+        },
+    },
+}

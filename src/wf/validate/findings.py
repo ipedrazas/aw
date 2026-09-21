@@ -94,7 +94,7 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "Later steps branch on this, so every outcome has to be listed.",
     ),
     "unhandled": (
-        "What happens when {field} is “{value}”?",
+        "What happens when {field_name} is “{value}”?",
         "The process can produce this outcome, but no step handles it.",
     ),
     "title": (

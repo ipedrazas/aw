@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
-from tests.helpers import read_yaml, step, write_yaml
+from tests.helpers import make_db, read_yaml, step, write_yaml
 from tests.scripted import deep_research_script
 from wf.activities import (
     Activities,
@@ -28,7 +28,7 @@ DEF = "definitions/deep-research.workflow.yaml"
 
 
 def make(ws, tmp_path: Path, model, guesser=None) -> tuple[Interpreter, Database]:
-    db = Database("sqlite://")
+    db = make_db()
     acts = Activities(
         model=model,
         search=FixtureSearch(ws),

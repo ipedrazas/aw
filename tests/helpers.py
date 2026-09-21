@@ -48,3 +48,17 @@ def step(data: dict[str, Any], step_id: str) -> dict[str, Any]:
         if s["id"] == step_id:
             return s
     raise KeyError(step_id)
+
+
+def make_db():
+    """SQLite in memory by default; WF_TEST_DATABASE_URL (CI: Postgres) when set, with fresh tables."""
+    import os
+
+    from wf.store import Base, Database
+
+    url = os.environ.get("WF_TEST_DATABASE_URL", "sqlite://")
+    db = Database(url)
+    if not url.startswith("sqlite"):
+        Base.metadata.drop_all(db.engine)
+        Base.metadata.create_all(db.engine)
+    return db

@@ -240,6 +240,8 @@ class Interpreter:
                         "outputs": None,
                     }
                     ctx.result.trace.append(TraceEvent(step.id, "skip"))
+                    sr = self.ledger.start_step(ctx.run, step, fanout_index=None, input=None)
+                    self.ledger.finish_step(sr, status="skipped")
                     return "done"
 
         # for_each
@@ -265,6 +267,10 @@ class Interpreter:
                 )
                 items = items[:cap]
             ctx.result.trace.append(TraceEvent(step.id, "fanout", len(items)))
+            # one parent record for the fan-out; each item gets its own child record
+            parent = self.ledger.start_step(
+                ctx.run, step, fanout_index=None, input={"items": items}
+            )
             outputs: list[Any] = []
             for i, item in enumerate(items):
                 ctx.state["item"] = item
@@ -276,9 +282,11 @@ class Interpreter:
                         "output": None,
                         "outputs": outputs,
                     }
+                    self.ledger.finish_step(parent, status=status, output=outputs)
                     return status
                 outputs.append(out)
             ctx.state["steps"][step.id] = {"status": "done", "output": None, "outputs": outputs}
+            self.ledger.finish_step(parent, status="done", output=outputs)
             return "done"
 
         ctx.result.trace.append(TraceEvent(step.id, "run"))
