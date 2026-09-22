@@ -105,6 +105,7 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | `WF_EXTRACTION_MODEL` | the careful model | Turns a document into a draft |
 | `WF_CHAT_MODEL` | the quick model | Answers in the chat that edits the draft |
 | `WF_GUESS_MODEL` | the quick model | Fills a gap the document left |
+| `WF_MAX_OUTPUT_TOKENS` | `32000` | How long one answer may be before it is cut off; answers are streamed, so raise it for a model that allows more |
 | `WF_MODEL_PRICING` | built in | JSON of `{model: [input, output]}` in dollars per million tokens |
 | `WF_LOG_LEVEL` | `info` | `debug` prints every prompt and every answer |
 | `WF_LOG_FORMAT` | `text` | `json` for one object per line, with the fields |

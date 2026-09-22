@@ -28,6 +28,11 @@ from typing import Any
 DEFAULT_QUICK = "claude-sonnet-5"
 DEFAULT_CAREFUL = "claude-opus-5"
 
+#: How much one answer may run to before the model is cut off. Not a model limit —
+#: the models above allow several times this — but the most any one call here should
+#: need, and a cap on what a model that will not stop can cost.
+DEFAULT_MAX_OUTPUT_TOKENS = 32000
+
 ANTHROPIC = "anthropic"
 OPENROUTER = "openrouter"
 PROVIDERS = (ANTHROPIC, OPENROUTER)
@@ -122,6 +127,30 @@ def openrouter_api_key() -> str:
     return os.environ.get("OPENROUTER_API_KEY", "")
 
 
+def max_output_tokens() -> int:
+    """The ceiling on one answer, in tokens. ``WF_MAX_OUTPUT_TOKENS`` moves it.
+
+    This is deployment configuration for the same reason a model name is: how much a
+    model may write before it is cut off is a property of the model, and which model
+    answers is the environment's to say. The default is what the models named above
+    carry comfortably; a model with a smaller ceiling of its own needs this lowered,
+    and one asked for a long answer — reading a whole document into a draft is the
+    long one — may want it raised. Every answer is streamed, so a large number here
+    costs nothing until it is used and does not risk a timeout while it is.
+
+    An answer that hits the ceiling is not truncated quietly: it is the activity error
+    that says the model ran out of room.
+    """
+    named = (os.environ.get("WF_MAX_OUTPUT_TOKENS") or "").strip()
+    if not named:
+        return DEFAULT_MAX_OUTPUT_TOKENS
+    try:
+        value = int(named)
+    except ValueError:
+        return DEFAULT_MAX_OUTPUT_TOKENS
+    return value if value > 0 else DEFAULT_MAX_OUTPUT_TOKENS
+
+
 def openrouter_strict_schemas() -> bool:
     """Whether to ask the gateway to enforce the output schema rather than suggest it.
 
@@ -199,6 +228,7 @@ def model_plan() -> dict[str, Any]:
         "api_key_variable": api_key_variable(),
         "api_key_set": bool(os.environ.get(api_key_variable())),
         "offline": offline(),
+        "max_output_tokens": max_output_tokens(),
         "pricing_from": "WF_MODEL_PRICING" if os.environ.get("WF_MODEL_PRICING") else "default",
         "tasks": [],
     }

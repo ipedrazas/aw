@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from wf.schema import Mode
+from wf.settings import max_output_tokens
 
 
 class ActivityError(Exception):
@@ -64,7 +65,10 @@ class ModelRequest:
     output_schema: dict[str, Any]
     tools: list[ToolSpec] = field(default_factory=list)
     decisions_required: bool = False
-    max_tokens: int = 16000
+    # How much room the answer is given. The environment sets it, for the same reason
+    # the environment names the model: how much a model may write before it is cut off
+    # is a property of the model, and this code does not know which one is in use.
+    max_tokens: int = field(default_factory=max_output_tokens)
 
 
 @dataclass

@@ -174,6 +174,16 @@ what a model was asked; neither becomes untrue when the thing they came from is
 deleted, and a demo that cannot remove a wrong draft is worse than one whose history
 outlives it.
 
+**Every model call is streamed, and how long an answer may be is configuration.**
+Both providers stream and then wait for the whole answer; nothing shows an answer
+arriving. `WF_MAX_OUTPUT_TOKENS` sets the ceiling for all of them, defaulting to
+32000. Alternative: buffered calls with a ceiling low enough to land inside one read
+timeout, which is what a fixed 16000 was. Why: the ceiling is a property of whichever
+model the environment named, and they differ by more than a factor of ten; a buffered
+call ties that number to a timeout rather than to the model, and reading a long
+document into a draft is where the cap was actually reached — an answer that hits it
+is thrown away whole, so the number has to be the model's, not the transport's.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:

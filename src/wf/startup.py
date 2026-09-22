@@ -87,11 +87,13 @@ def _announce_plan(plan: dict[str, Any]) -> None:
             strict,
         )
     logger.info(
-        "models by task: %s",
+        "models by task: %s; an answer may run to %s tokens",
         ", ".join(f"{t['task']}={t['model']}" for t in plan["tasks"]),
+        plan["max_output_tokens"],
         extra={
             "fields": {
                 "event": "models.plan",
+                "max_output_tokens": plan["max_output_tokens"],
                 "provider": plan["provider"],
                 "provider_named_by": plan["provider_named_by"],
                 "api_key_set": plan["api_key_set"],

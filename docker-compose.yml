@@ -47,6 +47,10 @@ services:
       WF_EXTRACTION_MODEL: ${WF_EXTRACTION_MODEL:-}   # reads a document, proposes steps (careful)
       WF_CHAT_MODEL: ${WF_CHAT_MODEL:-}               # answers in the draft chat (quick)
       WF_GUESS_MODEL: ${WF_GUESS_MODEL:-}             # fills a gap the document left (quick)
+      # How much one answer may run to before it is cut off. Answers are streamed, so
+      # this can be as high as the model in use allows; lower it for one that allows
+      # less, raise it if reading a long document into a draft runs out of room.
+      WF_MAX_OUTPUT_TOKENS: ${WF_MAX_OUTPUT_TOKENS:-}
       # $ per million tokens as {"model": [input, output]}; empty uses the built-in table.
       WF_MODEL_PRICING: ${WF_MODEL_PRICING:-}
       # Set to 1 to run offline against the fake model instead of the API.
