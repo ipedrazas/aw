@@ -7,6 +7,7 @@ it beside the draft and undo it.
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -170,8 +171,6 @@ def apply_answer(
                 _add_enum_value(d, ws, _get(d, f"steps.{sid}.when"), answer["add_enum"], changes)
             elif isinstance(answer, str):
                 cur = _get(d, field) or ""
-                import re
-
                 new = re.sub(r'==\s*"[^"]*"', f'== "{answer}"', cur, count=1)
                 change(field, new, f"The branch now tests for “{answer}”.")
         elif isinstance(answer, dict) and answer.get("always"):
@@ -239,7 +238,7 @@ def apply_answer(
             f"At most {int(answer)} levels deep.",
         )
     elif field == "spec.budget":
-        val = answer if isinstance(answer, dict) else {"max_usd": float(answer)}
+        val = answer if isinstance(answer, dict) else _parse_budget(answer)
         change(
             field,
             {
@@ -335,6 +334,50 @@ def why_rejected(finding: Finding, answer: Any) -> str:
     )
 
 
+MONEY = re.compile(
+    r"\$\s*(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s*(?:dollars?|usd|bucks?)", re.I
+)
+MINUTES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b", re.I)
+HOURS = re.compile(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b", re.I)
+
+
+def _parse_budget(answer: Any) -> dict[str, Any]:
+    """A spending limit out of the words someone types: “about $5 and 30 minutes”.
+
+    The money is the point: this question is asked because a run can start more work,
+    and a budget with no amount in it would not cap anything. Time is optional and
+    keeps its default when it is not said.
+    """
+    if isinstance(answer, int | float):
+        return {"max_usd": float(answer)}
+    said = str(answer).strip()
+    try:
+        return {"max_usd": float(said)}  # a bare number is an amount of money
+    except ValueError:
+        pass
+
+    m = MONEY.search(said)
+    if not m:
+        raise AnswerRejected(
+            f"“{said}” does not say how much one run may spend, so the draft is unchanged. "
+            "Give an amount, and a length of time if you want one, like “$8 and 30 minutes”."
+        )
+    val: dict[str, Any] = {"max_usd": float((m.group(1) or m.group(2)).replace(",", ""))}
+
+    minutes = 0.0
+    if h := HOURS.search(said):
+        minutes += float(h.group(1)) * 60
+    if mi := MINUTES.search(said):
+        minutes += float(mi.group(1))
+    if not minutes and re.search(r"\bhalf an hour\b", said, re.I):
+        minutes = 30.0
+    if not minutes and re.search(r"\b(?:an|one)\s+hour\b", said, re.I):
+        minutes = 60.0
+    if minutes:
+        val["max_minutes"] = minutes
+    return val
+
+
 def _as_list(answer: Any) -> list[Any]:
     if isinstance(answer, list):
         return answer
@@ -367,8 +410,6 @@ def _set_enum(
 def _add_enum_value(
     d: dict[str, Any], ws: Workspace, when: str | None, value: str, changes: list[Change]
 ) -> None:
-    import re
-
     m = re.search(r"steps\.([a-z0-9_]+)\.output\.([a-z0-9_.]+)", when or "")
     if not m:
         return

@@ -268,3 +268,48 @@ def test_a_step_that_needs_a_routine_the_system_has_not_got_stays_open(ws):
     # and the routine it does have goes in, named or described
     auditor.answer(result, f.id, "Open every link and see which ones answer")
     assert result.workflow().step("price_check").run == "checks.http_resolves"
+
+
+def budget_finding(ws):
+    """The spending-limit question, as a draft with sub-workflows raises it."""
+    import yaml
+
+    from wf.schema import load_workflow_dict
+
+    data = yaml.safe_load(ws.path("definitions/deep-research.workflow.yaml").read_text())
+    data["spec"].pop("budget", None)
+    f = next(f for f in validate(load_workflow_dict(data), ws).findings if f.field == "spec.budget")
+    return data, f
+
+
+@pytest.mark.parametrize(
+    ("said", "usd", "minutes"),
+    [
+        ("about $5 and 30 minutes", 5.0, 30.0),
+        ("12 dollars and 2 hours", 12.0, 120.0),
+        ("$8, half an hour", 8.0, 30.0),
+        ("$1,200 and 90m", 1200.0, 90.0),
+        ("$20", 20.0, 45),  # no time said, so the default time stands
+        ("5", 5.0, 45),  # a bare number is an amount of money
+    ],
+)
+def test_a_spending_limit_can_be_said_in_words(ws, said, usd, minutes):
+    """The choices are three round numbers; a person's own number has to go in too."""
+    from wf.audit.question import apply_answer
+
+    data, f = budget_finding(ws)
+    new, _ = apply_answer(data, f, said, ws)
+    budget = new["spec"]["budget"]
+    assert (budget["max_usd"], budget["max_minutes"]) == (usd, minutes)
+
+
+@pytest.mark.parametrize("said", ["half an hour", "as little as possible"])
+def test_a_spending_limit_with_no_money_in_it_is_refused(ws, said):
+    """max_usd is what caps the run, so a time-only answer would cap nothing."""
+    from wf.audit.question import apply_answer
+
+    data, f = budget_finding(ws)
+    with pytest.raises(AnswerRejected) as e:
+        apply_answer(data, f, said, ws)
+    assert "how much one run may spend" in str(e.value)
+    assert "budget" not in data["spec"]
