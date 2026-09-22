@@ -44,6 +44,18 @@ With Docker:
 ANTHROPIC_API_KEY=... docker compose up --build      # app on :8000, Postgres beside it
 ```
 
+The container writes drafts back into the mounted `./workspace`, so it runs as the
+owner of those files: uid/gid 1000 by default. If the mount appears as a different
+owner inside the container, build with that one instead. The `var` volume keeps the
+ownership it was created with, so remove it after changing the uid (it holds rendered
+artifacts, not the database):
+
+```bash
+docker compose down
+docker volume rm aw_wfvar
+UID=$(id -u) GID=$(id -g) docker compose up --build
+```
+
 ## Configuration
 
 | Variable | Default | Meaning |
