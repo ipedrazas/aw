@@ -253,7 +253,6 @@ def extraction_request(
         input={"passages": doc},
         output_schema=EXTRACTION_SCHEMA,
         decisions_required=False,
-        max_tokens=16000,
     )
 
 

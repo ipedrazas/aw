@@ -114,7 +114,12 @@ class AnthropicModel:
             }
             if tools:
                 kwargs["tools"] = tools
-            response = self.client.messages.create(**kwargs)
+            # Streamed, and then waited for in one piece. Nothing here wants the answer
+            # a word at a time; what streaming buys is that the ceiling on the answer
+            # can be as high as the model allows without the request timing out while
+            # it is being written. See ``wf.settings.max_output_tokens``.
+            with self.client.messages.stream(**kwargs) as stream:
+                response = stream.get_final_message()
             usage.input_tokens += getattr(response.usage, "input_tokens", 0)
             usage.output_tokens += getattr(response.usage, "output_tokens", 0)
 

@@ -7,6 +7,7 @@ goes up, what comes back, and which failures are worth trying again.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -24,16 +25,34 @@ SCHEMA = {
 }
 
 
-class Reply:
-    """What the gateway sends back, with only the parts this code reads."""
+class Stream:
+    """What the gateway sends back, as httpx hands a streamed answer over.
 
-    def __init__(self, payload: Any, status: int = 200):
-        self.payload = payload
+    A status and a run of lines, plus the short body a refusal has instead of a stream.
+    """
+
+    def __init__(self, lines: list[str] | None = None, *, status: int = 200, body: Any = None):
+        self.lines = lines or []
         self.status_code = status
-        self.text = json.dumps(payload) if isinstance(payload, dict | list) else str(payload)
+        self.body = body
+        self.text = json.dumps(body) if body is not None else ""
+
+    def __enter__(self) -> Stream:
+        return self
+
+    def __exit__(self, *_: Any) -> bool:
+        return False
+
+    def read(self) -> None:
+        """Pull in the body of a refusal, which is not streamed."""
 
     def json(self) -> Any:
-        return self.payload
+        if self.body is None:
+            raise ValueError("the stream is not a JSON document")
+        return self.body
+
+    def iter_lines(self) -> Any:
+        yield from self.lines
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -43,33 +62,43 @@ class Reply:
 class Gateway:
     """A stub of the one method the model uses, keeping what it was asked."""
 
-    def __init__(self, *replies: Reply):
+    def __init__(self, *replies: Stream):
         self.replies = list(replies)
         self.asked: list[dict[str, Any]] = []
 
-    def post(self, path: str, json: dict[str, Any]) -> Reply:  # noqa: A002 - httpx's name
-        assert path == "/chat/completions"
+    def stream(self, method: str, path: str, json: dict[str, Any]) -> Stream:  # noqa: A002
+        assert (method, path) == ("POST", "/chat/completions")
         self.asked.append(json)
         return self.replies.pop(0)
 
 
+def event(**chunk: Any) -> str:
+    return "data: " + json.dumps(chunk)
+
+
+def in_pieces(text: str, every: int = 7) -> list[str]:
+    """A long answer does not arrive in one go, so neither does it here."""
+    return [text[i : i + every] for i in range(0, len(text), every)] or [""]
+
+
 def answer(
     content: str, *, model: str = "openai/some-model", cost: float | None = None, **usage: Any
-) -> Reply:
+) -> Stream:
     spent = {
         "prompt_tokens": usage.get("prompt_tokens", 0),
         "completion_tokens": usage.get("completion_tokens", 0),
     }
     if cost is not None:
         spent["cost"] = cost
-    return Reply(
-        {
-            "model": model,
-            "usage": spent,
-            "choices": [
-                {"finish_reason": "stop", "message": {"role": "assistant", "content": content}}
-            ],
-        }
+    return Stream(
+        [
+            event(model=model, choices=[{"delta": {"role": "assistant"}}]),
+            ": OPENROUTER PROCESSING",  # the gateway saying it is still there
+            *[event(choices=[{"delta": {"content": piece}}]) for piece in in_pieces(content)],
+            event(choices=[{"delta": {}, "finish_reason": "stop"}]),
+            event(choices=[], usage=spent),  # what it cost comes last, on its own
+            "data: [DONE]",
+        ]
     )
 
 
@@ -150,30 +179,45 @@ def test_a_tool_call_is_run_and_answered_in_the_shape_the_gateway_reads():
         executor=lambda i: searched.append(i) or [{"title": "A page", "url": "https://x.example"}],
         max_calls=1,
     )
-    asked_for_tool = Reply(
-        {
-            "model": "openai/some-model",
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
-            "choices": [
-                {
-                    "finish_reason": "tool_calls",
-                    "message": {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {
-                                    "name": "search",
-                                    "arguments": '{"query": "durable execution"}',
-                                },
-                            }
-                        ],
-                    },
-                }
-            ],
-        }
+    # The call arrives in pieces, which is the whole of what streaming changes here:
+    # the id and the name first, then the arguments a few characters at a time.
+    asked_for_tool = Stream(
+        [
+            event(
+                model="openai/some-model",
+                choices=[
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {"name": "search", "arguments": '{"query": '},
+                                }
+                            ]
+                        }
+                    }
+                ],
+            ),
+            event(
+                choices=[
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"durable execution"}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            ),
+            event(choices=[{"delta": {}, "finish_reason": "tool_calls"}]),
+            event(choices=[], usage={"prompt_tokens": 10, "completion_tokens": 5}),
+            "data: [DONE]",
+        ]
     )
     gateway = Gateway(asked_for_tool, answer(envelope({"verdict": "accept"})))
     resp = OpenRouterModel(gateway).complete(request(tools=[tool]))
@@ -198,23 +242,27 @@ def test_a_tool_past_its_limit_is_told_so_rather_than_run():
         executor=lambda i: runs.append(i),
         max_calls=0,
     )
-    call = Reply(
-        {
-            "choices": [
-                {
-                    "finish_reason": "tool_calls",
-                    "message": {
-                        "tool_calls": [
-                            {
-                                "id": "c1",
-                                "type": "function",
-                                "function": {"name": "search", "arguments": "{}"},
-                            }
-                        ]
-                    },
-                }
-            ]
-        }
+    call = Stream(
+        [
+            event(
+                choices=[
+                    {
+                        "finish_reason": "tool_calls",
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {"name": "search", "arguments": "{}"},
+                                }
+                            ]
+                        },
+                    }
+                ]
+            ),
+            "data: [DONE]",
+        ]
     )
     gateway = Gateway(call, answer(envelope({"verdict": "accept"})))
     resp = OpenRouterModel(gateway).complete(request(tools=[tool]))
@@ -228,7 +276,13 @@ def test_a_tool_past_its_limit_is_told_so_rather_than_run():
     [("content_filter", "declined"), ("length", "ran out of room")],
 )
 def test_an_answer_that_never_arrives_says_why(reason: str, says: str):
-    stopped = Reply({"choices": [{"finish_reason": reason, "message": {"content": ""}}]})
+    stopped = Stream(
+        [
+            event(choices=[{"delta": {"content": '{"outp'}}]),
+            event(choices=[{"delta": {}, "finish_reason": reason}]),
+            "data: [DONE]",
+        ]
+    )
     with pytest.raises(ActivityError, match=says):
         OpenRouterModel(Gateway(stopped)).complete(request())
 
@@ -241,25 +295,95 @@ def test_prose_instead_of_json_is_an_activity_error():
 def test_a_refusal_is_final_and_a_bad_moment_is_not():
     """An ActivityError is not retried; anything else is, which is the difference
     between the gateway saying no and the gateway having a bad minute."""
+    refused = Stream(status=402, body={"error": {"message": "no credits"}})
     with pytest.raises(ActivityError, match="refused"):
-        OpenRouterModel(Gateway(Reply({"error": {"message": "no credits"}}, status=402))).complete(
-            request()
-        )
+        OpenRouterModel(Gateway(refused)).complete(request())
 
+    # A provider that falls over partway through says so in a chunk, not a status.
+    fell_over = Stream(
+        [
+            event(choices=[{"delta": {"content": "{"}}]),
+            event(error={"message": "upstream fell over"}),
+        ]
+    )
     with pytest.raises(ActivityError, match="could not answer"):
-        OpenRouterModel(Gateway(Reply({"error": {"message": "upstream fell over"}}))).complete(
-            request()
-        )
+        OpenRouterModel(Gateway(fell_over)).complete(request())
 
     with pytest.raises(Exception) as caught:
-        OpenRouterModel(Gateway(Reply({}, status=503))).complete(request())
+        OpenRouterModel(Gateway(Stream(status=503, body={}))).complete(request())
     assert not isinstance(caught.value, ActivityError), "a 503 is worth asking again"
+
+
+def test_the_answer_is_streamed_and_what_it_cost_is_asked_for():
+    """Streaming is not for showing the answer arriving; it is so a long one may be
+    asked for at all. A buffered answer has to land inside one read."""
+    gateway = Gateway(answer(envelope({"verdict": "accept"})))
+    OpenRouterModel(gateway).complete(request())
+
+    sent = gateway.asked[0]
+    assert sent["stream"] is True
+    assert sent["stream_options"] == {"include_usage": True}
+    assert sent["usage"] == {"include": True}, "a stream says what it cost only if asked"
+
+
+def test_how_much_room_an_answer_has_is_the_environments_to_say(monkeypatch):
+    """Which model is behind a name here is configuration, and their ceilings differ."""
+    monkeypatch.delenv("WF_MAX_OUTPUT_TOKENS", raising=False)
+    assert request().max_tokens == settings.DEFAULT_MAX_OUTPUT_TOKENS
+
+    monkeypatch.setenv("WF_MAX_OUTPUT_TOKENS", "100000")
+    gateway = Gateway(answer(envelope({"verdict": "accept"})))
+    OpenRouterModel(gateway).complete(request())
+    assert gateway.asked[0]["max_tokens"] == 100_000
+
+    monkeypatch.setenv("WF_MAX_OUTPUT_TOKENS", "as much as it likes")
+    assert settings.max_output_tokens() == settings.DEFAULT_MAX_OUTPUT_TOKENS, "not a number"
 
 
 def test_no_key_is_said_plainly_rather_than_dialled(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ActivityError, match="OPENROUTER_API_KEY"):
         OpenRouterModel().complete(request())
+
+
+# -- the vendor, asked the same way -------------------------------------------
+
+
+class Vendor:
+    """A stub of the vendor client, down to the one call the model makes of it."""
+
+    def __init__(self, text: str):
+        self.reply = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text=text)],
+            usage=SimpleNamespace(input_tokens=10, output_tokens=20),
+        )
+        self.asked: list[dict[str, Any]] = []
+        self.messages = self
+
+    def stream(self, **kwargs: Any) -> Vendor:
+        self.asked.append(kwargs)
+        return self
+
+    def __enter__(self) -> Vendor:
+        return self
+
+    def __exit__(self, *_: Any) -> bool:
+        return False
+
+    def get_final_message(self) -> Any:
+        return self.reply
+
+
+def test_the_vendor_is_streamed_too_and_the_answer_waited_for(monkeypatch):
+    """Both providers stream for the same reason, and neither shows it to anyone."""
+    monkeypatch.delenv("WF_MAX_OUTPUT_TOKENS", raising=False)
+    vendor = Vendor(envelope({"verdict": "accept"}))
+    resp = AnthropicModel(vendor).complete(request(model=settings.DEFAULT_CAREFUL))
+
+    assert vendor.asked[0]["max_tokens"] == settings.DEFAULT_MAX_OUTPUT_TOKENS
+    assert resp.output == {"verdict": "accept"}
+    assert (resp.usage.input_tokens, resp.usage.output_tokens) == (10, 20)
 
 
 # -- which provider, and which names ------------------------------------------
