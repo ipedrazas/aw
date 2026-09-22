@@ -61,6 +61,8 @@ services:
       # What is kept of each agentic session: full (prompts and answers), meta, off.
       WF_SESSION_LOG: ${WF_SESSION_LOG:-full}
       WF_SESSION_MAX_CHARS: ${WF_SESSION_MAX_CHARS:-}
+      # Where each session is also mirrored, one file per session.
+      WF_SESSION_ROOT: ${WF_SESSION_ROOT:-/app/var/sessions}
     volumes:
       - ./workspace:/app/workspace
       - wfvar:/app/var

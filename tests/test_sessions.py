@@ -199,7 +199,7 @@ def test_wrapping_twice_is_a_no_op(monkeypatch):
 
 
 def test_session_root_defaults_to_the_container_path(monkeypatch):
-    monkeypatch.delenv("SESSION_ROOT", raising=False)
+    monkeypatch.delenv("WF_SESSION_ROOT", raising=False)
     monkeypatch.setattr(Path, "mkdir", lambda self, *a, **k: None)
     assert session_root() == Path("/app/var/sessions")
 
@@ -207,7 +207,7 @@ def test_session_root_defaults_to_the_container_path(monkeypatch):
 def test_session_root_is_read_from_the_environment_and_created(tmp_path, monkeypatch):
     root = tmp_path / "nested" / "sessions"
     assert not root.exists()
-    monkeypatch.setenv("SESSION_ROOT", str(root))
+    monkeypatch.setenv("WF_SESSION_ROOT", str(root))
     assert session_root() == root
     assert root.is_dir(), "the root is created the first time it is asked for"
 
@@ -228,7 +228,7 @@ def test_a_session_is_mirrored_to_its_own_file(sample_ws, tmp_path, monkeypatch)
 
 
 def test_a_session_survives_the_database_that_wrote_it(sample_ws, tmp_path, monkeypatch):
-    """The database a run used is gone; SESSION_ROOT is not — a stand-in for a restart."""
+    """The database a run used is gone; WF_SESSION_ROOT is not — a stand-in for a restart."""
     monkeypatch.delenv("WF_SESSION_LOG", raising=False)
     r, sessions = runner(sample_ws, tmp_path, deep_research_script("accept"))
     result = r.run("deep-research", TOPIC)

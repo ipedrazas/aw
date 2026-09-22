@@ -113,7 +113,7 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | `WF_HEALTH_LOG_FILE` | | A path for them instead; Compose sets `/app/var/health.log` |
 | `WF_SESSION_LOG` | `full` | What is kept of each session: `full`, `meta`, `off` |
 | `WF_SESSION_MAX_CHARS` | `40000` | How much of one prompt or answer is kept; `0` keeps all |
-| `SESSION_ROOT` | `/app/var/sessions` | Where each session is also mirrored, one file per session |
+| `WF_SESSION_ROOT` | `/app/var/sessions` | Where each session is also mirrored, one file per session |
 
 Model names in step definitions are configuration in the YAML, not literals in code.
 The code names a model in one place, `src/wf/settings.py`, and everything else asks
@@ -181,8 +181,8 @@ Postgres in Compose and SQLite in a checkout. `WF_SESSION_LOG=meta` keeps the
 counts and the timings without the prompt bodies, for when they are too large or too
 sensitive to store; `off` keeps nothing, and the log lines still happen.
 
-Each session is also mirrored to its own file, `<SESSION_ROOT>/<session id>.log`, kept
-up to date as calls land in it. `SESSION_ROOT` defaults to `/app/var/sessions` — the
+Each session is also mirrored to its own file, `<WF_SESSION_ROOT>/<session id>.log`, kept
+up to date as calls land in it. `WF_SESSION_ROOT` defaults to `/app/var/sessions` — the
 container's `var/` directory, created if it does not exist — and moves with the
 variable like `WF_ARTIFACTS_DIR` does. That file is what survives a restart for a
 database that does not, and what `SessionLog.list_from_disk` / `.get_from_disk` read,
