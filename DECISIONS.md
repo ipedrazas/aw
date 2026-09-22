@@ -73,6 +73,52 @@ every tool result in a `<data>` region, scans it, and records an `ignored` decis
 naming the source. The text is not removed. Why: the brief says record, not drop, and
 the model still needs the page to judge the source.
 
+**Sessions are recorded at the model boundary, one wrap around the activity.**
+`SessionRecorder` wraps whatever `ModelActivity` the process is using, so the steps,
+the extraction, the chat and the guesser all record through the same code, and the
+interpreter learns nothing about storage. Alternative: record in the interpreter,
+where the run and the step are already in hand. Why: the interpreter is not the only
+thing that asks a model, and a call made outside a run — a guess, a chat turn — is
+exactly the one you go looking for later.
+
+**What a session belongs to travels in a context variable, not in an argument.**
+`session_span` marks the work and `step_span` marks the step; the recorder reads
+them. Alternative: thread a session id through `complete()`. Why: `ModelActivity` is
+the seam the fake, scripted, recording and replaying models all implement, and
+widening it for bookkeeping would make every one of them carry it.
+
+**A session row is written by the first call in it, and its totals are kept up to
+date as calls land.** Alternative: open the row when the work starts and write the
+totals at the end. Why: work that never asks a model leaves no empty session, and a
+session whose process was killed is honest about where it got to rather than sitting
+at zero.
+
+**Prompts and answers are stored, and the store is not load-bearing.**
+`WF_SESSION_LOG=full` is the default, `meta` keeps the counts and timings without the
+bodies, `off` keeps nothing. A failure to write is logged and the run carries on.
+Alternative: metadata by default, bodies behind a flag. Why: the prompt is the thing
+you need when the decision reads well and the answer is wrong; and a debugging
+feature that can fail a run is worse than no feature.
+
+**The healthcheck is filtered where it is logged, not where it is served.** A filter
+on `uvicorn.access` drops `/healthz` from the main log and, when
+`WF_HEALTH_LOG_FILE` is set, writes it to a log of its own. Alternative: stretch the
+Docker healthcheck interval, or turn the access log off. Why: the probe every thirty
+seconds is doing its job, and turning the access log off to quieten it would hide
+real traffic. Nothing else is filtered.
+
+**Logging is configured once, and uvicorn is told not to configure it.**
+`wf serve` passes `log_config=None`, and `wf.logs.setup_logging` owns the handlers,
+replacing only the ones it installed itself. Alternative: a uvicorn log config
+dictionary. Why: the CLI, the tests and the API all want the same levels and the same
+format, and `--reload` starts a second process that has to arrive at the same place.
+
+**`Taskfile.yml` beside the `Makefile`, not instead of it.** The Taskfile has the
+full set — sessions, logs, debug serving, a demo — and the Makefile keeps the nine
+short targets. Alternative: make the Makefile call `task`. Why: a checkout should be
+runnable without installing another tool, and a shim that fails when `task` is
+missing is worse than a little duplication. Both files say to change the other.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:
@@ -100,6 +146,9 @@ repository, so the proposal is last-writer-on-a-branch with the diff shown befor
 
 ## Working notes
 
+- Sessions have no page of their own yet. The run page shows steps, decisions and
+  tool calls; the prompts behind them are in `wf sessions` and `/api/sessions`. A
+  "what it was asked" panel on the run page is the obvious next thing.
 - `may_repeat` is accepted by the brief as a control-flow location but no milestone
   needs it, so it is not in the schema yet. Adding it later is a schema change, not an
   architecture change.

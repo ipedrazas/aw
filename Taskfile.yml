@@ -1,0 +1,176 @@
+# Taskfile for aw — https://taskfile.dev
+#
+#   task                 the list of everything below
+#   task check           what CI runs: lint, format, tests
+#   task serve           the UI on :8000, reloading
+#   task demo            a dry run against the past case, with the session it recorded
+#
+# `task <name> -- <args>` passes arguments through, so `task test -- -k sessions`
+# and `task sessions:show -- <id>` work as you would expect.
+#
+# The Makefile has the same short targets for anyone without task installed; when a
+# command changes here, change it there too.
+version: '3'
+
+vars:
+  WORKFLOW: deep-research
+  CASE: durable-execution
+  DOC: workspace/process-docs/deep-research-process.md
+  HOST: 127.0.0.1
+  PORT: '8000'
+
+tasks:
+  default:
+    desc: List the tasks
+    silent: true
+    cmds:
+      - task --list
+
+  # -- setup -------------------------------------------------------------------
+
+  install:
+    desc: Resolve and install dependencies
+    cmds:
+      - uv sync
+
+  db:init:
+    desc: Create the database tables (SQLite by default; WF_DATABASE_URL for Postgres)
+    cmds:
+      - uv run wf db-init
+
+  # -- quality -----------------------------------------------------------------
+
+  test:
+    desc: Run the tests (SQLite)
+    cmds:
+      - uv run pytest {{.CLI_ARGS}}
+
+  test:pg:
+    desc: Run the tests against a Postgres that is already up (task up:db)
+    env:
+      WF_TEST_DATABASE_URL: '{{.WF_TEST_DATABASE_URL | default "postgresql+psycopg://wf:wf@localhost:5432/wf"}}'
+    cmds:
+      - uv run pytest {{.CLI_ARGS}}
+
+  lint:
+    desc: Lint and check formatting
+    cmds:
+      - uv run ruff check src tests
+      - uv run ruff format --check src tests
+
+  fmt:
+    desc: Fix what can be fixed and format
+    cmds:
+      - uv run ruff check --fix src tests
+      - uv run ruff format src tests
+
+  check:
+    desc: Lint, format check and tests — what CI runs
+    cmds:
+      - task: lint
+      - task: test
+
+  # -- running -----------------------------------------------------------------
+
+  serve:
+    desc: Serve the UI and API, reloading on change
+    cmds:
+      - uv run wf serve --host {{.HOST}} --port {{.PORT}} --reload {{.CLI_ARGS}}
+
+  serve:debug:
+    desc: Serve with every model exchange printed in full
+    env:
+      WF_LOG_LEVEL: debug
+    cmds:
+      - uv run wf serve --host {{.HOST}} --port {{.PORT}} --reload {{.CLI_ARGS}}
+
+  serve:offline:
+    desc: Serve against the offline model, no API key needed
+    env:
+      WF_FAKE_MODEL: '1'
+    cmds:
+      - uv run wf serve --host {{.HOST}} --port {{.PORT}} --reload {{.CLI_ARGS}}
+
+  validate:
+    desc: Validate a definition (WORKFLOW=name)
+    cmds:
+      - uv run wf validate {{.WORKFLOW}} {{.CLI_ARGS}}
+
+  dry-run:
+    desc: Dry run a definition against a past case (WORKFLOW=name CASE=name)
+    cmds:
+      - uv run wf run {{.WORKFLOW}} --case {{.CASE}} {{.CLI_ARGS}}
+
+  audit:
+    desc: Turn a process document into a draft definition (DOC=path)
+    cmds:
+      - uv run wf audit {{.DOC}} {{.CLI_ARGS}}
+
+  demo:
+    desc: A dry run against the past case with the offline model, then its session
+    env:
+      WF_FAKE_MODEL: '1'
+    cmds:
+      - uv run wf run {{.WORKFLOW}} --case {{.CASE}}
+      - uv run wf sessions --limit 1
+
+  # -- sessions and logs -------------------------------------------------------
+
+  sessions:
+    desc: The agentic sessions, newest first
+    cmds:
+      - uv run wf sessions {{.CLI_ARGS}}
+
+  sessions:show:
+    desc: 'One session with every prompt and answer: task sessions:show -- <id>'
+    cmds:
+      - uv run wf sessions {{.CLI_ARGS}} --prompts
+
+  sessions:json:
+    desc: 'One session as JSON, for jq: task sessions:json -- <id>'
+    cmds:
+      - uv run wf sessions {{.CLI_ARGS}} --json
+
+  logs:
+    desc: Follow the app's log in Docker (the healthcheck is filtered out of it)
+    cmds:
+      - docker compose logs -f app {{.CLI_ARGS}}
+
+  logs:health:
+    desc: Follow the healthcheck's own log inside the container
+    cmds:
+      - docker compose exec app sh -c 'tail -f "${WF_HEALTH_LOG_FILE:-/app/var/health.log}"'
+
+  # -- docker ------------------------------------------------------------------
+
+  docker:build:
+    desc: Build the image as the owner of the mounted workspace
+    cmds:
+      - docker build --build-arg UID=$(id -u) --build-arg GID=$(id -g) -t aw:local .
+
+  up:
+    desc: App and Postgres, built for this user
+    env:
+      UID:
+        sh: id -u
+      GID:
+        sh: id -g
+    cmds:
+      - docker compose up --build {{.CLI_ARGS}}
+
+  up:db:
+    desc: Just Postgres, for running the tests against it
+    cmds:
+      - docker compose up -d db
+
+  down:
+    desc: Stop everything
+    cmds:
+      - docker compose down {{.CLI_ARGS}}
+
+  clean:
+    desc: Remove local state — the database, rendered artefacts and caches
+    prompt: This deletes var/ (database, artefacts and logs). Continue?
+    cmds:
+      - rm -rf var .pytest_cache .ruff_cache
+      - find . -name __pycache__ -type d -prune -exec rm -rf {} +

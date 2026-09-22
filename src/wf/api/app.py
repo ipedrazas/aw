@@ -12,16 +12,24 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from wf.activities import ActivityPolicy, AnthropicModel, ModelActivity, default_activities
+from wf.activities import (
+    ActivityPolicy,
+    AnthropicModel,
+    ModelActivity,
+    default_activities,
+    record_sessions,
+)
 from wf.activities.fake import FakeModel
 from wf.audit import Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
+from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow
 from wf.settings import chat_model
 from wf.store import Artifact, Database
 from wf.store import repo as gitrepo
+from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
 
 from .audits import AuditStore
@@ -29,15 +37,21 @@ from .plain import plain_steps, plain_summary
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
+logger = get_logger("wf.api")
+
 
 class AppState:
     def __init__(self, ws: Workspace, db: Database, model: ModelActivity, artifacts_dir: Path):
         self.ws = ws
         self.db = db
-        self.model = model
-        self.auditor = Auditor(ws, model)
-        acts = default_activities(ws, model, model_guesses=not isinstance(model, FakeModel))
-        if isinstance(model, FakeModel):
+        self.offline = isinstance(model, FakeModel)
+        # One wrap, before anything else is handed the model: the auditor, the chat, the
+        # steps and the guesser then all record into whichever session is open.
+        self.model = record_sessions(model, db)
+        self.sessions = SessionLog(db)
+        self.auditor = Auditor(ws, self.model)
+        acts = default_activities(ws, self.model, model_guesses=not self.offline)
+        if self.offline:
             acts.policy = ActivityPolicy(retries=0)
         self.runner = DryRunner(ws, acts, db, RunConfig(artifacts_dir=artifacts_dir))
         self.audits = AuditStore(db)
@@ -49,6 +63,7 @@ class AppState:
 
 
 def create_app(state: AppState | None = None) -> FastAPI:
+    setup_logging()
     if state is None:
         ws = Workspace(os.environ.get("WF_WORKSPACE", "workspace"))
         model: ModelActivity = FakeModel() if os.environ.get("WF_FAKE_MODEL") else AnthropicModel()
@@ -69,10 +84,12 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
+        """The container asks for this every thirty seconds; see wf.logs for where it goes."""
         return {
             "ok": True,
             "workspace": str(st().ws.root),
-            "offline_model": isinstance(st().model, FakeModel),
+            "offline_model": st().offline,
+            "sessions": session_log_mode(),
         }
 
     # -- workflows ------------------------------------------------------------
@@ -150,6 +167,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
         except Exception as e:  # noqa: BLE001 - surface the reason to the UI
             raise HTTPException(502, f"The draft could not be made: {e}") from e
         audit_id = st().audits.create(result, document)
+        st().sessions.link_audit(result.session_id, audit_id)
+        logger.info(
+            "drafted %s from a document of %d characters",
+            result.name,
+            len(document),
+            extra={"fields": {"event": "audit.created", "audit": audit_id, "name": result.name}},
+        )
         return _audit_view(st(), audit_id)
 
     @app.get("/api/audits/{audit_id}")
@@ -205,7 +229,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
             raise HTTPException(400, "Say something first.")
         history = st().audits.chat_history(rec)
         try:
-            outcome = chat(st().model, result, history, message, model_name=st().chat_model)
+            outcome = chat(
+                st().model,
+                result,
+                history,
+                message,
+                model_name=st().chat_model,
+                audit_id=audit_id,
+            )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e
         applied: list[Change] = []
@@ -350,6 +381,32 @@ def create_app(state: AppState | None = None) -> FastAPI:
             )
         return out
 
+    # -- sessions ----------------------------------------------------------------
+
+    @app.get("/api/sessions")
+    def list_sessions(
+        run: str | None = None,
+        audit: str | None = None,
+        kind: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """The agentic sessions, newest first: what the models were asked, and by whom."""
+        return st().sessions.list(
+            run_id=run, audit_id=audit, kind=kind, limit=max(1, min(limit, 200))
+        )
+
+    @app.get("/api/sessions/{session_id}")
+    def get_session(session_id: str, bodies: bool = True) -> dict[str, Any]:
+        """One session with every exchange under it. `bodies=false` leaves the prompts out."""
+        try:
+            return st().sessions.get(session_id, bodies=bodies)
+        except KeyError as e:
+            raise HTTPException(404, "No such session.") from e
+
+    @app.get("/api/runs/{run_id}/sessions")
+    def run_sessions(run_id: str) -> list[dict[str, Any]]:
+        return st().sessions.list(run_id=run_id)
+
     # -- pages -------------------------------------------------------------------
 
     def page(request: Request, template: str, **ctx: Any) -> HTMLResponse:
@@ -360,7 +417,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 status_code=200,
             )
         return templates.TemplateResponse(
-            request, f"{template}.html", {"offline": isinstance(st().model, FakeModel), **ctx}
+            request, f"{template}.html", {"offline": st().offline, **ctx}
         )
 
     @app.get("/", response_class=HTMLResponse)
@@ -515,5 +572,20 @@ def _start_in_background(
         finally:
             ledger.close()
 
+    logger.info(
+        "run %s of %s started in %s mode",
+        run_id[:8],
+        wf.metadata.name,
+        mode,
+        extra={
+            "fields": {
+                "event": "run.started",
+                "run": run_id,
+                "workflow": wf.metadata.name,
+                "mode": mode,
+                "case": case,
+            }
+        },
+    )
     threading.Thread(target=work, daemon=True, name=f"run-{run_id[:8]}").start()
     return run_id

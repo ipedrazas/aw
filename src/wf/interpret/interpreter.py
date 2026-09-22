@@ -25,6 +25,7 @@ from wf.settings import quick_model
 from wf.store import repo
 from wf.store.ledger import Ledger
 from wf.store.records import Run, StepRun
+from wf.store.sessions import session_span, step_span
 from wf.validate import Finding, validate
 
 from .context import BudgetTracker, OpenFindings, TraceEvent
@@ -160,7 +161,36 @@ class Interpreter:
         depth: int = 0,
     ) -> RunResult:
         """Execute against a run record that already exists (the API creates it first so
-        the id can be handed back before the work starts)."""
+        the id can be handed back before the work starts).
+
+        Everything a model is asked while this run walks belongs to one session, so the
+        run and the transcript behind it can be read side by side afterwards. A child
+        run opens a session of its own.
+        """
+        with session_span("run", name=wf.metadata.name, title=run.title, run_id=run.id, mode=mode):
+            return self._walk(
+                run,
+                wf,
+                inputs,
+                mode,
+                findings=findings,
+                expectation=expectation,
+                budget=budget,
+                depth=depth,
+            )
+
+    def _walk(
+        self,
+        run: Run,
+        wf: Workflow,
+        inputs: dict[str, Any],
+        mode: Mode,
+        *,
+        findings: list[Finding] | None = None,
+        expectation: list[dict[str, Any]] | None = None,
+        budget: BudgetTracker | None = None,
+        depth: int = 0,
+    ) -> RunResult:
         if findings is None:
             findings = validate(wf, self.ws).findings
         open_findings = [f for f in findings if f.status == "open"]
@@ -345,6 +375,17 @@ class Interpreter:
                 reason=str(e),
             )
         sr = self.ledger.start_step(ctx.run, step, fanout_index=fanout_index, input=rendered_input)
+        with step_span(step_run_id=sr.id, step_id=step.id, fanout_index=fanout_index):
+            return self._execute_body(ctx, step, sr, rendered_input, fanout_index)
+
+    def _execute_body(
+        self,
+        ctx: _Ctx,
+        step: Step,
+        sr: StepRun,
+        rendered_input: Any,
+        fanout_index: int | None,
+    ) -> tuple[str, Any]:
         try:
             if step.kind == "agent":
                 out, meta = self._agent(ctx, step, sr, rendered_input or {}, fanout_index)

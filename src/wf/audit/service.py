@@ -6,8 +6,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from wf import settings
-from wf.activities import ActivityPolicy, AnthropicModel, ModelActivity, run_with_policy
+from wf.activities import (
+    ActivityPolicy,
+    AnthropicModel,
+    ModelActivity,
+    record_sessions,
+    run_with_policy,
+)
 from wf.schema import Workflow, Workspace, dump_workflow, load_workflow_dict
+from wf.store.db import Database
+from wf.store.sessions import session_span
 from wf.validate import Finding, validate
 
 from .diff import document_diff
@@ -29,6 +37,7 @@ class AuditResult:
         default_factory=list
     )  # the extractor's decisions: "I split your step"
     changes: list[Change] = field(default_factory=list)
+    session_id: str | None = None  # the session that read the document, if one was recorded
 
     def workflow(self) -> Workflow:
         return load_workflow_dict(self.definition)
@@ -68,6 +77,15 @@ class AuditResult:
         return "\n".join(lines)
 
 
+def _first_line(document: str) -> str:
+    """The document's own first line, as the session's title."""
+    for line in document.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if line:
+            return line[:200]
+    return "a process document"
+
+
 class Auditor:
     def __init__(
         self,
@@ -82,18 +100,28 @@ class Auditor:
         self.policy = policy or ActivityPolicy(retries=1, timeout_s=300)
 
     @classmethod
-    def from_env(cls, ws: Workspace, model: ModelActivity | None = None) -> Auditor:
-        return cls(ws, model or AnthropicModel())
+    def from_env(
+        cls, ws: Workspace, model: ModelActivity | None = None, db: Database | None = None
+    ) -> Auditor:
+        """Wired the way the product wires it: the exchanges are recorded as a session.
+
+        The plain constructor leaves the model alone, which is what the tests want.
+        """
+        return cls(ws, record_sessions(model or AnthropicModel(), db))
 
     # -- the audit path ------------------------------------------------------
 
     def audit(self, document: str, name: str | None = None) -> AuditResult:
         passages = ingest(document)
         req = extraction_request(passages, self.extraction_model, name_hint=name)
-        resp = run_with_policy(self.policy, lambda: self.model.complete(req))
+        with session_span("audit", name=name or "", title=_first_line(document)) as span:
+            resp = run_with_policy(self.policy, lambda: self.model.complete(req))
+            session_id = span.id
         extracted = normalise(resp, name)
         draft = build_draft(extracted, passages)
-        return self.finish(draft, passages, explanations=list(resp.decisions))
+        result = self.finish(draft, passages, explanations=list(resp.decisions))
+        result.session_id = session_id
+        return result
 
     def finish(
         self,

@@ -35,6 +35,7 @@ from .models import (
 from .render import PdfRenderer
 from .search import FixtureSearch, NoSearch
 from .send import RecordingSend
+from .session import SessionRecorder, record_sessions
 
 
 def default_activities(
@@ -79,11 +80,13 @@ __all__ = [
     "SearchActivity",
     "SearchResult",
     "SendActivity",
+    "SessionRecorder",
     "ToolCallRecord",
     "ToolSpec",
     "Usage",
     "cost_of",
     "default_activities",
     "envelope_schema",
+    "record_sessions",
     "run_with_policy",
 ]

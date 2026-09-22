@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from wf.activities import ModelActivity, ModelRequest
 from wf.settings import chat_model
+from wf.store.sessions import session_span
 from wf.validate import Finding
 
 from .service import AuditResult
@@ -120,6 +121,7 @@ def chat(
     history: list[ChatTurn],
     message: str,
     model_name: str | None = None,
+    audit_id: str | None = None,
 ) -> ChatOutcome:
     req = ModelRequest(
         tag="audit:chat",
@@ -134,7 +136,8 @@ def chat(
         },
         output_schema=CHAT_SCHEMA,
     )
-    resp = model.complete(req)
+    with session_span("chat", name=result.name, title=message, audit_id=audit_id):
+        resp = model.complete(req)
     out = resp.output
     edits = []
     for e in out.get("edits", []):

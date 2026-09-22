@@ -73,6 +73,7 @@ class ToolCallRecord:
     input: dict[str, Any]
     summary: str
     injection: str | None = None  # the text that read as instructions, if any
+    result: Any = None  # what came back, for the session record; the step keeps the summary
 
 
 @dataclass

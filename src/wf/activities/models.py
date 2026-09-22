@@ -171,7 +171,9 @@ class AnthropicModel:
                         }
                     )
                     tool_calls.append(
-                        ToolCallRecord(block.name, dict(block.input), _summarise(result), injection)
+                        ToolCallRecord(
+                            block.name, dict(block.input), _summarise(result), injection, result
+                        )
                     )
                 messages.append({"role": "user", "content": results})
                 continue

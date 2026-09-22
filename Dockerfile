@@ -52,6 +52,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     WF_WORKSPACE=/app/workspace
 
+# The healthcheck below asks every 30 seconds. Its access lines go to a log of their
+# own rather than into the app's; WF_LOG_HEALTHCHECK=on puts them back in line.
+ENV WF_HEALTH_LOG_FILE=/app/var/health.log
+
 USER wf
 
 EXPOSE 8000
