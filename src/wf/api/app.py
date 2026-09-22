@@ -28,7 +28,7 @@ from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow
 from wf.settings import chat_model, provider
 from wf.startup import announce
-from wf.store import Artifact, Database
+from wf.store import Artifact, Database, Run
 from wf.store import repo as gitrepo
 from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
@@ -153,6 +153,33 @@ def create_app(state: AppState | None = None) -> FastAPI:
         run_id = _start_in_background(st(), wf, inputs, mode, expectation, case, title, findings)
         return {"run_id": run_id, "status": "running"}
 
+    @app.delete("/api/workflows/{name}")
+    def delete_workflow(name: str) -> dict[str, Any]:
+        """Remove the definition. Its runs stay: they are what happened, not what is live."""
+        try:
+            removed = st().ws.delete_definition(name)
+        except WorkspaceError as e:
+            raise HTTPException(404, str(e)) from e
+        commit = gitrepo.commit_paths(
+            st().ws.root, removed, f"{name}: deleted from the UI", *st().author
+        )
+        with st().db.session() as s:
+            runs_kept = s.query(Run).filter_by(workflow_name=name).count()
+        logger.info(
+            "workflow %s deleted, %d run(s) kept",
+            name,
+            runs_kept,
+            extra={
+                "fields": {
+                    "event": "workflow.deleted",
+                    "workflow": name,
+                    "files": len(removed),
+                    "runs_kept": runs_kept,
+                }
+            },
+        )
+        return {"deleted": name, "removed": removed, "commit": commit, "runs_kept": runs_kept}
+
     # -- audits --------------------------------------------------------------
 
     @app.get("/api/audits")
@@ -184,6 +211,18 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/api/audits/{audit_id}")
     def get_audit(audit_id: str) -> dict[str, Any]:
         return _audit_view(st(), audit_id)
+
+    @app.delete("/api/audits/{audit_id}")
+    def delete_audit(audit_id: str) -> dict[str, Any]:
+        """Remove a draft. A workflow it was already saved as is left where it is."""
+        if not st().audits.delete(audit_id):
+            raise HTTPException(404, "No such draft.")
+        logger.info(
+            "draft %s deleted",
+            audit_id[:8],
+            extra={"fields": {"event": "audit.deleted", "audit": audit_id}},
+        )
+        return {"deleted": audit_id}
 
     @app.post("/api/audits/{audit_id}/answer")
     def answer(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:

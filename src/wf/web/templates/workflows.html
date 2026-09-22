@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import delete_button %}
 {% block title %}Workflows{% endblock %}
 {% block content %}
 <div class="card-head"><h1>Workflows</h1><a class="btn btn-primary" href="/audits/new">New workflow</a></div>
@@ -8,12 +9,19 @@
 {% for w in workflows %}
 <div class="card">
   {% if w.error %}
-    <h2>{{ w.name }}</h2><p class="muted">This definition could not be read: {{ w.error }}</p>
+    <div class="card-head">
+      <h2>{{ w.name }}</h2>
+      {{ delete_button("/api/workflows/" ~ w.name, "Delete “" ~ w.name ~ "”? The definition file goes; its past runs are kept.") }}
+    </div>
+    <p class="muted">This definition could not be read: {{ w.error }}</p>
   {% else %}
   <div class="card-head">
     <h2><a href="/workflows/{{ w.name }}">{{ w.title }}</a></h2>
-    {% if w.open_findings %}<span class="pill pill-yellow">{{ w.open_findings }} question{{ '' if w.open_findings == 1 else 's' }} open</span>
-    {% else %}<span class="pill pill-green">No open questions</span>{% endif %}
+    <div class="actions">
+      {% if w.open_findings %}<span class="pill pill-yellow">{{ w.open_findings }} question{{ '' if w.open_findings == 1 else 's' }} open</span>
+      {% else %}<span class="pill pill-green">No open questions</span>{% endif %}
+      {{ delete_button("/api/workflows/" ~ w.name, "Delete “" ~ w.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.") }}
+    </div>
   </div>
   <p class="muted" style="margin:0 0 6px">{{ w.step_count }} steps{% if w.system_step_count %}, {{ w.system_step_count }} of them suggested{% endif %}. Version {{ w.version }}.</p>
   {% if w.budget %}<p class="small muted" style="margin:0">Spending limit: {{ w.budget }}.</p>{% endif %}
@@ -28,7 +36,10 @@
 <div class="card">
   <div class="card-head">
     <h3><a href="/audits/{{ a.id }}">{{ a.title or a.name }}</a></h3>
-    <span class="pill {{ 'pill-green' if a.status == 'saved' else 'pill-grey' }}">{{ 'Saved' if a.status == 'saved' else 'Draft, not saved' }}</span>
+    <div class="actions">
+      <span class="pill {{ 'pill-green' if a.status == 'saved' else 'pill-grey' }}">{{ 'Saved' if a.status == 'saved' else 'Draft, not saved' }}</span>
+      {{ delete_button("/api/audits/" ~ a.id, "Delete the draft “" ~ (a.title or a.name) ~ "”? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if a.status == 'saved' else "")) }}
+    </div>
   </div>
   <p class="small muted" style="margin:0">{{ a.steps }} steps, {{ a.open }} question{{ '' if a.open == 1 else 's' }} open.</p>
 </div>

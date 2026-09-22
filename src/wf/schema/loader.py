@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,9 @@ from .definition import Workflow
 from .refs import PinnedRef, parse_pin
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
+# A definition name is a file stem and nothing else: deleting is not a place to
+# discover that a name from a URL can contain a path.
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 class WorkspaceError(Exception):
@@ -90,6 +94,31 @@ class Workspace:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(dump_workflow(wf))
         return p
+
+    def delete_definition(self, name: str) -> list[str]:
+        """Remove a definition and the files a draft wrote for it, and say what went.
+
+        Only the ``skills/<name>/`` and ``schemas/<name>/`` directories go with it:
+        those are what saving a draft writes, so deleting removes what saving added.
+        Instruction files shared between definitions sit at the top of ``skills/`` and
+        are left alone. Returns the workspace-relative paths removed.
+        """
+        if not _NAME.fullmatch(name):
+            raise WorkspaceError(f"not a definition name: {name!r}")
+        p = self.definition_path(name)
+        if not p.exists():
+            raise WorkspaceError(f"no definition named {name!r} in {self.root / 'definitions'}")
+        removed = [str(p.relative_to(self.root))]
+        p.unlink()
+        for rel in (f"skills/{name}", f"schemas/{name}"):
+            d = self.path(rel)
+            if not d.is_dir():
+                continue
+            removed.extend(
+                sorted(str(f.relative_to(self.root)) for f in d.rglob("*") if f.is_file())
+            )
+            shutil.rmtree(d)
+        return removed
 
     def resolve_workflow_ref(self, ref: str, current: Workflow | None = None) -> Workflow | None:
         """``deep-research@4`` -> the definition with that name, if its version matches."""

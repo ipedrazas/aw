@@ -161,6 +161,19 @@ do", which until now could only be answered by reading five environment variable
 the fallback rules between them. A provider nobody meant to use is the failure this
 makes loud.
 
+**Deleting removes the definition and keeps the record.** Deleting a workflow removes
+`definitions/<name>.workflow.yaml` and the `skills/<name>/` and `schemas/<name>/`
+directories a draft wrote for it, and commits the removal, so deleting takes exactly
+what saving added; instruction files shared between definitions sit at the top of
+`skills/` and stay. The runs, their decisions and their artefacts are untouched, and
+the run page still reads, because a report is built from the ledger and the definition
+it ran from is in `workflow_version`. Deleting a draft takes the draft, its findings
+and its edits, and leaves the agentic sessions it recorded. Alternative: cascade, or
+refuse to delete anything that has runs. Why: a run is what happened and a session is
+what a model was asked; neither becomes untrue when the thing they came from is
+deleted, and a demo that cannot remove a wrong draft is worse than one whose history
+outlives it.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:

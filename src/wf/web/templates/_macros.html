@@ -55,3 +55,8 @@
     </form>
   </div>
 {%- endmacro %}
+
+{% macro delete_button(url, confirm, after="/workflows", label="Delete", cls="btn btn-sm btn-danger") -%}
+  <button class="{{ cls }}" type="button" data-delete="{{ url }}" data-after="{{ after }}"
+          data-delete-confirm="{{ confirm }}">{{ label }}</button>
+{%- endmacro %}

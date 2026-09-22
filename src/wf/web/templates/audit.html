@@ -1,9 +1,12 @@
 {% extends "base.html" %}
-{% from "_macros.html" import question, tech_switch, status_pill %}
+{% from "_macros.html" import question, tech_switch, status_pill, delete_button %}
 {% block title %}{{ audit.title if audit else "New workflow" }}{% endblock %}
 {% block bar_title %}{{ audit.title if audit else "New workflow" }} <span class="muted small">{{ ("Saved" if audit.status == "saved" else "Draft, not saved") if audit else "Not started" }}</span>{% endblock %}
 {% block bar_right %}
   {% if audit %}
+    {{ delete_button("/api/audits/" ~ audit.id,
+        "Delete this draft? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if audit.status == "saved" else ""),
+        label="Delete draft", cls="btn btn-danger") }}
     <button class="btn" data-save>Save draft</button>
     <button class="btn btn-primary" data-toggle="tryform">Save and try it on a topic</button>
   {% endif %}

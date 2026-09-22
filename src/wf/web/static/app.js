@@ -1,10 +1,13 @@
 /* Small helpers, no build step. */
-async function postJSON(url, body) {
-  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+async function sendJSON(method, url, body) {
+  const init = {method: method, headers: {"Content-Type": "application/json"}};
+  if (body !== undefined) init.body = JSON.stringify(body || {});
+  const r = await fetch(url, init);
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || ("Request failed (" + r.status + ")"));
   return data;
 }
+const postJSON = (url, body) => sendJSON("POST", url, body || {});
 function say(el, text, isError) {
   if (!el) { if (isError) alert(text); return; }
   el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
@@ -22,6 +25,14 @@ function say(el, text, isError) {
     });
   });
 })();
+
+/* Delete a workflow or a draft. One confirm, then say where to go next. */
+document.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", async () => {
+  if (!confirm(b.dataset.deleteConfirm || "Delete this? It cannot be undone.")) return;
+  b.disabled = true;
+  try { await sendJSON("DELETE", b.dataset.delete); location.href = b.dataset.after || location.href; }
+  catch (err) { alert(err.message); b.disabled = false; }
+}));
 
 /* Toggle any element by id. */
 document.querySelectorAll("[data-toggle]").forEach(b => {

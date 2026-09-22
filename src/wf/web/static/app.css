@@ -30,6 +30,9 @@ h1{font-size:30px;margin:0 0 4px}h2{font-size:18px;margin:0 0 6px}h3{font-size:1
 .btn-primary{background:var(--blue);color:var(--blue-ink);border-color:var(--blue)}
 .btn-sm{padding:4px 10px;font-size:13px}
 .btn:disabled{opacity:.5;cursor:default}
+.btn-danger{color:var(--red-ink);border-color:#e6bcb6}
+.btn-danger:hover{background:var(--red-bg)}
+.topbar .btn-danger{color:#f0b5ae;border-color:#5b3a36;background:transparent}
 .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12.5px;white-space:nowrap}
 .pill-yellow{background:var(--yellow-bg);color:var(--yellow-ink)}
