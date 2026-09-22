@@ -6,7 +6,7 @@ import pytest
 
 from tests.scripted import extraction_for_process_doc
 from wf.activities import ModelResponse, ScriptedModel
-from wf.audit import AnswerRejected, Auditor, ingest
+from wf.audit import AnswerRejected, Auditor, build_draft, ingest
 from wf.validate import make_finding, validate
 
 DOC = (
@@ -362,3 +362,14 @@ def test_a_spending_limit_with_no_money_in_it_is_refused(ws, said):
         apply_answer(data, f, said, ws)
     assert "how much one run may spend" in str(e.value)
     assert "budget" not in data["spec"]
+
+
+def test_a_document_with_no_stated_input_assumes_a_topic():
+    """The document names nothing to start from, so the draft assumes a topic and says so."""
+    draft = build_draft({"name": "demo", "title": "Demo", "steps": []}, [])
+
+    assert draft.definition["spec"]["inputs"] == {"topic": {"type": "string", "required": True}}
+    assumption = next(a for a in draft.assumptions if a.field == "spec.inputs.topic")
+    assert assumption.question == "We assumed the process starts from a topic. Is that right?"
+    assert assumption.detail == "The document does not say what the process starts from."
+    assert assumption.unblocks == 0
