@@ -37,6 +37,7 @@
         <p><label class="small muted">Name</label><input type="text" name="name" placeholder="deep-research"></p>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Make the draft</button>
+          <span class="spinner hidden" data-spinner aria-hidden="true"></span>
           {% for d in docs %}{% if loop.first %}<button class="btn" type="button" data-sample="doc-{{ loop.index }}">Use the sample document</button>{% endif %}{% endfor %}
           <span data-msg class="small muted"></span>
         </div>
