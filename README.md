@@ -21,6 +21,8 @@ generality and polish are not goals.
 | `src/wf/audit` | Document in, draft definition and questions out; answers written back |
 | `src/wf/dryrun` | Runs against a past case, guess points, divergence, two-run decision diff |
 | `src/wf/api` and `src/wf/web` | FastAPI JSON API and the server-rendered pages |
+| `src/wf/store/sessions.py` | Agentic sessions: every exchange with a model, kept |
+| `src/wf/logs.py` | One place that decides where log lines go and how loud they are |
 | `workspace/` | A sample workspace: definitions, instruction files, output schemas, recorded fixtures, a degraded process document and a past case |
 | `plans/` | The handover and design documents this was built from |
 | `DECISIONS.md` | Anything decided here that the brief did not cover |
@@ -32,8 +34,22 @@ uv sync
 uv run wf validate deep-research                     # the sample validates cleanly
 uv run wf run deep-research --case durable-execution # a dry run (needs ANTHROPIC_API_KEY)
 uv run wf audit workspace/process-docs/deep-research-process.md
+uv run wf sessions                                   # what the models were asked
 uv run wf serve --reload                             # http://127.0.0.1:8000
 ```
+
+With [task](https://taskfile.dev) there is a name for each of those, and a few more:
+
+```bash
+task                     # the list
+task check               # what CI runs: lint, format, tests
+task demo                # a dry run offline, then the session it recorded
+task serve:debug         # serve with every prompt and answer printed
+task sessions:show -- <id>
+```
+
+`Taskfile.yml` is the fuller set; the `Makefile` keeps the short one for anyone
+without task installed.
 
 Without an API key, set `WF_FAKE_MODEL=1` to use an offline model that fills the
 declared shapes and nothing more. It is enough to walk the pages, not to judge anything.
@@ -71,11 +87,63 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | `WF_CHAT_MODEL` | the quick model | Answers in the chat that edits the draft |
 | `WF_GUESS_MODEL` | the quick model | Fills a gap the document left |
 | `WF_MODEL_PRICING` | built in | JSON of `{model: [input, output]}` in dollars per million tokens |
+| `WF_LOG_LEVEL` | `info` | `debug` prints every prompt and every answer |
+| `WF_LOG_FORMAT` | `text` | `json` for one object per line, with the fields |
+| `WF_LOG_FILE` | | A path for the main log; unset means stderr |
+| `WF_LOG_HEALTHCHECK` | | `on` puts the healthcheck's access lines back in the main log |
+| `WF_HEALTH_LOG_FILE` | | A path for them instead; Compose sets `/app/var/health.log` |
+| `WF_SESSION_LOG` | `full` | What is kept of each session: `full`, `meta`, `off` |
+| `WF_SESSION_MAX_CHARS` | `40000` | How much of one prompt or answer is kept; `0` keeps all |
 
 Model names in step definitions are configuration in the YAML, not literals in code.
 The code names a model in one place, `src/wf/settings.py`, and everything else asks
 for a level of judgement instead. A model configured without a row in
 `WF_MODEL_PRICING` is costed as the careful one.
+
+## Logs and sessions
+
+Two different questions, answered separately: what is printed while the work happens,
+and what is kept once it has.
+
+**Printed.** `WF_LOG_LEVEL=info`, the default, gives one line per model call — which
+step asked, which model answered, how long it took, what it cost. `debug` adds the
+instructions, the input and the answer in full, which is how you watch a session as it
+runs. `WF_LOG_FORMAT=json` makes each line an object with those values as fields,
+for when something else is reading the log.
+
+The container's healthcheck asks for `/healthz` every thirty seconds. Those access
+lines are taken out of the main log; Compose points `WF_HEALTH_LOG_FILE` at
+`/app/var/health.log`, so they are kept, just not in the way:
+
+```bash
+task logs                # the app, without the heartbeat
+task logs:health         # the heartbeat, on its own
+WF_LOG_HEALTHCHECK=on … # or put it back in line
+```
+
+Nothing else is filtered. A log that hides more than its own heartbeat cannot be
+trusted.
+
+**Kept.** Every exchange with a model is a row under an *agentic session*: the run,
+the audit of a document, or the turn of the chat that caused it. A session records the
+instructions as the model got them, the input, the answer, the tools it called and
+what each one returned, the tokens and the cost. A run record says what the workflow
+decided; the session says what the model was actually asked, which is what you need
+when the answer is wrong and the decision looks reasonable.
+
+```bash
+wf sessions                      # newest first, with calls and cost
+wf sessions <id>                 # the calls in it, with tools and decisions
+wf sessions <id> --prompts       # and the instructions, input and answer in full
+wf sessions --run <run_id>       # the sessions of one run
+curl localhost:8000/api/sessions
+curl localhost:8000/api/runs/<run_id>/sessions
+```
+
+Sessions land in the same database as the runs (`agent_session` and `model_call`), so
+Postgres in Compose and SQLite in a checkout. `WF_SESSION_LOG=meta` keeps the
+counts and the timings without the prompt bodies, for when they are too large or too
+sensitive to store; `off` keeps nothing, and the log lines still happen.
 
 ## What stays true
 
@@ -89,6 +157,9 @@ for a level of judgement instead. A model configured without a row in
 - Simulated output is marked at the source: in the filename, on every page, in the
   metadata.
 - Nothing leaves the system in a dry run. Anything that would is recorded instead.
+- Every exchange with a model is recorded, including the ones that failed. Recording
+  is not a precondition for working: if the store cannot be written, the run carries
+  on and says so in the log.
 
 ## Tests
 

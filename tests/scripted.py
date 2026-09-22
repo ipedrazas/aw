@@ -46,7 +46,11 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
                 results = tools["search"].executor({"query": q, "max_results": 5})
                 calls.append(
                     ToolCallRecord(
-                        "search", {"query": q, "max_results": 5}, f"{len(results)} results"
+                        "search",
+                        {"query": q, "max_results": 5},
+                        f"{len(results)} results",
+                        None,
+                        results,
                     )
                 )
                 for r in results[:3]:
@@ -54,7 +58,11 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
                     inj = find_instructions(str(page))
                     calls.append(
                         ToolCallRecord(
-                            "get_contents", {"url": r["url"]}, str(page.get("title", ""))[:80], inj
+                            "get_contents",
+                            {"url": r["url"]},
+                            str(page.get("title", ""))[:80],
+                            inj,
+                            page,
                         )
                     )
                     if "error" in page:
@@ -77,6 +85,7 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
                     {"url": inj_url},
                     str(page.get("title", ""))[:80],
                     find_instructions(str(page)),
+                    page,
                 )
             )
             return ModelResponse(

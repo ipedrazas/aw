@@ -1,4 +1,6 @@
-.PHONY: install test lint fmt serve docker-build up down validate dry-run
+# The short set. Taskfile.yml has the same targets and more (sessions, logs, debug
+# serving); when a command changes in one, change it in the other.
+.PHONY: install test lint fmt serve docker-build up down validate dry-run sessions
 
 install:
 	uv sync
@@ -31,3 +33,6 @@ validate:
 
 dry-run:
 	uv run wf run deep-research --case durable-execution
+
+sessions:
+	uv run wf sessions

@@ -194,3 +194,68 @@ class DraftChange(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
     undone: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AgentSession(Base):
+    """One agentic session: everything a model was asked during one piece of work.
+
+    ``kind`` says what the work was: ``run`` (a workflow run), ``audit`` (reading a
+    process document into a draft), ``chat`` (a turn of the draft conversation),
+    ``other`` (a model call made outside any of them). A session exists only where a
+    model was actually asked something, and its totals are updated as calls land, so
+    a session that is still going reads correctly.
+    """
+
+    __tablename__ = "agent_session"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    title: Mapped[str] = mapped_column(String(500), default="")
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("run.id"), nullable=True, index=True)
+    # Not a foreign key: the audit row is written after the session that drafted it.
+    audit_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calls: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    model_calls: Mapped[list[ModelCall]] = relationship(order_by="ModelCall.seq")
+
+
+class ModelCall(Base):
+    """One exchange with a model, as it was sent and as it came back.
+
+    The bodies (``system``, ``input``, ``output_schema``, ``output``) are what makes a
+    session debuggable rather than merely countable; ``WF_SESSION_LOG=meta`` leaves
+    them out when the prompts are too large or too sensitive to keep.
+    """
+
+    __tablename__ = "model_call"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    session_id: Mapped[str] = mapped_column(ForeignKey("agent_session.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    tag: Mapped[str] = mapped_column(String(200))  # the step id, or audit:extract, or guess:<id>
+    model: Mapped[str] = mapped_column(String(100))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("run.id"), nullable=True, index=True)
+    step_run_id: Mapped[str | None] = mapped_column(ForeignKey("step_run.id"), nullable=True)
+    step_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    fanout_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    system: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    output_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    output: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSON, nullable=True)
+    decisions: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    tool_calls: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    duration_s: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(16), default="ok")  # ok | failed
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

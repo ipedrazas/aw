@@ -10,7 +10,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from wf.activities import Activities, AnthropicModel, ModelActivity, default_activities
+from wf.activities import (
+    Activities,
+    AnthropicModel,
+    ModelActivity,
+    default_activities,
+    record_sessions,
+)
 from wf.interpret import Interpreter, RunConfig, RunResult
 from wf.schema import Mode, Workflow, Workspace
 from wf.store import Artifact, Database, Decision, Expectation, Run, StepRun
@@ -91,9 +97,13 @@ class DryRunner:
         *,
         model_guesses: bool = True,
     ) -> DryRunner:
-        acts = default_activities(ws, model or AnthropicModel(), model_guesses=model_guesses)
+        db = db or Database()
+        # Wrapped once, here: the guesser and the auditor are given the same model, so
+        # every exchange any of them has lands in the session that is open.
+        recorded = record_sessions(model or AnthropicModel(), db)
+        acts = default_activities(ws, recorded, model_guesses=model_guesses)
         artifacts = Path(os.environ.get("WF_ARTIFACTS_DIR", "var/artifacts"))
-        return cls(ws, acts, db or Database(), RunConfig(artifacts_dir=artifacts))
+        return cls(ws, acts, db, RunConfig(artifacts_dir=artifacts))
 
     # -- running ------------------------------------------------------------
 

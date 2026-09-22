@@ -1,5 +1,6 @@
 from .db import Database, database_url, init_db, make_engine
 from .records import (
+    AgentSession,
     Artifact,
     Audit,
     Base,
@@ -7,6 +8,7 @@ from .records import (
     DraftChange,
     Expectation,
     FindingRecord,
+    ModelCall,
     Run,
     StepRun,
     WorkflowVersion,
@@ -15,6 +17,7 @@ from .records import (
 )
 
 __all__ = [
+    "AgentSession",
     "Artifact",
     "Audit",
     "Base",
@@ -23,6 +26,7 @@ __all__ = [
     "DraftChange",
     "Expectation",
     "FindingRecord",
+    "ModelCall",
     "Run",
     "StepRun",
     "WorkflowVersion",

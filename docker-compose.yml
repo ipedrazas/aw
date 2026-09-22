@@ -43,6 +43,16 @@ services:
       WF_MODEL_PRICING: ${WF_MODEL_PRICING:-}
       # Set to 1 to run offline against the fake model instead of the API.
       WF_FAKE_MODEL: ${WF_FAKE_MODEL:-}
+      # How loud, in what shape, and where. debug prints every prompt and answer.
+      WF_LOG_LEVEL: ${WF_LOG_LEVEL:-info}
+      WF_LOG_FORMAT: ${WF_LOG_FORMAT:-text}
+      # The healthcheck asks for /healthz every 30 seconds. Its access lines go to a log
+      # of their own so they do not fill this one; WF_LOG_HEALTHCHECK=on puts them back.
+      WF_HEALTH_LOG_FILE: ${WF_HEALTH_LOG_FILE:-/app/var/health.log}
+      WF_LOG_HEALTHCHECK: ${WF_LOG_HEALTHCHECK:-}
+      # What is kept of each agentic session: full (prompts and answers), meta, off.
+      WF_SESSION_LOG: ${WF_SESSION_LOG:-full}
+      WF_SESSION_MAX_CHARS: ${WF_SESSION_MAX_CHARS:-}
     volumes:
       - ./workspace:/app/workspace
       - wfvar:/app/var

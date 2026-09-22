@@ -38,10 +38,17 @@ def make_engine(url: str | None = None) -> Engine:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
+        # A run holds a ledger on one connection while its sessions are written on
+        # another, so a file database is put in write-ahead mode: readers and the
+        # second writer do not queue behind each other. Postgres needs none of this.
+        wal = ":memory:" not in url and not url.endswith("sqlite://")
 
         @event.listens_for(engine, "connect")
-        def _fk_on(dbapi_conn, _):  # pragma: no cover - trivial
+        def _pragmas(dbapi_conn, _):  # pragma: no cover - trivial
             dbapi_conn.execute("PRAGMA foreign_keys=ON")
+            if wal:
+                dbapi_conn.execute("PRAGMA journal_mode=WAL")
+                dbapi_conn.execute("PRAGMA busy_timeout=5000")
 
     return engine
 

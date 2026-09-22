@@ -1,4 +1,4 @@
-"""``wf`` command line: validate, run, audit, serve."""
+"""``wf`` command line: validate, run, audit, serve, and read back the sessions."""
 
 from __future__ import annotations
 
@@ -7,8 +7,12 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
+from wf.logs import get_logger, log_level, setup_logging
 from wf.schema import Workspace
+
+logger = get_logger("wf.cli")
 
 
 def _ws(args: argparse.Namespace) -> Workspace:
@@ -62,15 +66,34 @@ def cmd_audit(args: argparse.Namespace) -> int:
     doc = Path(args.document).read_text()
     result = auditor.audit(doc, name=args.name)
     print(result.render_text())
+    if result.session_id:
+        print(f"\nThe session that read it: wf sessions {result.session_id}")
     return 0
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from wf.store.sessions import session_log_mode
+
     os.environ.setdefault("WF_WORKSPACE", str(Path(args.workspace).resolve()))
+    logger.info(
+        "serving on http://%s:%d — workspace %s, sessions %s, level %s",
+        args.host,
+        args.port,
+        os.environ["WF_WORKSPACE"],
+        session_log_mode(),
+        (os.environ.get("WF_LOG_LEVEL") or "info").lower(),
+    )
     uvicorn.run(
-        "wf.api.app:create_app", factory=True, host=args.host, port=args.port, reload=args.reload
+        "wf.api.app:create_app",
+        factory=True,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        # Logging is configured by wf.logs, which is also where the healthcheck's
+        # access lines are taken out of this log.
+        log_config=None,
     )
     return 0
 
@@ -83,6 +106,103 @@ def cmd_db_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """The agentic sessions: what the models were asked, and what came back."""
+    from wf.store import Database
+    from wf.store.sessions import SessionLog
+
+    log = SessionLog(Database())
+    if args.id:
+        try:
+            # Always read the bodies: the decisions are shown either way, and only the
+            # prompts wait for --prompts.
+            data = log.get(args.id)
+        except KeyError:
+            print(f"No session {args.id}.", file=sys.stderr)
+            return 1
+        print(json.dumps(data, indent=2) if args.json else _render_session(data, args.prompts))
+        return 0
+
+    rows = log.list(run_id=args.run, audit_id=args.audit, kind=args.kind, limit=args.limit)
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("No sessions recorded. WF_SESSION_LOG=off writes none.")
+        return 0
+    for r in rows:
+        started = (r["started_at"] or "")[:19].replace("T", " ")
+        print(
+            f"{r['id'][:8]}  {started}  {r['kind']:<6} {r['status']:<7} "
+            f"{r['calls']:>3} calls  ${r['cost_usd']:.4f}  {r['title'][:52] or r['name']}"
+        )
+    print("\nOne session in full: wf sessions <id> --prompts")
+    return 0
+
+
+def _render_session(data: dict[str, Any], prompts: bool) -> str:
+    lines = [
+        f"Session {data['id']} — {data['kind']} {data['status']}",
+        f"{data['title'] or data['name']}",
+        f"{data['calls']} calls, {data['input_tokens']} tokens in, "
+        f"{data['output_tokens']} out, ${data['cost_usd']:.4f}",
+    ]
+    if data.get("run_id"):
+        lines.append(f"run {data['run_id']}")
+    if data.get("error"):
+        lines.append(f"ended: {data['error']}")
+    lines.append("")
+    for c in data.get("calls_detail", []):
+        where = c["step_id"] or c["tag"]
+        if c["fanout_index"] is not None:
+            where = f"{where}[{c['fanout_index']}]"
+        lines.append(
+            f"## {c['seq']}. {where} — {c['model']} — {c['duration_s']:.2f}s, "
+            f"{c['input_tokens']}/{c['output_tokens']} tokens, ${c['cost_usd']:.4f} [{c['status']}]"
+        )
+        if c.get("error"):
+            lines.append(f"    failed: {c['error']}")
+        for call in c.get("tool_calls", []):
+            lines.append(
+                f"    tool {call['name']}({_short(call.get('input'))}) → {call['summary']}"
+            )
+            if call.get("injection"):
+                lines.append(
+                    f"      instructions found in the data, read as data: {call['injection'][:120]}"
+                )
+        for d in c.get("decisions", []) or []:
+            lines.append(f"    decision: {d.get('decision')} — {d.get('reason')}")
+        if prompts:
+            lines += [
+                "",
+                "    --- instructions ---",
+                _indent(c.get("system") or "(none)"),
+                "    --- input ---",
+                _indent(_pretty(c.get("input"))),
+                "    --- answer ---",
+                _indent(_pretty(c.get("output"))),
+            ]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _short(value: Any) -> str:
+    text = _pretty(value)
+    return text if len(text) <= 80 else f"{text[:80]}…"
+
+
+def _pretty(value: Any) -> str:
+    if value is None:
+        return "(none)"
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+
+
+def _indent(text: str) -> str:
+    return "\n".join(f"    {line}" for line in text.splitlines())
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="wf", description="Agentic workflows: audit, validate, dry run."
@@ -91,6 +211,12 @@ def main(argv: list[str] | None = None) -> int:
         "--workspace",
         default=os.environ.get("WF_WORKSPACE", "workspace"),
         help="workspace directory",
+    )
+    p.add_argument(
+        "--log-level",
+        default=None,
+        choices=["debug", "info", "warning", "error"],
+        help="this run only; WF_LOG_LEVEL is the same setting for good",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -127,7 +253,23 @@ def main(argv: list[str] | None = None) -> int:
     d = sub.add_parser("db-init", help="create the database tables")
     d.set_defaults(fn=cmd_db_init)
 
+    g = sub.add_parser("sessions", help="the agentic sessions: every exchange with a model")
+    g.add_argument("id", nargs="?", help="one session in full; omit for the list")
+    g.add_argument("--run", help="only the sessions of this run")
+    g.add_argument("--audit", help="only the sessions of this draft")
+    g.add_argument("--kind", choices=["run", "audit", "chat", "other"], help="only this kind")
+    g.add_argument("--limit", type=int, default=25)
+    g.add_argument(
+        "--prompts", action="store_true", help="print the instructions, input and answer in full"
+    )
+    g.add_argument("--json", action="store_true")
+    g.set_defaults(fn=cmd_sessions)
+
     args = p.parse_args(argv)
+    if args.log_level:
+        os.environ["WF_LOG_LEVEL"] = args.log_level
+    setup_logging(force=bool(args.log_level))
+    logger.debug("wf %s at level %s", args.cmd, log_level())
     return args.fn(args)
 
 
