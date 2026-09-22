@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from tests.helpers import make_db
 from tests.scripted import deep_research_script, schema_filling_script
 from tests.test_audit import DOC, extraction_for_process_doc, passage_map
+from wf import settings
 from wf.activities import ScriptedModel
 from wf.api.app import AppState, create_app
 
@@ -78,7 +79,9 @@ def wait_for(client: TestClient, run_id: str, timeout: float = 20.0) -> dict:
 
 
 def test_health_and_workflow_listing(client):
-    assert client.get("/healthz").json()["ok"] is True
+    health = client.get("/healthz").json()
+    assert health["ok"] is True
+    assert health["provider"] == settings.provider(), "which gateway this one asks"
     wfs = client.get("/api/workflows").json()
     names = {w["name"] for w in wfs}
     assert "deep-research" in names

@@ -119,6 +119,38 @@ short targets. Alternative: make the Makefile call `task`. Why: a checkout shoul
 runnable without installing another tool, and a shim that fails when `task` is
 missing is worse than a little duplication. Both files say to change the other.
 
+**OpenRouter is a second model activity, not a second client for the first one.**
+`wf.activities.openrouter.OpenRouterModel` speaks the gateway's chat-completions
+shape; `AnthropicModel` is untouched. Alternative: point the Anthropic SDK at
+OpenRouter's Anthropic-compatible endpoint, which is one line. Why: that endpoint is
+the vendor's API re-served, so the newest parts of it — the structured-output config
+this code relies on for the `{output, decisions}` envelope — are only as available as
+each provider behind it, and the whole point of the gateway here is to reach models
+that are not that vendor's. Two implementations of one small protocol is the honest
+shape: the system prompt, the envelope, the data regions, the tool loop and its call
+limits are shared code, and only the wire shape differs.
+
+**Which provider is a setting, and `default_model()` is the one place that reads it.**
+`WF_MODEL_PROVIDER` names it; failing that, an environment with only an OpenRouter key
+means OpenRouter. Alternative: infer it from the shape of the model name, since a
+gateway model is written `vendor/model`. Why: the same name can be valid in both
+places, and a provider inferred from a string is a provider nobody can override. The
+two model defaults follow the provider, so switching it without naming models still
+runs the same two models.
+
+**The gateway's reported cost wins over the local price table.** OpenRouter returns
+what each call cost, having chosen who served it; the table is the fallback when it
+does not. Alternative: price everything locally. Why: the table cannot know which
+provider or which tier answered, and a run's estimate is worth more than a tidy
+single source.
+
+**Schema enforcement through the gateway is off by default (`WF_OPENROUTER_STRICT`).**
+The schema is always sent; asking for it to be enforced is opt-in. Alternative: strict
+always. Why: strictness is a property of whichever provider serves the call, several
+of them reject schemas that use `minItems` or `maximum` — both of which this code's
+envelope and step schemas use — and a request refused for that reason fails the run,
+while a loose schema plus the answer check we already do merely risks a retry.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:
