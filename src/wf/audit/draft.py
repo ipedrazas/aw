@@ -9,11 +9,11 @@ from pydantic import BaseModel, Field
 
 from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
 from wf.schema import Workflow, Workspace, load_workflow_dict
+from wf.settings import model_for
 from wf.validate import Finding, Option
 
 from .ingest import Passage
 
-DEFAULT_MODEL = {"quick": "claude-sonnet-5", "careful": "claude-opus-5", None: "claude-sonnet-5"}
 JSON_TYPES = {
     "string": "string",
     "integer": "integer",
@@ -182,7 +182,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
 
         if kind == "agent":
             judgement = s.get("judgement")
-            step["model"] = DEFAULT_MODEL.get(judgement, "claude-sonnet-5")
+            step["model"] = model_for(judgement)
             if judgement is None:
                 assume(
                     f"steps.{sid}.model",

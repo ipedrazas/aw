@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from wf.schema import FindingType
+from wf.settings import careful_model, quick_model
 
 AnswerKind = Literal["choice", "multi", "text", "bool", "number", "list"]
 
@@ -173,18 +174,22 @@ TRUST_OPTIONS = [
     ),
 ]
 
-MODEL_OPTIONS = [
-    Option(
-        value="claude-sonnet-5",
-        label="Quick judgement",
-        consequence="Faster and cheaper. Good for planning and research.",
-    ),
-    Option(
-        value="claude-opus-5",
-        label="Careful judgement",
-        consequence="Slower and costs more. Good for writing and review.",
-    ),
-]
+
+def model_options() -> list[Option]:
+    """The two levels of judgement, named by whatever the deployment configured."""
+    return [
+        Option(
+            value=quick_model(),
+            label="Quick judgement",
+            consequence="Faster and cheaper. Good for planning and research.",
+        ),
+        Option(
+            value=careful_model(),
+            label="Careful judgement",
+            consequence="Slower and costs more. Good for writing and review.",
+        ),
+    ]
+
 
 SHOWS_USER_OPTIONS = [
     Option(value=["output"], label="Its result"),
@@ -212,7 +217,7 @@ def default_options(field: str) -> tuple[AnswerKind, list[Option]]:
     if key == "trust":
         return "choice", TRUST_OPTIONS
     if key == "model":
-        return "choice", MODEL_OPTIONS
+        return "choice", model_options()
     if key == "shows_user":
         return "choice", SHOWS_USER_OPTIONS
     if key == "on_timeout":

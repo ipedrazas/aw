@@ -53,11 +53,17 @@ ANTHROPIC_API_KEY=... docker compose up --build      # app on :8000, Postgres be
 | `WF_DATABASE_URL` | `sqlite:///var/wf.db` | SQLAlchemy URL; Compose sets Postgres |
 | `WF_ARTIFACTS_DIR` | `var/artifacts` | Where rendered PDFs go |
 | `WF_FAKE_MODEL` | | Set to use the offline model |
-| `WF_EXTRACTION_MODEL` | `claude-opus-5` | Model that turns a document into a draft |
-| `WF_CHAT_MODEL` | `claude-sonnet-5` | Model behind the chat that edits the draft |
+| `WF_QUICK_MODEL` | `claude-sonnet-5` | The model behind "quick judgement" in a step |
+| `WF_CAREFUL_MODEL` | `claude-opus-5` | The model behind "careful judgement" in a step |
+| `WF_EXTRACTION_MODEL` | the careful model | Turns a document into a draft |
+| `WF_CHAT_MODEL` | the quick model | Answers in the chat that edits the draft |
+| `WF_GUESS_MODEL` | the quick model | Fills a gap the document left |
 | `WF_MODEL_PRICING` | built in | JSON of `{model: [input, output]}` in dollars per million tokens |
 
 Model names in step definitions are configuration in the YAML, not literals in code.
+The code names a model in one place, `src/wf/settings.py`, and everything else asks
+for a level of judgement instead. A model configured without a row in
+`WF_MODEL_PRICING` is costed as the careful one.
 
 ## What stays true
 

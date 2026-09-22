@@ -9,31 +9,17 @@ same recorded step outputs.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from typing import Any
+
+from wf.settings import DEFAULT_CAREFUL, DEFAULT_PRICING, pricing
 
 from .base import ActivityError, ModelRequest, ModelResponse, ToolCallRecord, Usage
 from .safety import DATA_RULE, data_region, find_instructions
 
-# $ per million tokens, (input, output). Configuration, not literals in step code.
-DEFAULT_PRICING: dict[str, tuple[float, float]] = {
-    "claude-opus-5": (5.0, 25.0),
-    "claude-sonnet-5": (2.0, 10.0),
-    "claude-haiku-4-5": (1.0, 5.0),
-}
-
-
-def pricing() -> dict[str, tuple[float, float]]:
-    raw = os.environ.get("WF_MODEL_PRICING")
-    if not raw:
-        return DEFAULT_PRICING
-    data = json.loads(raw)
-    return {k: (float(v[0]), float(v[1])) for k, v in data.items()}
-
 
 def cost_of(model: str, input_tokens: int, output_tokens: int) -> float:
-    inp, out = pricing().get(model, (5.0, 25.0))
+    inp, out = pricing().get(model, DEFAULT_PRICING[DEFAULT_CAREFUL])
     return round((input_tokens * inp + output_tokens * out) / 1_000_000, 6)
 
 

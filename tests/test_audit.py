@@ -5,7 +5,7 @@ from pathlib import Path
 from tests.scripted import extraction_for_process_doc
 from wf.activities import ModelResponse, ScriptedModel
 from wf.audit import Auditor, ingest
-from wf.validate import validate
+from wf.validate import make_finding, validate
 
 DOC = (
     Path(__file__).resolve().parents[1] / "workspace" / "process-docs" / "deep-research-process.md"
@@ -192,3 +192,18 @@ def test_document_diff_shows_stated_assumed_and_open(ws):
     assert diff["counts"]["stated"] > 0 and diff["counts"]["open"] > 0
     produced = {p["id"]: p["produced"] for p in diff["passages"]}
     assert any(produced.values()), "passages point at what they produced"
+
+
+def test_the_two_levels_of_judgement_are_configurable(ws, monkeypatch):
+    monkeypatch.setenv("WF_QUICK_MODEL", "claude-haiku-4-5")
+    monkeypatch.setenv("WF_CAREFUL_MODEL", "claude-sonnet-5")
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    models = {s.id: s.model for s in result.workflow().spec.steps if s.model}
+    assert set(models.values()) == {"claude-haiku-4-5", "claude-sonnet-5"}
+    assert models["review"] == "claude-sonnet-5", "a careful step takes the careful model"
+
+    offered = make_finding("gap", "steps.review.model").options
+    assert [o.value for o in offered] == ["claude-haiku-4-5", "claude-sonnet-5"], (
+        "the answers offered are the models the deployment configured"
+    )

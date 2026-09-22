@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from wf import settings
 from wf.activities import ActivityPolicy, AnthropicModel, ModelActivity, run_with_policy
 from wf.schema import Workflow, Workspace, dump_workflow, load_workflow_dict
 from wf.validate import Finding, validate
@@ -72,23 +73,17 @@ class Auditor:
         self,
         ws: Workspace,
         model: ModelActivity,
-        extraction_model: str = "claude-opus-5",
+        extraction_model: str | None = None,
         policy: ActivityPolicy | None = None,
     ):
         self.ws = ws
         self.model = model
-        self.extraction_model = extraction_model
+        self.extraction_model = extraction_model or settings.extraction_model()
         self.policy = policy or ActivityPolicy(retries=1, timeout_s=300)
 
     @classmethod
     def from_env(cls, ws: Workspace, model: ModelActivity | None = None) -> Auditor:
-        import os
-
-        return cls(
-            ws,
-            model or AnthropicModel(),
-            extraction_model=os.environ.get("WF_EXTRACTION_MODEL", "claude-opus-5"),
-        )
+        return cls(ws, model or AnthropicModel())
 
     # -- the audit path ------------------------------------------------------
 

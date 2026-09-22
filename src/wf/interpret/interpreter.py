@@ -21,6 +21,7 @@ from wf.activities import Activities, ActivityError, ModelRequest, ToolSpec, run
 from wf.expr import EvalError, ExprError, render
 from wf.expr.template import _TEMPLATE
 from wf.schema import Mode, Step, Workflow, Workspace
+from wf.settings import quick_model
 from wf.store import repo
 from wf.store.ledger import Ledger
 from wf.store.records import Run, StepRun
@@ -392,7 +393,7 @@ class Interpreter:
         model = step.model
         if model is None:
             f = self._finding(ctx, step, "model")
-            model = str(self._guess(ctx, step, f, sr=sr).value) if f else "claude-sonnet-5"
+            model = str(self._guess(ctx, step, f, sr=sr).value) if f else quick_model()
         schema = (
             self.ws.load_schema(step.output.schema_)
             if step.output and step.output.schema_
