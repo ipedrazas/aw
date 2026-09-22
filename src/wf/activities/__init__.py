@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 
+from wf.logs import ROOT, get_logger
 from wf.schema import Workspace
-from wf.settings import ANTHROPIC, OPENROUTER, PROVIDERS, provider
+from wf.settings import ANTHROPIC, OPENROUTER, PROVIDERS, provider, provider_named_by
 
 from .base import (
     Activities,
@@ -41,6 +42,8 @@ from .search import FixtureSearch, NoSearch
 from .send import RecordingSend
 from .session import SessionRecorder, record_sessions
 
+logger = get_logger(f"{ROOT}.activities")
+
 
 def default_model() -> ModelActivity:
     """The model the environment asks for.
@@ -54,8 +57,24 @@ def default_model() -> ModelActivity:
     if os.environ.get("WF_FAKE_MODEL"):
         from .fake import FakeModel
 
+        logger.debug(
+            "the offline model will answer every call (WF_FAKE_MODEL is set)",
+            extra={"fields": {"event": "model.activity", "provider": "offline"}},
+        )
         return FakeModel()
     name = provider()
+    logger.debug(
+        "model calls go to %s, named by %s",
+        name,
+        provider_named_by(),
+        extra={
+            "fields": {
+                "event": "model.activity",
+                "provider": name,
+                "named_by": provider_named_by(),
+            }
+        },
+    )
     if name == OPENROUTER:
         return OpenRouterModel()
     if name == ANTHROPIC:

@@ -27,6 +27,7 @@ from wf.interpret import OpenFindings, RunConfig
 from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow
 from wf.settings import chat_model, provider
+from wf.startup import announce
 from wf.store import Artifact, Database
 from wf.store import repo as gitrepo
 from wf.store.sessions import SessionLog, session_log_mode
@@ -70,6 +71,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
         state = AppState(
             ws, Database(), model, Path(os.environ.get("WF_ARTIFACTS_DIR", "var/artifacts"))
         )
+    # Before a single request: which models this process will ask for, and through whom.
+    announce(state.ws, offline=state.offline)
 
     app = FastAPI(title="Agentic workflows", version="0.1.0")
     app.state.wf = state

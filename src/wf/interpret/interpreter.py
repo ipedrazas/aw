@@ -20,6 +20,7 @@ import jsonschema
 from wf.activities import Activities, ActivityError, ModelRequest, ToolSpec, run_with_policy
 from wf.expr import EvalError, ExprError, render
 from wf.expr.template import _TEMPLATE
+from wf.logs import ROOT, get_logger
 from wf.schema import Mode, Step, Workflow, Workspace
 from wf.settings import quick_model
 from wf.store import repo
@@ -30,6 +31,8 @@ from wf.validate import Finding, validate
 
 from .context import BudgetTracker, OpenFindings, TraceEvent
 from .registry import ARTIFACT_TOOLS, CHECKS, TOOLS, RunnerContext
+
+logger = get_logger(f"{ROOT}.interpret")
 
 SEARCH_TOOL = ToolSpec(
     name="search",
@@ -432,9 +435,28 @@ class Interpreter:
         else:
             system = skill.body
         model = step.model
+        origin = "the step names it"
         if model is None:
             f = self._finding(ctx, step, "model")
             model = str(self._guess(ctx, step, f, sr=sr).value) if f else quick_model()
+            origin = "guessed, the step names none" if f else "the quick default"
+        logger.debug(
+            "%s runs on %s (%s)",
+            step.id,
+            model,
+            origin,
+            extra={
+                "fields": {
+                    "event": "step.model",
+                    "run": ctx.result.run_id,
+                    "workflow": ctx.wf.metadata.name,
+                    "step": step.id,
+                    "kind": step.kind,
+                    "model": model,
+                    "origin": origin,
+                }
+            },
+        )
         schema = (
             self.ws.load_schema(step.output.schema_)
             if step.output and step.output.schema_

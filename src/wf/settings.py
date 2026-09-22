@@ -14,13 +14,16 @@ environment names — so pointing the whole system at a different model is two
 variables, not a code change.
 
 Every value is read on each call, not at import, so a process started before its
-environment was set still sees it.
+environment was set still sees it. ``model_plan`` is the whole of it in one dict:
+what each task will be asked of and through whom, which is what the log prints when
+the app loads.
 """
 
 from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 DEFAULT_QUICK = "claude-sonnet-5"
 DEFAULT_CAREFUL = "claude-opus-5"
@@ -133,3 +136,88 @@ def openrouter_strict_schemas() -> bool:
         "yes",
         "on",
     }
+
+
+# -- the whole picture ---------------------------------------------------------
+
+#: The tasks that name a model, in the order they are announced: the key, what the
+#: task is in plain words, and the variable that names it outright.
+TASKS: tuple[tuple[str, str, str], ...] = (
+    ("quick", "a step that wants quick judgement", "WF_QUICK_MODEL"),
+    ("careful", "a step that wants careful judgement", "WF_CAREFUL_MODEL"),
+    ("extraction", "reading a process document into a draft", "WF_EXTRACTION_MODEL"),
+    ("chat", "the chat that edits a draft", "WF_CHAT_MODEL"),
+    ("guess", "filling a gap the document left", "WF_GUESS_MODEL"),
+)
+
+
+def model_for_task(task: str) -> str:
+    """The model one of the ``TASKS`` will be asked of."""
+    answer = {
+        "quick": quick_model,
+        "careful": careful_model,
+        "extraction": extraction_model,
+        "chat": chat_model,
+        "guess": guess_model,
+    }[task]
+    return answer()
+
+
+def offline() -> bool:
+    """Whether the offline model answers everything, so no name above is asked at all."""
+    return bool(os.environ.get("WF_FAKE_MODEL"))
+
+
+def provider_named_by() -> str:
+    """Which variable decided the provider, for when the answer is a surprise."""
+    if (os.environ.get("WF_MODEL_PROVIDER") or "").strip():
+        return "WF_MODEL_PROVIDER"
+    if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+        return "OPENROUTER_API_KEY"
+    return "default"
+
+
+def api_key_variable() -> str:
+    """The variable the chosen provider authenticates with."""
+    return "OPENROUTER_API_KEY" if provider() == OPENROUTER else "ANTHROPIC_API_KEY"
+
+
+def model_plan() -> dict[str, Any]:
+    """Every model this process will ask for, through whom, and at what price.
+
+    The values, not the variables. This is what the log prints when the app loads, so
+    that a gateway nobody meant to use, or a careful model that is quietly the quick
+    one, is visible before the first call rather than after the bill. No key is in
+    here — only whether one is set.
+    """
+    where = provider()
+    prices = pricing()
+    fallback = prices.get(DEFAULT_CAREFUL) or DEFAULT_PRICING[DEFAULT_CAREFUL]
+    plan: dict[str, Any] = {
+        "provider": where,
+        "provider_named_by": provider_named_by(),
+        "api_key_variable": api_key_variable(),
+        "api_key_set": bool(os.environ.get(api_key_variable())),
+        "offline": offline(),
+        "pricing_from": "WF_MODEL_PRICING" if os.environ.get("WF_MODEL_PRICING") else "default",
+        "tasks": [],
+    }
+    if where == OPENROUTER:
+        plan["base_url"] = openrouter_base_url()
+        plan["strict_schemas"] = openrouter_strict_schemas()
+    for task, what, variable in TASKS:
+        name = model_for_task(task)
+        price = prices.get(name)
+        plan["tasks"].append(
+            {
+                "task": task,
+                "what": what,
+                "model": name,
+                "named_by": variable if os.environ.get(variable) else "default",
+                # $ per million tokens, in and out. A model with no price of its own is
+                # costed as the careful one, which is what ``cost_of`` does.
+                "price_per_mtok": list(price or fallback),
+                "priced": price is not None,
+            }
+        )
+    return plan
