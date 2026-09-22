@@ -56,7 +56,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         return by_id[pid].text if pid and pid in by_id else None
 
     def assume(
-        field: str, step: dict[str, Any] | None, what: str, why: str, unblocks: int = 0
+        field: str, step: dict[str, Any] | None, what: str, why: str, *, unblocks: int = 0
     ) -> None:
         assumptions.append(
             Finding(
@@ -89,7 +89,6 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         assume(
             "spec.inputs.topic",
             None,
-            "topic",
             "the process starts from a topic",
             "The document does not say what the process starts from.",
         )
