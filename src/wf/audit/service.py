@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import ValidationError
 
 from wf import settings
 from wf.activities import (
@@ -22,7 +25,7 @@ from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
 from .ingest import Passage, ingest
-from .question import Change, apply_answer, group_questions
+from .question import AnswerRejected, Change, apply_answer, group_questions, why_rejected
 
 
 @dataclass
@@ -182,14 +185,23 @@ class Auditor:
 
     def answer(self, result: AuditResult, finding_id: str, answer: Any) -> list[Change]:
         finding = next(f for f in result.findings if f.id == finding_id)
-        new_def, changes = apply_answer(result.definition, finding, answer, self.ws)
+        was = (finding.status, finding.answer)
+        try:
+            new_def, changes = apply_answer(result.definition, finding, answer, self.ws)
+            wf = load_workflow_dict(new_def)
+        except AnswerRejected:
+            raise
+        except (ValidationError, TypeError, ValueError, KeyError, IndexError, StopIteration) as e:
+            # the answer does not fit the field: the draft and the question stay as they were
+            finding.status, finding.answer = was
+            raise AnswerRejected(why_rejected(finding, answer)) from e
         result.definition = new_def
         result.changes.extend(changes)
-        self.revalidate(result)
+        self.revalidate(result, wf)
         return changes
 
-    def revalidate(self, result: AuditResult) -> None:
-        wf = result.workflow()
+    def revalidate(self, result: AuditResult, wf: Workflow | None = None) -> None:
+        wf = wf if wf is not None else result.workflow()
         self.ws.save_definition(wf)
         answered = {f.id: f for f in result.findings if f.status != "open"}
         from .question import _get
@@ -218,8 +230,16 @@ class Auditor:
         from .question import _get, _set
 
         before = _get(result.definition, path)
-        _set(result.definition, path, value)
+        new_def = copy.deepcopy(result.definition)
+        _set(new_def, path, value)
+        try:
+            wf = load_workflow_dict(new_def)
+        except ValidationError as e:
+            raise AnswerRejected(
+                f"“{value}” cannot go into {path}, so the draft is unchanged."
+            ) from e
+        result.definition = new_def
         ch = Change(path=path, before=before, after=value, reason=reason)
         result.changes.append(ch)
-        self.revalidate(result)
+        self.revalidate(result, wf)
         return ch

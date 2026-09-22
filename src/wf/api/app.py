@@ -20,7 +20,7 @@ from wf.activities import (
     record_sessions,
 )
 from wf.activities.fake import FakeModel
-from wf.audit import Auditor, AuditResult, Change, group_questions
+from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
@@ -230,19 +230,25 @@ def create_app(state: AppState | None = None) -> FastAPI:
         fid = body.get("finding_id")
         if not any(f.id == fid for f in result.findings):
             raise HTTPException(404, "That question is not on this draft any more.")
-        changes = st().auditor.answer(result, fid, body.get("answer"))
+        try:
+            changes = st().auditor.answer(result, fid, body.get("answer"))
+        except AnswerRejected as e:
+            raise HTTPException(400, str(e)) from e
         st().audits.save(audit_id, result, changes, by="answer")
         return _audit_view(st(), audit_id)
 
     @app.post("/api/audits/{audit_id}/edit")
     def edit(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         result, _rec = _audit(st(), audit_id)
-        ch = st().auditor.set_field(
-            result,
-            str(body["path"]),
-            body.get("value"),
-            str(body.get("reason") or "You changed this."),
-        )
+        try:
+            ch = st().auditor.set_field(
+                result,
+                str(body["path"]),
+                body.get("value"),
+                str(body.get("reason") or "You changed this."),
+            )
+        except AnswerRejected as e:
+            raise HTTPException(400, str(e)) from e
         st().audits.save(audit_id, result, [ch], by="user")
         return _audit_view(st(), audit_id)
 
@@ -284,6 +290,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e
         applied: list[Change] = []
+        refused: list[str] = []
         for e in outcome.edits:
             if not e.get("path"):
                 continue
@@ -312,13 +319,18 @@ def create_app(state: AppState | None = None) -> FastAPI:
             elif a.get("text"):
                 value = a["text"]
             if value is not None:
-                applied.extend(st().auditor.answer(result, f.id, value))
+                try:
+                    applied.extend(st().auditor.answer(result, f.id, value))
+                except AnswerRejected as e:
+                    # the question stays open and the person is told why
+                    refused.append(str(e))
+        reply = "\n\n".join([outcome.reply, *refused]) if refused else outcome.reply
         new_chat = [
             *(rec.chat or []),
             {"role": "user", "text": message},
             {
                 "role": "assistant",
-                "text": outcome.reply,
+                "text": reply,
                 "changes": [c.model_dump() for c in applied],
                 "point_to_finding": outcome.point_to_finding,
             },

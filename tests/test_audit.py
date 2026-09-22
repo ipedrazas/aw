@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.scripted import extraction_for_process_doc
 from wf.activities import ModelResponse, ScriptedModel
-from wf.audit import Auditor, ingest
+from wf.audit import AnswerRejected, Auditor, ingest
 from wf.validate import make_finding, validate
 
 DOC = (
@@ -207,3 +209,31 @@ def test_the_two_levels_of_judgement_are_configurable(ws, monkeypatch):
     assert [o.value for o in offered] == ["claude-haiku-4-5", "claude-sonnet-5"], (
         "the answers offered are the models the deployment configured"
     )
+
+
+def test_an_answer_that_does_not_fit_the_field_leaves_the_draft_alone(ws):
+    """Free text from the chat cannot put prose where only four words are allowed."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    result.definition["spec"]["steps"].append(
+        {
+            "id": "hold",
+            "kind": "wait",
+            "title": "Wait for the requester",
+            "deadline": "1d",
+            "shows_user": ["output"],
+        }
+    )
+    auditor.revalidate(result)
+    f = next(f for f in result.open_findings() if f.field == "steps.hold.on_timeout")
+
+    with pytest.raises(AnswerRejected) as e:
+        auditor.answer(result, f.id, "Ask the requester to approve another round on the new topic.")
+    assert "Remind and keep waiting" in str(e.value)
+    assert result.workflow().step("hold").on_timeout is None
+    assert f.status == "open"
+    assert not any(c.path == "steps.hold.on_timeout" for c in result.changes)
+
+    # the words of one of the choices are taken as that choice
+    auditor.answer(result, f.id, "Stop the run")
+    assert result.workflow().step("hold").on_timeout == "stop"

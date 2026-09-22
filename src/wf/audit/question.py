@@ -14,6 +14,11 @@ from pydantic import BaseModel
 from wf.schema import Workspace
 from wf.validate import Finding
 
+
+class AnswerRejected(ValueError):
+    """An answer that cannot go into the draft, with a plain reason for the person."""
+
+
 GROUP_ORDER = ["conflict", "gap", "unreachable", "assumption"]
 GROUP_TITLES = {
     "conflict": "Things that cannot work as written",
@@ -91,6 +96,7 @@ def apply_answer(
     defn: dict[str, Any], finding: Finding, answer: Any, ws: Workspace | None = None
 ) -> tuple[dict[str, Any], list[Change]]:
     """Write an answer into a copy of the definition. Returns the new definition and the changes made."""
+    answer = coerce_answer(finding, answer)
     d = copy.deepcopy(defn)
     field = finding.field
     key = field.rsplit(".", 1)[-1]
@@ -291,6 +297,36 @@ def apply_answer(
     finding.status = "answered"
     finding.answer = answer
     return d, changes
+
+
+def coerce_answer(finding: Finding, answer: Any) -> Any:
+    """Match a written answer to one of a closed question's choices, when it is one of them."""
+    if finding.answer_kind != "choice" or not finding.options or not isinstance(answer, str):
+        return answer
+    said = answer.strip().casefold()
+    for o in finding.options:
+        if said in (str(o.value).casefold(), o.label.casefold()):
+            return o.value
+    return answer
+
+
+def why_rejected(finding: Finding, answer: Any) -> str:
+    """Why an answer could not go into the draft, in the person's words."""
+    from .diff import FIELD_LABELS
+
+    key = finding.field.rsplit(".", 1)[-1]
+    label = FIELD_LABELS.get(key, key.replace("_", " "))
+    said = str(answer)
+    if len(said) > 80:
+        said = said[:77] + "…"
+    if not finding.options:
+        return f"“{said}” does not fit {label}, so the draft is unchanged."
+    labels = [o.label for o in finding.options]
+    choices = f"{', '.join(labels[:-1])} or {labels[-1]}" if len(labels) > 1 else labels[0]
+    return (
+        f"“{said}” is not one of the choices for {label}, so the draft is unchanged. "
+        f"It can be {choices}."
+    )
 
 
 def _as_list(answer: Any) -> list[Any]:
