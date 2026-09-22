@@ -57,6 +57,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
 (function () {
   const f = document.querySelector("form[data-new-audit]"); if (!f) return;
   const ta = f.querySelector("textarea[name=document]"), msg = f.querySelector("[data-msg]");
+  const submit = f.querySelector("button[type=submit]"), spinner = f.querySelector("[data-spinner]");
   f.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
     const src = document.getElementById(b.dataset.sample); if (src) ta.value = src.textContent;
     const nm = f.querySelector("[name=name]"); if (nm && !nm.value) nm.value = "deep-research-process";
@@ -64,9 +65,14 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   f.addEventListener("submit", async e => {
     e.preventDefault();
     say(msg, "Reading your process and drafting the steps. This can take a minute…");
-    f.querySelector("button[type=submit]").disabled = true;
+    submit.disabled = true;
+    if (spinner) spinner.classList.remove("hidden");
     try { const d = await postJSON("/api/audits", {document: ta.value, name: (f.querySelector("[name=name]") || {}).value || null}); location.href = "/audits/" + d.id; }
-    catch (err) { say(msg, err.message, true); f.querySelector("button[type=submit]").disabled = false; }
+    catch (err) {
+      say(msg, err.message, true);
+      submit.disabled = false;
+      if (spinner) spinner.classList.add("hidden");
+    }
   });
 })();
 
