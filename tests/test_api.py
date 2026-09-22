@@ -209,6 +209,39 @@ def test_audit_answer_chat_undo_and_dry_run(client):
     assert "client-research" in {w["name"] for w in client.get("/api/workflows").json()}
 
 
+def test_a_finished_run_is_read_once_so_its_status_and_its_guesses_agree(client, monkeypatch):
+    """The poll read the report and the status in two reads of the database. A guess
+    recorded between them was missing from a run the same response called done."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    d = client.post(f"/api/audits/{audit['id']}/dry-run", json={"topic": "Durable execution"})
+    run_id = d.json()["run_id"]
+    expected = [g["field"] for g in wait_for(client, run_id)["report"]["guesses"]]
+    assert "steps.send.requires_approval" in expected, "the last step had to guess"
+
+    runner = client.app.state.wf.runner
+    real = runner.snapshot
+    seen: list[str] = []
+
+    def mid_run_then_finished(rid: str) -> dict:
+        """The first read lands while the last step is still going."""
+        snap = real(rid)
+        if not seen:
+            seen.append(rid)
+            return {
+                **snap,
+                "status": "running",
+                "steps": [{**s, "decisions": []} for s in snap["steps"]],
+            }
+        return snap
+
+    monkeypatch.setattr(runner, "snapshot", mid_run_then_finished)
+    data = client.get(f"/api/runs/{run_id}").json()
+    assert data["status"] == "running", "the status came from the read that was taken"
+    assert [g["field"] for g in data["report"]["guesses"]] == []
+
+
 def test_typed_answer_is_accepted_on_a_question_with_fixed_options(client):
     """When none of the offered choices is the real answer, free text still gets stored."""
     audit = client.post(
