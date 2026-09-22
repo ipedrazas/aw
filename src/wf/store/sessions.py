@@ -21,10 +21,17 @@ Configuration:
 
 | `WF_SESSION_LOG`       | `full` (default), `meta`, `off`                       |
 | `WF_SESSION_MAX_CHARS` | how much of one body is kept; `0` keeps all (40000)   |
+| `SESSION_ROOT`         | where each session is also written as its own file    |
+|                        | (`/app/var/sessions` by default)                      |
 
 ``meta`` writes the row without the prompt bodies, for when the prompts are too large
 or too sensitive to keep. ``off`` writes nothing; the log lines still happen, since
 what is printed and what is stored are two different questions.
+
+Sessions live in the database, but each one is also mirrored to
+``<SESSION_ROOT>/<session id>.log`` as it is written to. That file is what
+``list_from_disk`` and ``get_from_disk`` read, so a session survives a restart even
+for a checkout pointed at an in-memory or throwaway database.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -44,6 +52,7 @@ from .records import AgentSession, ModelCall, now
 
 FULL, META, OFF = "full", "meta", "off"
 DEFAULT_MAX_CHARS = 40_000
+DEFAULT_SESSION_ROOT = "/app/var/sessions"
 
 
 def session_log_mode() -> str:
@@ -64,6 +73,20 @@ def max_chars() -> int:
         return max(0, int(raw))
     except ValueError:
         return DEFAULT_MAX_CHARS
+
+
+def session_root() -> Path:
+    """Where each session is mirrored to its own file. ``SESSION_ROOT`` overrides the
+    default, which matches the container's ``var/`` directory. Read on each call, like
+    the other configuration here, and created if it does not exist yet."""
+    raw = (os.environ.get("SESSION_ROOT") or DEFAULT_SESSION_ROOT).strip()
+    root = Path(raw).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def session_file(session_id: str) -> Path:
+    return session_root() / f"{session_id}.log"
 
 
 # -- the span ------------------------------------------------------------------
@@ -295,7 +318,9 @@ class SessionLog:
                 sess.output_tokens = span.output_tokens
                 sess.cost_usd = span.cost_usd
             s.flush()
-            return call.id
+            call_id = call.id
+        self._write_to_disk(span.id)
+        return call_id
 
     def close(self, span: SessionSpan, *, status: str, error: str | None) -> None:
         if span.id is None:
@@ -307,6 +332,20 @@ class SessionLog:
             sess.status = status
             sess.error = error
             sess.finished_at = now()
+        self._write_to_disk(span.id)
+
+    def _write_to_disk(self, session_id: str | None) -> None:
+        """Mirror the session, as it stands, to its own file — so it can be read back
+        without the database, and survives the process that wrote it exiting."""
+        if session_id is None:
+            return
+        try:
+            record = self.get(session_id)
+            session_file(session_id).write_text(
+                json.dumps(record, default=str, ensure_ascii=False), encoding="utf-8"
+            )
+        except (KeyError, OSError):
+            pass
 
     def link_audit(self, session_id: str | None, audit_id: str) -> None:
         """An audit row is written after the session that drafted it; join them up."""
@@ -350,6 +389,29 @@ class SessionLog:
                 **_session_view(sess),
                 "calls_detail": [_call_view(c, bodies=bodies) for c in calls],
             }
+
+    # -- reading, from the mirrored files ---------------------------------------
+
+    def list_from_disk(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Sessions as they were last written to ``SESSION_ROOT``, newest first. Reads
+        only the files, so it works without a database — after a restart, or from a
+        process that never had one."""
+        files = sorted(session_root().glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        out = []
+        for f in files[:limit]:
+            try:
+                record = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            out.append({k: v for k, v in record.items() if k != "calls_detail"})
+        return out
+
+    def get_from_disk(self, session_id: str) -> dict[str, Any]:
+        """One session, read back from its file rather than the database."""
+        f = session_file(session_id)
+        if not f.exists():
+            raise KeyError(session_id)
+        return json.loads(f.read_text(encoding="utf-8"))
 
 
 def _session_view(r: AgentSession) -> dict[str, Any]:

@@ -5,6 +5,7 @@ wrong."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ from wf.audit import Auditor
 from wf.audit.chat import chat
 from wf.dryrun import DryRunner
 from wf.interpret import RunConfig
-from wf.store.sessions import SessionLog
+from wf.store.sessions import SessionLog, session_file, session_root
 
 TOPIC = {"topic": "Durable execution platforms for AI agents: who leads and why"}
 
@@ -195,6 +196,59 @@ def test_wrapping_twice_is_a_no_op(monkeypatch):
     once = record_sessions(ScriptedModel(lambda req: ModelResponse(output={})), db)
     assert isinstance(once, SessionRecorder)
     assert record_sessions(once, db) is once
+
+
+def test_session_root_defaults_to_the_container_path(monkeypatch):
+    monkeypatch.delenv("SESSION_ROOT", raising=False)
+    monkeypatch.setattr(Path, "mkdir", lambda self, *a, **k: None)
+    assert session_root() == Path("/app/var/sessions")
+
+
+def test_session_root_is_read_from_the_environment_and_created(tmp_path, monkeypatch):
+    root = tmp_path / "nested" / "sessions"
+    assert not root.exists()
+    monkeypatch.setenv("SESSION_ROOT", str(root))
+    assert session_root() == root
+    assert root.is_dir(), "the root is created the first time it is asked for"
+
+
+def test_a_session_is_mirrored_to_its_own_file(sample_ws, tmp_path, monkeypatch):
+    monkeypatch.delenv("WF_SESSION_LOG", raising=False)
+    r, sessions = runner(sample_ws, tmp_path, deep_research_script("accept"))
+    result = r.run("deep-research", TOPIC)
+    session = sessions.list(run_id=result.run_id)[0]
+
+    path = session_file(session["id"])
+    assert path.parent == session_root()
+    assert path.name == f"{session['id']}.log"
+    on_disk = json.loads(path.read_text())
+    assert on_disk["id"] == session["id"]
+    assert on_disk["status"] == "done"
+    assert len(on_disk["calls_detail"]) == session["calls"]
+
+
+def test_a_session_survives_the_database_that_wrote_it(sample_ws, tmp_path, monkeypatch):
+    """The database a run used is gone; SESSION_ROOT is not — a stand-in for a restart."""
+    monkeypatch.delenv("WF_SESSION_LOG", raising=False)
+    r, sessions = runner(sample_ws, tmp_path, deep_research_script("accept"))
+    result = r.run("deep-research", TOPIC)
+    session_id = sessions.list(run_id=result.run_id)[0]["id"]
+
+    after_restart = SessionLog(make_db())
+    with pytest.raises(KeyError):
+        after_restart.get(session_id)  # a fresh database has never heard of it
+
+    listed = after_restart.list_from_disk()
+    assert session_id in {s["id"] for s in listed}
+    loaded = after_restart.get_from_disk(session_id)
+    assert loaded["id"] == session_id
+    assert loaded["calls_detail"], "the calls it made are on disk too"
+
+
+def test_loading_a_missing_session_from_disk_is_a_key_error(monkeypatch):
+    sessions = SessionLog(make_db())
+    with pytest.raises(KeyError):
+        sessions.get_from_disk("does-not-exist")
 
 
 def test_the_api_serves_the_sessions_of_a_run(client):  # noqa: F811  (the fixture)
