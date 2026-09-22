@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from wf.schema import Workspace
-from wf.validate import Finding
+from wf.validate import KNOWN_RUNNERS, Finding
 
 
 class AnswerRejected(ValueError):
@@ -256,7 +256,13 @@ def apply_answer(
             answer if isinstance(answer, dict) else {"policy": str(answer)},
             "When this step waits for you.",
         )
-    elif key in ("deadline", "on_timeout", "model", "skill", "run", "title", "workflow"):
+    elif key == "run":
+        # the routines are a closed set: a name the system does not have would only
+        # come straight back as a conflict, so it is refused here with the reason.
+        if answer not in KNOWN_RUNNERS:
+            raise AnswerRejected(why_rejected(finding, answer))
+        change(field, answer, "Your answer.")
+    elif key in ("deadline", "on_timeout", "model", "skill", "title", "workflow"):
         change(field, answer, "Your answer.")
     elif key == "shows_user":
         change(field, _as_list(answer), "What you see when this step finishes.")

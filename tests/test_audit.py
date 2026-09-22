@@ -237,3 +237,34 @@ def test_an_answer_that_does_not_fit_the_field_leaves_the_draft_alone(ws):
     # the words of one of the choices are taken as that choice
     auditor.answer(result, f.id, "Stop the run")
     assert result.workflow().step("hold").on_timeout == "stop"
+
+
+def test_a_step_that_needs_a_routine_the_system_has_not_got_stays_open(ws):
+    """The routines are a closed set, so naming one that does not exist changes nothing."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    result.definition["spec"]["steps"].append(
+        {
+            "id": "price_check",
+            "kind": "check",
+            "title": "Check the vendor's pricing page",
+            "checks": ["the price is the one we quoted"],
+            "does_not_check": ["whether the quote was right"],
+            "shows_user": ["output"],
+            "trust": {"policy": "auto"},
+        }
+    )
+    auditor.revalidate(result)
+    f = next(f for f in result.open_findings() if f.field == "steps.price_check.run")
+    assert "Check the vendor's pricing page" in f.question
+
+    with pytest.raises(AnswerRejected) as e:
+        auditor.answer(result, f.id, "checks.vendor_pricing")
+    assert "Open every link and see which ones answer" in str(e.value)
+    assert result.workflow().step("price_check").run is None
+    assert f.status == "open"
+    assert not any(c.path == "steps.price_check.run" for c in result.changes)
+
+    # and the routine it does have goes in, named or described
+    auditor.answer(result, f.id, "Open every link and see which ones answer")
+    assert result.workflow().step("price_check").run == "checks.http_resolves"
