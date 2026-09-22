@@ -123,8 +123,9 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "Later steps read fields from this output, so its shape has to be declared.",
     ),
     "run": (
-        "What does this step actually run?",
-        "A check or a tool runs a named routine, not a model.",
+        "Which routine does “{step}” run?",
+        "A check or a tool does not use a model. It runs one of the routines below, and "
+        "those are the only ones the system has.",
     ),
     "workflow": (
         "Which workflow does this start?",
@@ -211,6 +212,38 @@ DEADLINE_OPTIONS = [
     Option(value="7d", label="A week"),
 ]
 
+# -- the routines a check or a tool may name ---------------------------------
+# Definitions cannot add code, so this is the whole set. Each one is described in the
+# words of someone reading the question, not in the words of the code that runs it.
+
+RUNNERS: dict[str, tuple[str, str, str]] = {
+    # name: (step kind, label, what it does and what you get back)
+    "checks.http_resolves": (
+        "check",
+        "Open every link and see which ones answer",
+        "Gives back each source with the code its server returned, and a count of how many opened. It does not read the page, so it cannot tell you the link still says what it said.",
+    ),
+    "tools.render_pdf": (
+        "tool",
+        "Turn the report into a PDF",
+        "Gives back the file and its page count. Nothing leaves the system.",
+    ),
+    "tools.send_email": (
+        "tool",
+        "Send an email",
+        "Gives back whether it was delivered. This one leaves the system, so it needs someone to approve it.",
+    ),
+}
+
+
+def runner_options(kind: str | None = None) -> list[Option]:
+    """The routines a step of this kind may name, as choices. All of them when kind is None."""
+    return [
+        Option(value=name, label=label, consequence=consequence)
+        for name, (rkind, label, consequence) in sorted(RUNNERS.items())
+        if kind is None or rkind == kind
+    ]
+
 
 def default_options(field: str) -> tuple[AnswerKind, list[Option]]:
     key = field.rsplit(".", 1)[-1]
@@ -224,6 +257,8 @@ def default_options(field: str) -> tuple[AnswerKind, list[Option]]:
         return "choice", ON_TIMEOUT_OPTIONS
     if key == "deadline":
         return "choice", DEADLINE_OPTIONS
+    if key == "run":
+        return "choice", runner_options()
     if key == "requires_approval":
         return "choice", [
             Option(

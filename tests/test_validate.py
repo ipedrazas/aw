@@ -155,3 +155,33 @@ def test_findings_are_ordered_by_what_they_unblock(ws):
     ordered = run(ws).ordered()
     assert ordered[0].field == "steps.plan.skill"
     assert ordered[-1].field == "steps.assemble.requires_approval"
+
+
+def test_a_check_with_no_routine_offers_the_routines_a_check_can_run(ws):
+    data = read_yaml(ws, DEF)
+    del step(data, "check_links")["run"]
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    f = next(f for f in result.findings if f.field == "steps.check_links.run")
+    assert f.type == "gap"
+    # the routines are a closed set, so the question is a choice, not an empty box
+    assert f.answer_kind == "choice"
+    assert [o.value for o in f.options] == ["checks.http_resolves"]
+    assert all(o.consequence for o in f.options)
+    assert "Check the links" in f.question  # the question names the step it is about
+
+
+def test_a_tool_with_no_routine_is_not_offered_a_checks_routine(ws):
+    data = read_yaml(ws, DEF)
+    del step(data, "assemble")["run"]
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    f = next(f for f in result.findings if f.field == "steps.assemble.run")
+    assert [o.value for o in f.options] == ["tools.render_pdf", "tools.send_email"]
+
+
+def test_the_routines_the_validator_offers_are_the_ones_the_interpreter_has():
+    from wf.interpret.registry import CHECKS, TOOLS
+    from wf.validate import KNOWN_RUNNERS
+
+    assert KNOWN_RUNNERS == set(CHECKS) | set(TOOLS)
