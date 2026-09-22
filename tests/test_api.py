@@ -193,6 +193,63 @@ def test_audit_answer_chat_undo_and_dry_run(client):
     assert "client-research" in {w["name"] for w in client.get("/api/workflows").json()}
 
 
+def test_a_draft_can_be_deleted_and_its_sessions_are_kept(client):
+    aid = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()["id"]
+    sessions = client.get(f"/api/sessions?audit={aid}").json()
+    assert sessions, "drafting asked a model something"
+    page = client.get(f"/audits/{aid}")
+    assert page.status_code == 200 and f'data-delete="/api/audits/{aid}"' in page.text
+
+    assert client.delete(f"/api/audits/{aid}").json()["deleted"] == aid
+    assert client.get(f"/api/audits/{aid}").status_code == 404
+    assert aid not in {a["id"] for a in client.get("/api/audits").json()}
+    assert client.delete(f"/api/audits/{aid}").status_code == 404
+    # what the model was asked is a record of what happened, and outlives the draft
+    assert [s["id"] for s in client.get(f"/api/sessions?audit={aid}").json()] == [
+        s["id"] for s in sessions
+    ]
+
+
+def test_a_workflow_can_be_deleted_and_its_runs_are_kept(client, ws):
+    r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
+    run = wait_for(client, r.json()["run_id"])
+
+    listing = client.get("/workflows")
+    assert 'data-delete="/api/workflows/deep-research"' in listing.text
+
+    body = client.delete("/api/workflows/deep-research").json()
+    assert body["deleted"] == "deep-research"
+    assert body["removed"] == ["definitions/deep-research.workflow.yaml"]
+    assert body["runs_kept"] == 1
+    assert not ws.definition_path("deep-research").exists()
+    assert client.get("/api/workflows/deep-research").status_code == 404
+    assert "deep-research" not in {w["name"] for w in client.get("/api/workflows").json()}
+    assert client.get(f"/api/runs/{run['id']}").json()["status"] == "done"
+    assert client.delete("/api/workflows/deep-research").status_code == 404
+
+
+def test_deleting_a_workflow_takes_the_files_its_draft_wrote_and_nothing_else(client, ws):
+    aid = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()["id"]
+    assert client.post(f"/api/audits/{aid}/save").json()["saved"]
+    assert ws.path("skills/client-research").is_dir()
+
+    removed = client.delete("/api/workflows/client-research").json()["removed"]
+    assert any(p.startswith("skills/client-research/") for p in removed)
+    assert not ws.path("skills/client-research").exists()
+    assert not ws.path("schemas/client-research").exists()
+    # instruction files shared between definitions sit at the top of skills/ and stay
+    assert ws.path("skills/deep-researcher.md").is_file()
+
+
+def test_a_name_that_is_a_path_is_not_a_definition(client, ws):
+    assert client.delete("/api/workflows/..%2F..%2Fworkspace").status_code == 404
+    assert ws.path("definitions").is_dir()
+
+
 def test_live_run_is_refused_while_questions_are_open(client):
     r = client.post("/api/audits", json={"document": DOC.read_text(), "name": "client-research"})
     assert r.status_code == 200

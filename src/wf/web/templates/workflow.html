@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import trust_pill, tech_switch %}
+{% from "_macros.html" import trust_pill, tech_switch, delete_button %}
 {% set s = data.summary %}
 {% block title %}{{ s.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
@@ -10,6 +10,9 @@
   <div class="actions">
     {{ tech_switch() }}
     <button class="btn" data-toggle="yaml">Open YAML</button>
+    {{ delete_button("/api/workflows/" ~ name,
+        "Delete “" ~ s.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.",
+        label="Delete workflow", cls="btn btn-danger") }}
     <button class="btn btn-primary" data-toggle="runform">Run with a topic</button>
   </div>
 </div>

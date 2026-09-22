@@ -6,7 +6,7 @@ from typing import Any
 
 from wf.audit import AuditResult, Change, Passage
 from wf.audit.chat import ChatTurn
-from wf.store import Audit, Database, DraftChange
+from wf.store import Audit, Database, DraftChange, FindingRecord
 from wf.validate import Finding
 
 
@@ -136,6 +136,22 @@ class AuditStore:
                 "after": (row.after or {}).get("v"),
                 "reason": row.reason,
             }
+
+    def delete(self, audit_id: str) -> bool:
+        """Remove a draft, its edits and its findings. False when there is no such draft.
+
+        The agentic sessions it recorded are left: what a model was asked is a record of
+        what happened, not part of the draft, and it still reads correctly once the draft
+        it drafted is gone.
+        """
+        with self.db.session() as s:
+            rec = s.get(Audit, audit_id)
+            if rec is None:
+                return False
+            s.query(DraftChange).filter_by(audit_id=audit_id).delete(synchronize_session=False)
+            s.query(FindingRecord).filter_by(audit_id=audit_id).delete(synchronize_session=False)
+            s.delete(rec)
+            return True
 
     def chat_history(self, rec: Audit) -> list[ChatTurn]:
         return [
