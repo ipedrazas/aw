@@ -270,6 +270,55 @@ def test_a_step_that_needs_a_routine_the_system_has_not_got_stays_open(ws):
     assert result.workflow().step("price_check").run == "checks.http_resolves"
 
 
+def test_a_step_s_judgement_only_takes_one_of_the_configured_models(ws):
+    """Which model runs a step is a closed set too: prose about it changes nothing."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    review = next(s for s in result.definition["spec"]["steps"] if s["id"] == "review")
+    del review["model"]
+    auditor.revalidate(result)
+    f = next(f for f in result.open_findings() if f.field == "steps.review.model")
+
+    with pytest.raises(AnswerRejected) as e:
+        auditor.answer(result, f.id, "the careful one, obviously")
+    assert "Careful judgement" in str(e.value)
+    assert result.workflow().step("review").model is None
+    assert f.status == "open"
+    assert not any(c.path == "steps.review.model" for c in result.changes)
+
+    # the words of one of the choices are taken as that choice
+    auditor.answer(result, f.id, "Careful judgement")
+    assert result.workflow().step("review").model == result.workflow().step("write").model
+
+
+def test_a_wait_only_takes_one_of_the_standard_deadlines(ws):
+    """A deadline offered as a question is one of the standard waits, not any duration."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    result.definition["spec"]["steps"].append(
+        {
+            "id": "hold",
+            "kind": "wait",
+            "title": "Wait for the requester",
+            "on_timeout": "stop",
+            "shows_user": ["output"],
+        }
+    )
+    auditor.revalidate(result)
+    f = next(f for f in result.open_findings() if f.field == "steps.hold.deadline")
+
+    with pytest.raises(AnswerRejected) as e:
+        auditor.answer(result, f.id, "whenever it feels ready, honestly")
+    assert "1 day" in str(e.value)
+    assert result.workflow().step("hold").deadline is None
+    assert f.status == "open"
+    assert not any(c.path == "steps.hold.deadline" for c in result.changes)
+
+    # the words of one of the choices are taken as that choice
+    auditor.answer(result, f.id, "A week")
+    assert result.workflow().step("hold").deadline == "7d"
+
+
 def budget_finding(ws):
     """The spending-limit question, as a draft with sub-workflows raises it."""
     import yaml

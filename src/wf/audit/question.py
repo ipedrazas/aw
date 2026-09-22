@@ -261,7 +261,17 @@ def apply_answer(
         if answer not in KNOWN_RUNNERS:
             raise AnswerRejected(why_rejected(finding, answer))
         change(field, answer, "Your answer.")
-    elif key in ("deadline", "on_timeout", "model", "skill", "title", "workflow"):
+    elif key in ("model", "deadline"):
+        # both are asked as a closed set of options (the models the deployment
+        # configured, or one of the standard waits), so prose that matches none of
+        # them is refused rather than written in. A value already stated in the
+        # document skips this path: it is written straight into the draft, not
+        # answered through a question.
+        valid = {o.value for o in finding.options}
+        if valid and answer not in valid:
+            raise AnswerRejected(why_rejected(finding, answer))
+        change(field, answer, "Your answer.")
+    elif key in ("on_timeout", "skill", "title", "workflow"):
         change(field, answer, "Your answer.")
     elif key == "shows_user":
         change(field, _as_list(answer), "What you see when this step finishes.")
