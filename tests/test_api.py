@@ -40,6 +40,22 @@ def client(ws, tmp_path: Path):
             )
         if req.tag == "audit:chat":
             fid = req.input["open_questions"][0]["id"] if req.input["open_questions"] else None
+            if req.input["message"].startswith("answer "):
+                # the model writes prose into a question that only takes one of its choices
+                return ModelResponse(
+                    output={
+                        "reply": "Recorded as an answer.",
+                        "edits": [],
+                        "answers": [
+                            {
+                                "finding_id": req.input["message"].split()[1],
+                                "option_index": None,
+                                "text": "Whatever the requester decides when we get there.",
+                            }
+                        ],
+                        "point_to_finding": None,
+                    }
+                )
             return ModelResponse(
                 output={
                     "reply": "Whichever you choose, and it is the first question on the right.",
@@ -263,3 +279,29 @@ def test_pages_render_or_say_they_are_missing(client):
     for path in ["/workflows", "/workflows/deep-research", "/audits/new", "/runs"]:
         r = client.get(path)
         assert r.status_code == 200, path
+
+
+def test_chat_answer_that_does_not_fit_leaves_the_question_open(client):
+    """The chat writing prose into a question with fixed choices is told so, not a 500."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    aid = audit["id"]
+    budget = next(
+        f for g in audit["questions"] for f in g["findings"] if f["field"] == "spec.budget"
+    )
+
+    c = client.post(f"/api/audits/{aid}/chat", json={"message": f"answer {budget['id']}"})
+    assert c.status_code == 200, c.text
+    body = c.json()
+    assert "so the draft is unchanged" in body["chat"][-1]["text"]
+    assert not body["chat"][-1]["changes"]
+    assert any(f["id"] == budget["id"] for g in body["questions"] for f in g["findings"])
+
+    # and the same answer through the control returns a reason, not a crash
+    bad = client.post(
+        f"/api/audits/{aid}/answer",
+        json={"finding_id": budget["id"], "answer": "whatever it takes"},
+    )
+    assert bad.status_code == 400
+    assert "so the draft is unchanged" in bad.json()["detail"]
