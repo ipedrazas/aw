@@ -24,12 +24,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---- runtime: slim image, non-root, no build tooling -------------------------
 FROM python:3.13-slim-bookworm AS runtime
 
+# The app writes into the mounted workspace, so it has to run as the owner of
+# those files. Override at build time to match the host: --build-arg UID=$(id -u).
+ARG UID=1000
+ARG GID=1000
+
 # git: the app records the workspace commit when the workspace is a repository.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 wf \
-    && useradd --system --uid 10001 --gid wf --home-dir /app --shell /usr/sbin/nologin wf
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends git; \
+    rm -rf /var/lib/apt/lists/*; \
+    getent group "$GID" >/dev/null || groupadd --gid "$GID" wf; \
+    useradd --uid "$UID" --gid "$GID" --home-dir /app --shell /usr/sbin/nologin wf
 
 WORKDIR /app
 
