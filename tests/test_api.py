@@ -209,6 +209,79 @@ def test_audit_answer_chat_undo_and_dry_run(client):
     assert "client-research" in {w["name"] for w in client.get("/api/workflows").json()}
 
 
+def test_a_finished_run_is_read_once_so_its_status_and_its_guesses_agree(client, monkeypatch):
+    """The poll read the report and the status in two reads of the database. A guess
+    recorded between them was missing from a run the same response called done."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    d = client.post(f"/api/audits/{audit['id']}/dry-run", json={"topic": "Durable execution"})
+    run_id = d.json()["run_id"]
+    expected = [g["field"] for g in wait_for(client, run_id)["report"]["guesses"]]
+    assert "steps.send.requires_approval" in expected, "the last step had to guess"
+
+    runner = client.app.state.wf.runner
+    real = runner.snapshot
+    seen: list[str] = []
+
+    def mid_run_then_finished(rid: str) -> dict:
+        """The first read lands while the last step is still going."""
+        snap = real(rid)
+        if not seen:
+            seen.append(rid)
+            return {
+                **snap,
+                "status": "running",
+                "steps": [{**s, "decisions": []} for s in snap["steps"]],
+            }
+        return snap
+
+    monkeypatch.setattr(runner, "snapshot", mid_run_then_finished)
+    data = client.get(f"/api/runs/{run_id}").json()
+    assert data["status"] == "running", "the status came from the read that was taken"
+    assert [g["field"] for g in data["report"]["guesses"]] == []
+
+
+def test_typed_answer_is_accepted_on_a_question_with_fixed_options(client):
+    """When none of the offered choices is the real answer, free text still gets stored."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    aid = audit["id"]
+    approval = next(
+        f
+        for g in audit["questions"]
+        for f in g["findings"]
+        if f["field"] == "steps.send.requires_approval"
+    )
+    assert approval["answer_kind"] == "choice"
+    assert approval["options"], "the question offers fixed choices"
+
+    a = client.post(
+        f"/api/audits/{aid}/answer",
+        json={"finding_id": approval["id"], "answer": "the account lead"},
+    )
+    assert a.status_code == 200, a.text
+    body = a.json()
+    assert body["counts"]["answered"] == 1
+    step = next(s for s in body["steps"] if s["id"] == "send")
+    assert step["requires_approval"] == "the account lead"
+
+    # a fixed-option question still answers the normal way, no regression
+    reject = next(
+        f
+        for g in audit["questions"]
+        for f in g["findings"]
+        if f["field"].endswith("verdict.reject")
+    )
+    stop = next(o for o in reject["options"] if o["value"].get("op") == "stop")
+    r = client.post(
+        f"/api/audits/{aid}/answer", json={"finding_id": reject["id"], "answer": stop["value"]}
+    )
+    assert r.status_code == 200, r.text
+    assert any(s["id"] == "review_reject_stop" for s in r.json()["steps"])
+
+
 def test_a_draft_can_be_deleted_and_its_sessions_are_kept(client):
     aid = client.post(
         "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}

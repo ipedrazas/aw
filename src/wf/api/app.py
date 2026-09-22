@@ -388,10 +388,12 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
         try:
-            report = st().runner.report(run_id)
+            snap = st().runner.snapshot(run_id)
         except KeyError as e:
             raise HTTPException(404, "No such run.") from e
-        snap = st().runner.snapshot(run_id)
+        # One read of the run, used for both: a poll that sees "done" sees every
+        # step's guesses with it, even if the last one landed a moment ago.
+        report = st().runner.report(run_id, snap=snap)
         return {**snap, "report": report.model_dump(mode="json")}
 
     @app.get("/api/runs/{run_a}/diff/{run_b}")

@@ -271,9 +271,16 @@ class DryRunner:
             }
 
     def report(
-        self, run_id: str, findings: list[Finding] | None = None, result: RunResult | None = None
+        self,
+        run_id: str,
+        findings: list[Finding] | None = None,
+        result: RunResult | None = None,
+        snap: dict[str, Any] | None = None,
     ) -> DryRunReport:
-        snap = self.snapshot(run_id)
+        # A caller that has already read the run takes its snapshot rather than
+        # reading again: status and guesses then come from the same moment, and a
+        # report cannot be one step behind the status shown beside it.
+        snap = snap if snap is not None else self.snapshot(run_id)
         guesses = [
             {
                 "step_id": s["step_id"],
