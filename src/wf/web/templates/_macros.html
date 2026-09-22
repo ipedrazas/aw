@@ -38,7 +38,13 @@
             <label class="opt"><input type="radio" name="a-{{ f.id }}" value="true"> Yes</label>
             <label class="opt"><input type="radio" name="a-{{ f.id }}" value="false"> No</label>
           {% endif %}
+          {% if f.options %}
+            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="__custom__" data-custom-toggle> Type your answer</label>
+          {% endif %}
         </div>
+        {% if f.options %}
+          <p class="hidden" data-custom-wrap><textarea placeholder="Your answer, in your words" data-custom-input></textarea></p>
+        {% endif %}
       {% elif f.answer_kind == "multi" %}
         <div class="opts">
           {% for o in f.options %}

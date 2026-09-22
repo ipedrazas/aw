@@ -86,26 +86,40 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
     catch (err) { say(msg, err.message, true); inp.disabled = false; }
   });
 
-  document.querySelectorAll("form[data-answer]").forEach(f => f.addEventListener("submit", async e => {
-    e.preventDefault();
-    const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
-    let answer = null;
-    if (kind === "choice" || kind === "bool") {
-      const c = f.querySelector("input[type=radio]:checked"); if (!c) return say(msg, "Pick one first.", true);
-      answer = JSON.parse(c.value);
-    } else if (kind === "multi") {
-      answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
-      if (!answer.length) return say(msg, "Pick at least one.", true);
-    } else if (kind === "number") {
-      const v = f.querySelector("input[type=number]").value; if (v === "") return say(msg, "Enter a number.", true);
-      answer = Number(v);
-    } else {
-      answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
+  document.querySelectorAll("form[data-answer]").forEach(f => {
+    const customWrap = f.querySelector("[data-custom-wrap]");
+    if (customWrap) {
+      f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
+        const custom = f.querySelector("[data-custom-toggle]");
+        customWrap.classList.toggle("hidden", !(custom && custom.checked));
+      }));
     }
-    say(msg, "Saving…");
-    try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(); }
-    catch (err) { say(msg, err.message, true); }
-  }));
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
+      let answer = null;
+      if (kind === "choice" || kind === "bool") {
+        const c = f.querySelector("input[type=radio]:checked"); if (!c) return say(msg, "Pick one first.", true);
+        if (c.hasAttribute("data-custom-toggle")) {
+          answer = f.querySelector("[data-custom-input]").value;
+          if (!answer.trim()) return say(msg, "Write something first.", true);
+        } else {
+          answer = JSON.parse(c.value);
+        }
+      } else if (kind === "multi") {
+        answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
+        if (!answer.length) return say(msg, "Pick at least one.", true);
+      } else if (kind === "number") {
+        const v = f.querySelector("input[type=number]").value; if (v === "") return say(msg, "Enter a number.", true);
+        answer = Number(v);
+      } else {
+        answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
+      }
+      say(msg, "Saving…");
+      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(); }
+      catch (err) { say(msg, err.message, true); }
+    });
+  });
 
   document.querySelectorAll("[data-reopen]").forEach(b => b.addEventListener("click", () => {
     const t = document.getElementById(b.dataset.reopen); if (t) { t.classList.remove("hidden"); b.classList.add("hidden"); }
