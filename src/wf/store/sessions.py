@@ -21,7 +21,7 @@ Configuration:
 
 | `WF_SESSION_LOG`       | `full` (default), `meta`, `off`                       |
 | `WF_SESSION_MAX_CHARS` | how much of one body is kept; `0` keeps all (40000)   |
-| `SESSION_ROOT`         | where each session is also written as its own file    |
+| `WF_SESSION_ROOT`      | where each session is also written as its own file    |
 |                        | (`/app/var/sessions` by default)                      |
 
 ``meta`` writes the row without the prompt bodies, for when the prompts are too large
@@ -29,7 +29,7 @@ or too sensitive to keep. ``off`` writes nothing; the log lines still happen, si
 what is printed and what is stored are two different questions.
 
 Sessions live in the database, but each one is also mirrored to
-``<SESSION_ROOT>/<session id>.log`` as it is written to. That file is what
+``<WF_SESSION_ROOT>/<session id>.log`` as it is written to. That file is what
 ``list_from_disk`` and ``get_from_disk`` read, so a session survives a restart even
 for a checkout pointed at an in-memory or throwaway database.
 """
@@ -76,10 +76,10 @@ def max_chars() -> int:
 
 
 def session_root() -> Path:
-    """Where each session is mirrored to its own file. ``SESSION_ROOT`` overrides the
+    """Where each session is mirrored to its own file. ``WF_SESSION_ROOT`` overrides the
     default, which matches the container's ``var/`` directory. Read on each call, like
     the other configuration here, and created if it does not exist yet."""
-    raw = (os.environ.get("SESSION_ROOT") or DEFAULT_SESSION_ROOT).strip()
+    raw = (os.environ.get("WF_SESSION_ROOT") or DEFAULT_SESSION_ROOT).strip()
     root = Path(raw).expanduser()
     root.mkdir(parents=True, exist_ok=True)
     return root
@@ -393,7 +393,7 @@ class SessionLog:
     # -- reading, from the mirrored files ---------------------------------------
 
     def list_from_disk(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """Sessions as they were last written to ``SESSION_ROOT``, newest first. Reads
+        """Sessions as they were last written to ``WF_SESSION_ROOT``, newest first. Reads
         only the files, so it works without a database — after a restart, or from a
         process that never had one."""
         files = sorted(session_root().glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
