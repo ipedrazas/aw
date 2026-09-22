@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 
 from wf.activities import (
     Activities,
-    AnthropicModel,
     ModelActivity,
     default_activities,
+    default_model,
     record_sessions,
 )
 from wf.interpret import Interpreter, RunConfig, RunResult
@@ -100,7 +100,7 @@ class DryRunner:
         db = db or Database()
         # Wrapped once, here: the guesser and the auditor are given the same model, so
         # every exchange any of them has lands in the session that is open.
-        recorded = record_sessions(model or AnthropicModel(), db)
+        recorded = record_sessions(model or default_model(), db)
         acts = default_activities(ws, recorded, model_guesses=model_guesses)
         artifacts = Path(os.environ.get("WF_ARTIFACTS_DIR", "var/artifacts"))
         return cls(ws, acts, db, RunConfig(artifacts_dir=artifacts))

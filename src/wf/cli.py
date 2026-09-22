@@ -19,15 +19,6 @@ def _ws(args: argparse.Namespace) -> Workspace:
     return Workspace(args.workspace)
 
 
-def _model():
-    """The real model, or the offline one when WF_FAKE_MODEL is set."""
-    if os.environ.get("WF_FAKE_MODEL"):
-        from wf.activities.fake import FakeModel
-
-        return FakeModel()
-    return None
-
-
 def cmd_validate(args: argparse.Namespace) -> int:
     from wf.validate import validate
 
@@ -48,7 +39,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from wf.dryrun import DryRunner
 
     ws = _ws(args)
-    runner = DryRunner.from_env(ws, model=_model(), model_guesses=not args.no_model_guesses)
+    runner = DryRunner.from_env(ws, model_guesses=not args.no_model_guesses)
     if args.case:
         report = runner.run_case(args.name, args.case, mode=args.mode)
     else:
@@ -62,7 +53,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     from wf.audit import Auditor
 
     ws = _ws(args)
-    auditor = Auditor.from_env(ws, model=_model())
+    auditor = Auditor.from_env(ws)
     doc = Path(args.document).read_text()
     result = auditor.audit(doc, name=args.name)
     print(result.render_text())

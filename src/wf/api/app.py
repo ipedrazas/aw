@@ -14,9 +14,9 @@ from fastapi.templating import Jinja2Templates
 
 from wf.activities import (
     ActivityPolicy,
-    AnthropicModel,
     ModelActivity,
     default_activities,
+    default_model,
     record_sessions,
 )
 from wf.activities.fake import FakeModel
@@ -26,7 +26,7 @@ from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow
-from wf.settings import chat_model
+from wf.settings import chat_model, provider
 from wf.store import Artifact, Database
 from wf.store import repo as gitrepo
 from wf.store.sessions import SessionLog, session_log_mode
@@ -66,7 +66,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     setup_logging()
     if state is None:
         ws = Workspace(os.environ.get("WF_WORKSPACE", "workspace"))
-        model: ModelActivity = FakeModel() if os.environ.get("WF_FAKE_MODEL") else AnthropicModel()
+        model: ModelActivity = default_model()
         state = AppState(
             ws, Database(), model, Path(os.environ.get("WF_ARTIFACTS_DIR", "var/artifacts"))
         )
@@ -89,6 +89,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
             "ok": True,
             "workspace": str(st().ws.root),
             "offline_model": st().offline,
+            # Which gateway this container is asking; a wrong key shows up here first.
+            "provider": "offline" if st().offline else provider(),
             "sessions": session_log_mode(),
         }
 

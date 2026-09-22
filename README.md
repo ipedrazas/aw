@@ -17,7 +17,7 @@ generality and polish are not goals.
 | `src/wf/expr` | The restricted expression language (`${steps.review.output.verdict == "go_deeper"}`) |
 | `src/wf/validate` | Structural and semantic passes; every failure is a typed finding with a plain question |
 | `src/wf/interpret` | The interpreter: walks a definition, executes through activities, records decisions |
-| `src/wf/activities` | Model calls, fixture-backed search and link checks, PDF rendering, guessing |
+| `src/wf/activities` | Model calls (Anthropic or OpenRouter), fixture-backed search and link checks, PDF rendering, guessing |
 | `src/wf/audit` | Document in, draft definition and questions out; answers written back |
 | `src/wf/dryrun` | Runs against a past case, guess points, divergence, two-run decision diff |
 | `src/wf/api` and `src/wf/web` | FastAPI JSON API and the server-rendered pages |
@@ -54,6 +54,20 @@ without task installed.
 Without an API key, set `WF_FAKE_MODEL=1` to use an offline model that fills the
 declared shapes and nothing more. It is enough to walk the pages, not to judge anything.
 
+Models can come from Anthropic directly or through [OpenRouter](https://openrouter.ai),
+which fronts many vendors behind one key. Set `OPENROUTER_API_KEY` and the models are
+named the way the gateway names them, `vendor/model`:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+export WF_CAREFUL_MODEL=openai/gpt-5      # or anything else it carries
+uv run wf run deep-research --case durable-execution
+```
+
+With both keys in the environment, `WF_MODEL_PROVIDER=openrouter` settles it. Nothing
+above `src/wf/settings.py` knows which is in use: a step asks for careful judgement and
+gets whatever is configured.
+
 With Docker:
 
 ```bash
@@ -77,6 +91,10 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | | Read by the Anthropic SDK |
+| `OPENROUTER_API_KEY` | | The gateway's bearer token; on its own it also picks the provider |
+| `WF_MODEL_PROVIDER` | `anthropic` | `anthropic` or `openrouter`; needed only when both keys are set |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | For a proxy in front of the gateway |
+| `WF_OPENROUTER_STRICT` | | `1` asks the gateway to enforce the output schema, not suggest it |
 | `WF_WORKSPACE` | `workspace` | The workspace directory |
 | `WF_DATABASE_URL` | `sqlite:///var/wf.db` | SQLAlchemy URL; Compose sets Postgres |
 | `WF_ARTIFACTS_DIR` | `var/artifacts` | Where rendered PDFs go |
@@ -97,8 +115,11 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 
 Model names in step definitions are configuration in the YAML, not literals in code.
 The code names a model in one place, `src/wf/settings.py`, and everything else asks
-for a level of judgement instead. A model configured without a row in
-`WF_MODEL_PRICING` is costed as the careful one.
+for a level of judgement instead. The two model defaults follow the provider: under
+OpenRouter they are the same two models written `anthropic/...`, so switching provider
+without naming models still runs. A model configured without a row in
+`WF_MODEL_PRICING` is costed as the careful one — except through OpenRouter, which
+reports what each call actually cost, having routed it.
 
 ## Logs and sessions
 

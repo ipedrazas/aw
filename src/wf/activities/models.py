@@ -1,9 +1,11 @@
 """Model activities.
 
-``AnthropicModel`` is the real thing. ``ScriptedModel`` answers from a function, for
-tests. ``RecordingModel`` and ``ReplayModel`` capture and replay responses keyed by
-request tag, which is how the determinism test runs the interpreter twice over the
-same recorded step outputs.
+``AnthropicModel`` is the real thing; ``OpenRouterModel``, beside it, is the same
+request asked through a gateway, and the pieces both of them share — the envelope, the
+system prompt, the cost of a call — live here. ``ScriptedModel`` answers from a
+function, for tests. ``RecordingModel`` and ``ReplayModel`` capture and replay
+responses keyed by request tag, which is how the determinism test runs the interpreter
+twice over the same recorded step outputs.
 """
 
 from __future__ import annotations
@@ -172,7 +174,7 @@ class AnthropicModel:
                     )
                     tool_calls.append(
                         ToolCallRecord(
-                            block.name, dict(block.input), _summarise(result), injection, result
+                            block.name, dict(block.input), summarise(result), injection, result
                         )
                     )
                 messages.append({"role": "user", "content": results})
@@ -196,7 +198,7 @@ class AnthropicModel:
         raise ActivityError("the model kept calling tools past the round limit")
 
 
-def _summarise(result: Any) -> str:
+def summarise(result: Any) -> str:
     if isinstance(result, list):
         return f"{len(result)} results"
     if isinstance(result, dict):

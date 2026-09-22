@@ -8,8 +8,8 @@ from typing import Any
 from wf import settings
 from wf.activities import (
     ActivityPolicy,
-    AnthropicModel,
     ModelActivity,
+    default_model,
     record_sessions,
     run_with_policy,
 )
@@ -107,7 +107,7 @@ class Auditor:
 
         The plain constructor leaves the model alone, which is what the tests want.
         """
-        return cls(ws, record_sessions(model or AnthropicModel(), db))
+        return cls(ws, record_sessions(model or default_model(), db))
 
     # -- the audit path ------------------------------------------------------
 
