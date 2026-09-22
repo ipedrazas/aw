@@ -19,6 +19,7 @@ from wf.audit.chat import chat
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.schema import Workspace, WorkspaceError, dump_workflow
+from wf.settings import chat_model
 from wf.store import Artifact, Database
 from wf.store import repo as gitrepo
 from wf.validate import validate
@@ -34,15 +35,13 @@ class AppState:
         self.ws = ws
         self.db = db
         self.model = model
-        self.auditor = Auditor(
-            ws, model, extraction_model=os.environ.get("WF_EXTRACTION_MODEL", "claude-opus-5")
-        )
+        self.auditor = Auditor(ws, model)
         acts = default_activities(ws, model, model_guesses=not isinstance(model, FakeModel))
         if isinstance(model, FakeModel):
             acts.policy = ActivityPolicy(retries=0)
         self.runner = DryRunner(ws, acts, db, RunConfig(artifacts_dir=artifacts_dir))
         self.audits = AuditStore(db)
-        self.chat_model = os.environ.get("WF_CHAT_MODEL", "claude-sonnet-5")
+        self.chat_model = chat_model()
         self.author = (
             os.environ.get("WF_AUTHOR_NAME", "Workflow UI"),
             os.environ.get("WF_AUTHOR_EMAIL", "ui@localhost"),

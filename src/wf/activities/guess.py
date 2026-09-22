@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from wf.schema import Mode
+from wf.settings import guess_model, quick_model
 
 from .base import Guess, ModelActivity, ModelRequest
 
@@ -84,7 +85,7 @@ class HeuristicGuesser:
             )
         if key == "model":
             return Guess(
-                "claude-sonnet-5",
+                quick_model(),
                 "Used quick judgement for this step.",
                 "No level of judgement was given.",
                 ["Careful judgement"],
@@ -143,11 +144,11 @@ class ModelGuesser:
     def __init__(
         self,
         model: ModelActivity,
-        model_name: str = "claude-sonnet-5",
+        model_name: str | None = None,
         fallback: HeuristicGuesser | None = None,
     ):
         self.model = model
-        self.model_name = model_name
+        self.model_name = model_name or guess_model()
         self.fallback = fallback or HeuristicGuesser()
 
     def guess(self, *, finding: Any, step: Any, state: dict[str, Any], mode: Mode) -> Guess:

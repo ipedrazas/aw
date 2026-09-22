@@ -24,6 +24,18 @@ services:
       WF_DATABASE_URL: postgresql+psycopg://wf:wf@db:5432/wf
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       WF_WORKSPACE: /app/workspace
+      # The two levels of judgement a step runs at. Empty uses the defaults in
+      # src/wf/settings.py, which is the only place a model is named in the code.
+      WF_QUICK_MODEL: ${WF_QUICK_MODEL:-}
+      WF_CAREFUL_MODEL: ${WF_CAREFUL_MODEL:-}
+      # What the system uses on its own behalf. Each falls back to a level above.
+      WF_EXTRACTION_MODEL: ${WF_EXTRACTION_MODEL:-}   # reads a document, proposes steps (careful)
+      WF_CHAT_MODEL: ${WF_CHAT_MODEL:-}               # answers in the draft chat (quick)
+      WF_GUESS_MODEL: ${WF_GUESS_MODEL:-}             # fills a gap the document left (quick)
+      # $ per million tokens as {"model": [input, output]}; empty uses the built-in table.
+      WF_MODEL_PRICING: ${WF_MODEL_PRICING:-}
+      # Set to 1 to run offline against the fake model instead of the API.
+      WF_FAKE_MODEL: ${WF_FAKE_MODEL:-}
     volumes:
       - ./workspace:/app/workspace
       - wfvar:/app/var

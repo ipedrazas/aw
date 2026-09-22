@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from wf.activities import ModelActivity, ModelRequest
+from wf.settings import chat_model
 from wf.validate import Finding
 
 from .service import AuditResult
@@ -118,11 +119,11 @@ def chat(
     result: AuditResult,
     history: list[ChatTurn],
     message: str,
-    model_name: str = "claude-sonnet-5",
+    model_name: str | None = None,
 ) -> ChatOutcome:
     req = ModelRequest(
         tag="audit:chat",
-        model=model_name,
+        model=model_name or chat_model(),
         system=CHAT_INSTRUCTIONS,
         input={
             "draft": result.definition,
