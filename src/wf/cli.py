@@ -10,13 +10,22 @@ from pathlib import Path
 from typing import Any
 
 from wf.logs import get_logger, log_level, setup_logging
-from wf.schema import Workspace
+from wf.schema import Workspace, WorkspaceError
+from wf.startup import announce
 
 logger = get_logger("wf.cli")
 
 
 def _ws(args: argparse.Namespace) -> Workspace:
     return Workspace(args.workspace)
+
+
+def _ws_or_none(args: argparse.Namespace) -> Workspace | None:
+    """The workspace, for the startup lines. A missing one is the command's to report."""
+    try:
+        return _ws(args)
+    except WorkspaceError:
+        return None
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -226,20 +235,20 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="use deterministic guesses instead of asking a model",
     )
-    r.set_defaults(fn=cmd_run)
+    r.set_defaults(fn=cmd_run, models=True)
 
     a = sub.add_parser(
         "audit", help="turn a process document into a draft definition and questions"
     )
     a.add_argument("document")
     a.add_argument("--name", default=None)
-    a.set_defaults(fn=cmd_audit)
+    a.set_defaults(fn=cmd_audit, models=True)
 
     s = sub.add_parser("serve", help="start the web UI and API")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--reload", action="store_true")
-    s.set_defaults(fn=cmd_serve)
+    s.set_defaults(fn=cmd_serve, models=True)
 
     d = sub.add_parser("db-init", help="create the database tables")
     d.set_defaults(fn=cmd_db_init)
@@ -261,6 +270,10 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["WF_LOG_LEVEL"] = args.log_level
     setup_logging(force=bool(args.log_level))
     logger.debug("wf %s at level %s", args.cmd, log_level())
+    if getattr(args, "models", False):
+        # Only the commands that will ask a model say which ones; `wf sessions` and
+        # `wf validate` have no use for it and should not have to read it.
+        announce(_ws_or_none(args))
     return args.fn(args)
 
 

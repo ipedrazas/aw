@@ -23,6 +23,7 @@ generality and polish are not goals.
 | `src/wf/api` and `src/wf/web` | FastAPI JSON API and the server-rendered pages |
 | `src/wf/store/sessions.py` | Agentic sessions: every exchange with a model, kept |
 | `src/wf/logs.py` | One place that decides where log lines go and how loud they are |
+| `src/wf/startup.py` | What the log says as the app loads: the provider, and the model each task will be asked of |
 | `workspace/` | A sample workspace: definitions, instruction files, output schemas, recorded fixtures, a degraded process document and a past case |
 | `plans/` | The handover and design documents this was built from |
 | `DECISIONS.md` | Anything decided here that the brief did not cover |
@@ -126,11 +127,24 @@ reports what each call actually cost, having routed it.
 Two different questions, answered separately: what is printed while the work happens,
 and what is kept once it has.
 
-**Printed.** `WF_LOG_LEVEL=info`, the default, gives one line per model call — which
-step asked, which model answered, how long it took, what it cost. `debug` adds the
-instructions, the input and the answer in full, which is how you watch a session as it
-runs. `WF_LOG_FORMAT=json` makes each line an object with those values as fields,
-for when something else is reading the log.
+**Printed.** As the app loads it says what it intends to do, before it does any of
+it: the provider, whether its key is set, and the model behind each of the five tasks.
+
+```
+INFO  wf.startup  provider openrouter (named by OPENROUTER_API_KEY), OPENROUTER_API_KEY is set, gateway https://openrouter.ai/api/v1, schemas suggested
+INFO  wf.startup  models by task: quick=anthropic/claude-sonnet-5, careful=anthropic/claude-opus-5, extraction=…, chat=…, guess=…
+```
+
+At `debug` each of those gets a line of its own saying which variable named it and
+what it costs per million tokens, followed by a line per agent step of every
+definition in the workspace — which model will run it, and whether the step named one
+or the run will have to guess.
+
+Then, while the work happens: `WF_LOG_LEVEL=info`, the default, gives one line per
+model call — which step asked, which model answered, how long it took, what it cost.
+`debug` adds the instructions, the input and the answer in full, which is how you
+watch a session as it runs. `WF_LOG_FORMAT=json` makes each line an object with those
+values as fields, for when something else is reading the log.
 
 The container's healthcheck asks for `/healthz` every thirty seconds. Those access
 lines are taken out of the main log; Compose points `WF_HEALTH_LOG_FILE` at

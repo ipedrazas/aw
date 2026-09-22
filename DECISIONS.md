@@ -151,6 +151,16 @@ of them reject schemas that use `minItems` or `maximum` — both of which this c
 envelope and step schemas use — and a request refused for that reason fails the run,
 while a loose schema plus the answer check we already do merely risks a retry.
 
+**The app says which models it will use before it uses any of them.** Two `info` lines
+at load — the provider, whether its key is set, and the model behind each of the five
+tasks — and at `debug` where each name came from, what it costs, and which model every
+agent step of every definition will run on. Alternative: leave it to the session
+records, which already say which model answered each call. Why: those answer "what did
+this run do", and the question at hand is usually "what is this process configured to
+do", which until now could only be answered by reading five environment variables and
+the fallback rules between them. A provider nobody meant to use is the failure this
+makes loud.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:
