@@ -518,3 +518,39 @@ def test_a_step_without_tools_is_asked_for_its_shape_at_once():
     gateway = Gateway(answer(envelope({"verdict": "accept"})))
     OpenRouterModel(gateway).complete(request())
     assert "response_format" in gateway.asked[0] and "tool_choice" not in gateway.asked[0]
+
+
+def test_an_answer_in_a_shape_of_its_own_after_searching_is_asked_for_again():
+    """A real run searched 44 times, then answered {topic, step, search_plan, results, ...}
+    where its shape said {search_results: [...]}; the step failed on the shape."""
+    own_shape = envelope({"topic": "celld", "results": ["S1"]})
+    gateway = Gateway(
+        _calls("celld"),
+        answer(own_shape),
+        answer(envelope({"verdict": "accept"})),
+    )
+    resp = OpenRouterModel(gateway).complete(request(tools=[_search_tool([])]))
+    last = gateway.asked[-1]
+    assert last["response_format"]["type"] == "json_schema"
+    said = last["messages"][-1]["content"]
+    assert '"verdict"' in said, "the shape itself is shown, not only named"
+    assert resp.output == {"verdict": "accept"}
+
+
+def test_a_wrong_shape_is_told_what_is_wrong_and_asked_again():
+    gateway = Gateway(
+        answer(envelope({"verdict": "maybe", "extra": 1})),
+        answer(envelope({"verdict": "accept"})),
+    )
+    resp = OpenRouterModel(gateway).complete(request())
+    said = gateway.asked[1]["messages"][-1]["content"]
+    assert said.startswith("That answer does not match the required shape")
+    assert resp.output == {"verdict": "accept"}
+
+
+def test_it_is_asked_again_only_so_often_and_then_the_step_says_why():
+    wrong = envelope({"opinion": "maybe"})
+    gateway = Gateway(answer(wrong), answer(wrong), answer(wrong))
+    resp = OpenRouterModel(gateway).complete(request())
+    # asked twice more, then handed back as it is: the step's own check says what broke
+    assert len(gateway.asked) == 3 and resp.output == {"opinion": "maybe"}
