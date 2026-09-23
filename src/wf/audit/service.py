@@ -25,7 +25,12 @@ from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
 from .ingest import Passage, ingest
-from .question import AnswerRejected, Change, apply_answer, group_questions, why_rejected
+from .question import (
+    AnswerRejected,
+    Change,
+    answer_definition,
+    group_questions,
+)
 from .restore import restore_missing_files
 
 
@@ -189,16 +194,9 @@ class Auditor:
 
     def answer(self, result: AuditResult, finding_id: str, answer: Any) -> list[Change]:
         finding = next(f for f in result.findings if f.id == finding_id)
-        was = (finding.status, finding.answer)
-        try:
-            new_def, changes = apply_answer(result.definition, finding, answer, self.ws)
-            wf = load_workflow_dict(new_def)
-        except AnswerRejected:
-            raise
-        except (ValidationError, TypeError, ValueError, KeyError, IndexError, StopIteration) as e:
-            # the answer does not fit the field: the draft and the question stay as they were
-            finding.status, finding.answer = was
-            raise AnswerRejected(why_rejected(finding, answer)) from e
+        # an answer that does not fit, or that leaves the question open, changes nothing
+        new_def, changes = answer_definition(result.definition, finding, answer, self.ws)
+        wf = load_workflow_dict(new_def)
         result.definition = new_def
         result.changes.extend(changes)
         self.revalidate(result, wf)
@@ -240,9 +238,13 @@ class Auditor:
         fresh = self.validate(wf, result.provenance, result.passages, extra=still_relevant)
         kept: list[Finding] = []
         for f in fresh:
-            if f.id in answered:
-                kept.append(answered[f.id])
+            prior = answered.get(f.id)
+            if prior is not None and not (prior.status == "answered" and f.type != "assumption"):
+                kept.append(prior)
             else:
+                # an answer that left the field empty did not answer it: the question
+                # stays open, rather than showing as done in the draft and open in the
+                # workflow it was saved as
                 kept.append(f)
         # keep answered findings so the UI can show them as done
         ids = {f.id for f in kept}

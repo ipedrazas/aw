@@ -24,11 +24,12 @@ from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
+from wf.audit.question import answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.logs import get_logger, setup_logging
-from wf.schema import Workspace, WorkspaceError, dump_workflow
+from wf.schema import Workspace, WorkspaceError, dump_workflow, load_workflow_dict
 from wf.settings import chat_model, provider, search_mode
 from wf.startup import announce
 from wf.store import Artifact, Database, Run
@@ -141,6 +142,51 @@ def create_app(state: AppState | None = None) -> FastAPI:
             "questions": _questions(result.findings),
             "cases": st().ws.list_cases(),
         }
+
+    @app.post("/api/workflows/{name}/answer")
+    def answer_workflow(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Answer an open question on a saved workflow. The answer goes into the definition,
+        is committed, and is carried to the draft it was saved from, so the two agree."""
+        wf = _load(st(), name)
+        _restore_files(st(), wf)
+        fid = body.get("finding_id")
+        finding = next(
+            (f for f in validate(wf, st().ws).findings if f.id == fid and f.status == "open"),
+            None,
+        )
+        if finding is None:
+            raise HTTPException(404, "That question is not open on this workflow any more.")
+        try:
+            new_def, changes = answer_definition(
+                wf.model_dump(by_alias=True, exclude_none=True),
+                finding,
+                body.get("answer"),
+                st().ws,
+            )
+        except AnswerRejected as e:
+            raise HTTPException(400, str(e)) from e
+        new_wf = load_workflow_dict(new_def)
+        st().ws.save_definition(new_wf)
+        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        commit = gitrepo.commit_paths(
+            st().ws.root, [rel], f"{name}: answered “{finding.question}”", *st().author
+        )
+        drafts = _carry_to_drafts(st(), name, changes)
+        logger.info(
+            "workflow %s: answered %s",
+            name,
+            finding.field,
+            extra={
+                "fields": {
+                    "event": "workflow.answered",
+                    "workflow": name,
+                    "field": finding.field,
+                    "commit": commit,
+                    "drafts": drafts,
+                }
+            },
+        )
+        return {**get_workflow(name), "commit": commit, "drafts": drafts}
 
     @app.post("/api/workflows/{name}/runs")
     def start_run(name: str, body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
@@ -623,6 +669,30 @@ def _load(state: AppState, name: str):
         return state.ws.load_definition(name)
     except WorkspaceError as e:
         raise HTTPException(404, str(e)) from e
+
+
+def _carry_to_drafts(state: AppState, name: str, changes: list[Change]) -> int:
+    """Make the same edits to the drafts saved as this workflow, so the draft does not
+    say one thing and the workflow another. A draft the edit no longer fits is left as it
+    is and logged; the workflow is what runs."""
+    carried = 0
+    for d in state.audits.list():
+        if d.get("name") != name:
+            continue
+        try:
+            result, _rec = state.audits.load(d["id"])
+            applied = [state.auditor.set_field(result, c.path, c.after, c.reason) for c in changes]
+            state.audits.save(d["id"], result, applied, by="answer")
+            carried += 1
+        except Exception as e:  # noqa: BLE001 - the workflow already took it; the draft is secondary
+            logger.warning(
+                "draft %s did not take the answer given on %s: %s",
+                d["id"],
+                name,
+                e,
+                extra={"fields": {"event": "workflow.answer_not_carried", "audit": d["id"]}},
+            )
+    return carried
 
 
 def _restore_files(state: AppState, wf: Any) -> None:

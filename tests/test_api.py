@@ -714,3 +714,46 @@ def test_a_topic_only_a_wait_reads_is_asked_about_and_fixed(client):
     assert [s["id"] for s in result.definition["spec"]["steps"]][0] == "brief"
     assert result.definition["spec"]["steps"][0]["input"] == {"topic": "${inputs.topic}"}
     assert not [x for x in result.open_findings() if x.field.endswith(".read_by")]
+
+
+def test_an_open_question_on_a_workflow_is_answered_on_its_page(client, ws):
+    from tests.helpers import read_yaml, write_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    d = read_yaml(ws, rel)
+    go = next(s for s in d["spec"]["steps"] if s["id"] == "go_deeper")
+    go.pop("limits")
+    write_yaml(ws, rel, d)
+
+    wf = client.get("/api/workflows/deep-research").json()
+    q = next(f for f in wf["findings"] if f["field"] == "steps.go_deeper.limits")
+    assert q["status"] == "open" and q["answer_kind"] == "choice" and q["options"]
+    page = client.get("/workflows/deep-research").text
+    assert 'data-workflow-answers="deep-research"' in page and f'data-answer="{q["id"]}"' in page
+
+    # words that set nothing are refused, not recorded as an answer
+    r = client.post(
+        "/api/workflows/deep-research/answer", json={"finding_id": q["id"], "answer": "not far"}
+    )
+    assert r.status_code == 400
+    assert "steps.go_deeper.limits" in [
+        f["field"] for f in client.get("/api/workflows/deep-research").json()["findings"]
+    ]
+
+    r = client.post(
+        "/api/workflows/deep-research/answer",
+        json={"finding_id": q["id"], "answer": q["options"][0]["value"]},
+    )
+    assert r.status_code == 200, r.text
+    assert "steps.go_deeper.limits" not in [f["field"] for f in r.json()["findings"]]
+    limits = next(s for s in read_yaml(ws, rel)["spec"]["steps"] if s["id"] == "go_deeper")[
+        "limits"
+    ]
+    assert limits["max_depth"] == 1 and limits["max_fanout"] == 3
+
+
+def test_limits_typed_in_words_are_read_as_numbers():
+    from wf.audit.question import _parse_limits
+
+    assert _parse_limits("2 levels, 3 at a time") == {"max_depth": 2, "max_fanout": 3}
+    assert _parse_limits("just 1") == {"max_depth": 1}
