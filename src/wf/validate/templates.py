@@ -74,3 +74,13 @@ def everything_before(input_names: list[str], earlier: list[tuple[str, str]]) ->
     out = {n: f"${{inputs.{n}}}" for n in input_names}
     out.update({sid: f"${{steps.{sid}.output}}" for sid, kind in earlier if kind in PRODUCES})
     return out
+
+
+def follows_the_answer(wait_id: str, input_name: str) -> dict[str, Any]:
+    """What connects a follow-up to the wait before it: run when the person asked to go
+    deeper, once for each topic they named, with that topic as the follow-up's input."""
+    return {
+        "when": f"${{steps.{wait_id}.output.go_deeper}}",
+        "for_each": f"${{steps.{wait_id}.output.topics}}",
+        "with": {input_name: "${item}"},
+    }

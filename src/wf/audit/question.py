@@ -281,6 +281,13 @@ def apply_answer(
             answer if isinstance(answer, dict) else {"policy": str(answer)},
             "When this step waits for you.",
         )
+    elif key == "follows" and isinstance(answer, dict) and answer.get("when"):
+        for k in ("when", "for_each", "with"):
+            change(
+                f"steps.{sid}.{k}",
+                answer[k],
+                "It goes deeper when the review asks, into what it names.",
+            )
     elif key == "input" and isinstance(answer, dict) and answer:
         change(field, answer, "What this step starts from.")
     elif key == "tools" and isinstance(answer, dict) and answer:

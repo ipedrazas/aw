@@ -243,15 +243,69 @@ function wireAnswers(base, reload) {
   }));
 })();
 
-/* Run page: refresh while running. */
+/* Sections you opened stay open across a reload: each <details> is remembered by the
+   card it sits in and its place there, for this page, for this tab. */
+(function () {
+  const key = "open:" + location.pathname;
+  const id = d => {
+    const card = d.closest(".card"), head = card && card.querySelector("h2, h3");
+    const same = card ? Array.from(card.querySelectorAll("details")) : [];
+    return (head ? head.textContent.trim() : "") + "#" + same.indexOf(d);
+  };
+  let open = [];
+  try { open = JSON.parse(sessionStorage.getItem(key) || "[]"); } catch (e) { open = []; }
+  document.querySelectorAll("details").forEach(d => {
+    if (open.includes(id(d))) d.open = true;
+    d.addEventListener("toggle", () => {
+      const now = Array.from(document.querySelectorAll("details")).filter(x => x.open).map(id);
+      try { sessionStorage.setItem(key, JSON.stringify(now)); } catch (e) { /* private mode */ }
+    });
+  });
+})();
+
+/* Run page: refresh while running, only when something changed, and never while you
+   are typing. */
 (function () {
   const el = document.querySelector("[data-run-refresh]"); if (!el) return;
   const id = el.dataset.runRefresh;
-  setInterval(async () => {
-    try { const r = await fetch("/api/runs/" + id); const d = await r.json(); if (d.status !== "running") location.reload(); else location.reload(); }
-    catch (e) { /* try again next tick */ }
-  }, 3000);
+  const shape = d => d.status + "|" + (d.steps || []).map(s =>
+    s.step_id + ":" + s.status + ":" + (s.decisions || []).length).join(",");
+  let seen = null;
+  const tick = async () => {
+    try {
+      const d = await (await fetch("/api/runs/" + id)).json();
+      const now = shape(d);
+      if (seen === null) seen = now;
+      const typing = document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+      if (now !== seen && !typing) location.reload();
+    } catch (e) { /* try again next tick */ }
+  };
+  tick();
+  setInterval(tick, 3000);
 })();
+
+/* Run page: answer the step a real run is waiting at, and carry on. */
+document.querySelectorAll("form[data-answer-wait]").forEach(f => {
+  const topics = f.querySelector("[data-topics]");
+  f.querySelectorAll("input[name=go]").forEach(r => r.addEventListener("change", () => {
+    topics.classList.toggle("hidden", f.querySelector("input[name=go]:checked").value !== "deeper");
+    if (!topics.classList.contains("hidden")) topics.querySelector("textarea").focus();
+  }));
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const msg = f.querySelector("[data-msg]"), c = f.querySelector("input[name=go]:checked");
+    if (!c) return say(msg, "Pick one first.", true);
+    const deeper = c.value === "deeper";
+    const list = deeper ? topics.querySelector("textarea").value : "";
+    if (deeper && !list.trim()) return say(msg, "Say what to go deeper into, one topic per line.", true);
+    say(msg, "Carrying on…");
+    try {
+      await postJSON("/api/runs/" + f.dataset.answerWait + "/answer",
+        {go_deeper: deeper, topics: list, note: (f.querySelector("[name=note]") || {}).value || ""});
+      location.reload();
+    } catch (err) { say(msg, err.message, true); }
+  });
+});
 
 /* Runs list: filter tabs and compare. */
 (function () {

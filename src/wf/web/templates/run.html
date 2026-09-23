@@ -31,7 +31,7 @@
     {% elif run.status == "paused_budget" %}
       <div class="banner banner-red"><span>Paused at the spending limit. Nothing more runs until you say so.</span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "waiting" %}
-      <div class="banner"><span>Waiting for you. A step needs approval before anything leaves the system.</span><span>{{ status_pill(run.status) }}</span></div>
+      <div class="banner"><span>Waiting for you. Answer the step marked “Needs you” below and the run carries on from there.</span><span>{{ status_pill(run.status) }}</span></div>
     {% else %}
       <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Guess points first, then what you expected, then the result.</span><span>{{ status_pill(run.status) }}</span></div>
     {% endif %}
@@ -85,6 +85,17 @@
       {% for d in s.decisions if d.kind == "guess" %}<div class="dec-guess" style="margin-top:8px"><strong>Guessed: {{ d.text }}</strong><div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
+      {% if s.kind == "wait" and s.status == "waiting" and run.status == "waiting" %}
+      <form class="waitform" data-answer-wait="{{ run.id }}">
+        <div class="opts">
+          <label class="opt"><input type="radio" name="go" value="finish"><span>Finish it as it is<div class="cons">Nothing more is researched. The rest of the steps run on what there is.</div></span></label>
+          <label class="opt"><input type="radio" name="go" value="deeper"><span>Go deeper<div class="cons">Each topic you name starts a follow-up run, within the limits and the budget.</div></span></label>
+        </div>
+        <div class="hidden" data-topics><p><textarea placeholder="What is missing? One topic per line." aria-label="Topics to go deeper into"></textarea></p></div>
+        <p><input type="text" name="note" placeholder="Anything to add? Optional." aria-label="A note with your answer"></p>
+        <div class="actions"><button class="btn btn-primary" type="submit">Answer and carry on</button><span data-msg class="small muted"></span></div>
+      </form>
+      {% endif %}
       {% if s.kind == "check" and s.output is mapping and s.output.sources is defined and s.output.vantage is defined %}
       <div style="margin-top:10px">
         <div class="card-head" style="margin:0 0 6px"><strong>{{ s.output.open_count }} of {{ s.output.total }} links open</strong>

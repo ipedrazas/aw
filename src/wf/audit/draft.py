@@ -16,6 +16,7 @@ from wf.validate import (
     Finding,
     Option,
     everything_before,
+    follows_the_answer,
     is_workflow_input,
     says_it_searches,
 )
@@ -315,6 +316,16 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 step["limits"] = limits
                 if lim.get("passage"):
                     prov[f"steps.{sid}.limits"] = lim["passage"]
+            # after a person's review, it follows what they said
+            wait = next((x for x in reversed(steps_out) if x["kind"] == "wait"), None)
+            if wait is not None:
+                step.update(follows_the_answer(wait["id"], next(iter(inputs))))
+                assume(
+                    f"steps.{sid}.follows",
+                    s,
+                    f"“{s['title']}” runs only when “{wait['title']}” asks for it, once per topic named",
+                    "The document puts a person's review before it, so the review decides.",
+                )
             # what it runs over: the first list produced by the step it reads from
             for ref in s.get("reads_from", []):
                 src_step = next((x for x in steps_in if x["id"] == ref), None)
@@ -322,7 +333,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                     (p for p in (src_step or {}).get("produces", []) if p.get("type") == "list"),
                     None,
                 )
-                if lst:
+                if lst and "for_each" not in step:
                     step["for_each"] = f"${{steps.{ref}.output.{lst['name']}}}"
                     step["with"] = {next(iter(inputs)): "${item}"}
                     break
