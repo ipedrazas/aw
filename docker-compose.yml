@@ -38,6 +38,10 @@ services:
       # Ask the gateway to enforce the output schema rather than suggest it. Off by
       # default: not every provider behind it accepts every schema.
       WF_OPENROUTER_STRICT: ${WF_OPENROUTER_STRICT:-}
+      # Live web search and page fetch for the research step; fixtures without it.
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      WF_SEARCH: ${WF_SEARCH:-}
+      WF_LINK_CHECK: ${WF_LINK_CHECK:-}
       WF_WORKSPACE: /app/workspace
       # The two levels of judgement a step runs at. Empty uses the defaults in
       # src/wf/settings.py, which is the only place a model is named in the code.

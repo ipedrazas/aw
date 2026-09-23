@@ -11,6 +11,7 @@ from wf.settings import (
     link_check_mode,
     provider,
     provider_named_by,
+    search_mode,
 )
 
 from .base import (
@@ -33,6 +34,7 @@ from .base import (
     Usage,
     run_with_policy,
 )
+from .exa import ExaSearch
 from .guess import HeuristicGuesser, ModelGuesser
 from .links import FixtureLinkCheck, LiveLinkCheck
 from .models import (
@@ -95,13 +97,15 @@ def default_model() -> ModelActivity:
 def default_activities(
     ws: Workspace, model: ModelActivity | None = None, *, model_guesses: bool = True
 ) -> Activities:
-    """Real model calls, recorded search, real link checks, real PDF rendering, nothing
-    sent anywhere. ``WF_LINK_CHECK=recorded`` keeps the link check off the network."""
+    """Real model calls, real link checks, real PDF rendering, nothing sent anywhere.
+
+    Search is Exa when ``EXA_API_KEY`` is set and the fixtures otherwise; ``WF_SEARCH``
+    and ``WF_LINK_CHECK`` set to ``recorded`` keep either off the network."""
     model = model or default_model()
     guesser: Guesser = ModelGuesser(model) if model_guesses else HeuristicGuesser()
     return Activities(
         model=model,
-        search=FixtureSearch(ws),
+        search=ExaSearch() if search_mode() == "exa" else FixtureSearch(ws),
         links=LiveLinkCheck(ws) if link_check_mode() == "live" else FixtureLinkCheck(ws),
         render=PdfRenderer(),
         send=RecordingSend(),
@@ -114,6 +118,7 @@ __all__ = [
     "ActivityError",
     "ActivityPolicy",
     "AnthropicModel",
+    "ExaSearch",
     "FixtureLinkCheck",
     "FixtureSearch",
     "Guess",

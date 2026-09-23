@@ -390,6 +390,16 @@ class SessionLog:
                 "calls_detail": [_call_view(c, bodies=bodies) for c in calls],
             }
 
+    def calls_for_run(self, run_id: str) -> list[dict[str, Any]]:
+        """Every exchange a run had, in the order they happened, bodies included."""
+        with self.db.session() as s:
+            calls = s.scalars(
+                select(ModelCall)
+                .where(ModelCall.run_id == run_id)
+                .order_by(ModelCall.started_at, ModelCall.seq)
+            ).all()
+            return [_call_view(c) for c in calls]
+
     # -- reading, from the mirrored files ---------------------------------------
 
     def list_from_disk(self, *, limit: int = 50) -> list[dict[str, Any]]:

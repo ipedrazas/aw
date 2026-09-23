@@ -191,6 +191,24 @@ def test_run_a_workflow_against_a_case_and_read_the_report(client):
     out = check["output"]
     assert f"{out['open_count']} of {out['total']} links open" in page
     assert "recorded fixtures" in page and "No model involved" in page
+    # what each agent step was sent, and what it searched for, as it happened
+    assert (
+        "Instructions (system prompt)" in page
+        and "&lt;data source=&#34;step input&#34;&gt;" in page
+    )
+    assert "What it searched and read" in page and 'pill-blue">search</span>' in page
+
+
+def test_a_real_run_starts_from_the_page_and_says_so(client):
+    r = client.post(
+        "/api/workflows/deep-research/runs", json={"case": "durable-execution", "mode": "live"}
+    )
+    assert r.status_code == 200, r.text
+    run = wait_for(client, r.json()["run_id"])
+    assert run["mode"] == "live" and run["status"] in ("done", "waiting"), run["error"]
+    page = client.get(f"/runs/{run['id']}").text
+    assert "Real run" in page and "Dry run</span>" not in page
+    assert 'value="live"' in client.get("/workflows/deep-research").text
 
 
 def test_audit_answer_chat_undo_and_dry_run(client):

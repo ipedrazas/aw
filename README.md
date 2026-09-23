@@ -96,6 +96,9 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | `WF_MODEL_PROVIDER` | `anthropic` | `anthropic` or `openrouter`; needed only when both keys are set |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | For a proxy in front of the gateway |
 | `WF_OPENROUTER_STRICT` | | `1` asks the gateway to enforce the output schema, not suggest it |
+| `EXA_API_KEY` | | Live web search and page fetch through Exa; without it, search reads the fixtures |
+| `WF_SEARCH` | `exa` with a key, else `recorded` | `recorded` keeps search on the fixtures even with a key |
+| `WF_LINK_CHECK` | `live` | `recorded` checks links against the fixtures only, off the network |
 | `WF_WORKSPACE` | `workspace` | The workspace directory |
 | `WF_DATABASE_URL` | `sqlite:///var/wf.db` | SQLAlchemy URL; Compose sets Postgres |
 | `WF_ARTIFACTS_DIR` | `var/artifacts` | Where rendered PDFs go |

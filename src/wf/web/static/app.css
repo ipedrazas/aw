@@ -143,3 +143,7 @@ details summary{cursor:pointer;color:var(--muted)}
 .passage .pid{color:var(--muted);font-size:12px}
 .field{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:14px}
 .hidden{display:none}
+.toollog{margin:8px 0 0;padding-left:22px}
+.toollog>li{margin:0 0 8px}
+.toollog ul{margin:4px 0 0;padding-left:18px}
+.toollog .mono{word-break:break-all}

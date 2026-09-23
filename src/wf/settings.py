@@ -200,6 +200,17 @@ def link_check_mode() -> str:
     return "recorded" if named in {"recorded", "fixtures", "off"} else "live"
 
 
+def search_mode() -> str:
+    """``exa`` searches the web and fetches pages through Exa; ``recorded`` answers from
+    the fixtures. ``WF_SEARCH`` names it; failing that, a set ``EXA_API_KEY`` means Exa."""
+    named = (os.environ.get("WF_SEARCH") or "").strip().lower()
+    if named in {"exa", "live"}:
+        return "exa"
+    if named in {"recorded", "fixtures", "off"}:
+        return "recorded"
+    return "exa" if os.environ.get("EXA_API_KEY") else "recorded"
+
+
 def offline() -> bool:
     """Whether the offline model answers everything, so no name above is asked at all."""
     return bool(os.environ.get("WF_FAKE_MODEL"))
@@ -238,6 +249,8 @@ def model_plan() -> dict[str, Any]:
         "offline": offline(),
         "max_output_tokens": max_output_tokens(),
         "pricing_from": "WF_MODEL_PRICING" if os.environ.get("WF_MODEL_PRICING") else "default",
+        "search": search_mode(),
+        "link_check": link_check_mode(),
         "tasks": [],
     }
     if where == OPENROUTER:

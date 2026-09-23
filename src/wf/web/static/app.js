@@ -54,9 +54,11 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
     e.preventDefault();
     const name = f.dataset.runWorkflow, msg = f.querySelector("[data-msg]");
     const topic = (f.querySelector("[name=topic]") || {}).value || "", caseName = (f.querySelector("[name=case]") || {}).value || "";
-    const body = caseName ? {case: caseName} : {inputs: {topic: topic}};
+    const mode = (e.submitter && e.submitter.value) || "dry";
+    const body = caseName ? {case: caseName, mode: mode} : {inputs: {topic: topic}, mode: mode};
     if (!caseName && topic.trim().length < 10) return say(msg, "Give a topic of at least ten characters, or pick a past case.", true);
-    say(msg, "Starting…");
+    if (mode === "live" && !confirm("Run it for real? Follow-up research starts if the reviewer asks for it, so this can cost up to the workflow's budget. Nothing is sent anywhere.")) return;
+    say(msg, mode === "live" ? "Starting the real run…" : "Starting…");
     try { const d = await postJSON("/api/workflows/" + encodeURIComponent(name) + "/runs", body); location.href = "/runs/" + d.run_id; }
     catch (err) { say(msg, err.message, true); }
   });

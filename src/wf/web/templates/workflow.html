@@ -25,7 +25,7 @@
       <div><label class="small muted">Or a past case with a known outcome</label>
         <select name="case"><option value="">Pick a case</option>{% for c in data.cases %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
     </div>
-    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">Start a dry run</button><span class="small muted">Real judgement, recorded sources, nothing sent anywhere.</span><span data-msg class="small"></span></div>
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit" value="dry">Start a dry run</button><button class="btn" type="submit" value="live">Run it for real</button><span class="small muted">Real judgement, {{ 'live web search (Exa)' if search_live else 'recorded sources' }}, nothing sent anywhere. A real run also starts the follow-up research and marks nothing as simulated.</span><span data-msg class="small"></span></div>
   </form>
 </div>
 <pre id="yaml" class="hidden">{{ data.yaml }}</pre>
