@@ -240,7 +240,7 @@ def apply_answer(
             "What this action does outside the system.",
         )
     elif key == "limits":
-        val = answer if isinstance(answer, dict) else {}
+        val = answer if isinstance(answer, dict) else _parse_limits(answer)
         cur = _get(d, field) or {}
         change(
             field, {**cur, "budget": cur.get("budget", "inherit"), **val}, "How far this can go."
@@ -395,6 +395,21 @@ MINUTES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b", re.I)
 HOURS = re.compile(r"(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b", re.I)
 
 
+def _parse_limits(answer: Any) -> dict[str, Any]:
+    """“2 levels, 3 at a time” -> depth 2, fan-out 3. The numbers are read in that order;
+    words without a number are refused rather than recorded as an answer that sets nothing."""
+    nums = [int(n) for n in re.findall(r"\d+", str(answer))]
+    if not nums:
+        raise AnswerRejected(
+            "Say how many levels deep it may go and how many at a time, "
+            "for example “1 level, 3 at a time”, or pick one of the choices."
+        )
+    out: dict[str, Any] = {"max_depth": nums[0]}
+    if len(nums) > 1:
+        out["max_fanout"] = nums[1]
+    return out
+
+
 def _parse_budget(answer: Any) -> dict[str, Any]:
     """A spending limit out of the words someone types: “about $5 and 30 minutes”.
 
@@ -516,3 +531,32 @@ def _add_enum_value(
             reason=f"“{value}” is now a possible outcome.",
         )
     )
+
+
+def answer_definition(
+    defn: dict[str, Any], finding: Finding, answer: Any, ws: Workspace
+) -> tuple[dict[str, Any], list[Change]]:
+    """Write an answer into a copy of the definition, and refuse it if the question is
+    still open afterwards: an answer that sets nothing is not an answer, and recording it
+    as one hides the gap until a real run trips over it."""
+    from pydantic import ValidationError
+
+    from wf.schema import load_workflow_dict
+    from wf.validate import validate
+
+    was = (finding.status, finding.answer)
+    try:
+        new_def, changes = apply_answer(defn, finding, answer, ws)
+        wf = load_workflow_dict(new_def)
+    except AnswerRejected:
+        finding.status, finding.answer = was
+        raise
+    except (ValidationError, TypeError, ValueError, KeyError, IndexError, StopIteration) as e:
+        finding.status, finding.answer = was
+        raise AnswerRejected(why_rejected(finding, answer)) from e
+    if finding.type != "assumption" and any(
+        f.id == finding.id and f.status == "open" for f in validate(wf, ws).findings
+    ):
+        finding.status, finding.answer = was
+        raise AnswerRejected(why_rejected(finding, answer))
+    return new_def, changes

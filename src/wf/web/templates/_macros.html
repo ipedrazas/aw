@@ -22,7 +22,7 @@
   <label class="switch"><input type="checkbox" data-tech-switch> Show technical details</label>
 {%- endmacro %}
 
-{% macro question(f, audit_id) -%}
+{% macro question(f, audit_id, chat=True) -%}
   <div class="q" id="q-{{ f.id }}">
     <div class="qtext">{{ f.question }}</div>
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
@@ -57,7 +57,7 @@
       {% endif %}
       <div class="actions">
         <button class="btn btn-sm btn-primary" type="submit">Answer</button>
-        <button class="btn btn-sm" type="button" data-chat-about="{{ f.id }}" data-question="{{ f.question }}">Chat about this</button>
+        {% if chat %}<button class="btn btn-sm" type="button" data-chat-about="{{ f.id }}" data-question="{{ f.question }}">Chat about this</button>{% endif %}
         <span data-msg class="small muted"></span>
       </div>
     </form>

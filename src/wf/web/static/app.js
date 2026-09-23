@@ -87,6 +87,55 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   });
 })();
 
+/* Answer forms, on a draft and on a saved workflow: the same questions, posted to
+   whichever one the page is about. */
+function wireAnswers(base, reload) {
+  document.querySelectorAll("form[data-answer]").forEach(f => {
+    /* picking "No, I will answer this" opens a box to say what instead */
+    const own = f.querySelector("[data-own]");
+    if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
+      const no = (JSON.parse(f.querySelector("input[type=radio]:checked").value) || {}).keep === false;
+      own.classList.toggle("hidden", !no);
+      if (no) own.querySelector("textarea").focus();
+    }));
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
+      let answer = null;
+      if (kind === "choice" || kind === "bool") {
+        const c = f.querySelector("input[type=radio]:checked");
+        if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
+        answer = JSON.parse(c.value);
+        const own = f.querySelector("[data-own]");
+        if (own && answer && answer.keep === false) {
+          const text = own.querySelector("textarea").value.trim();
+          if (!text) return say(msg, "Say what it should be instead.", true);
+          if (!window.chatAbout) return say(msg, "The chat is not available on this page.", true);
+          say(msg, "Sent to the chat.");
+          return window.chatAbout(f.dataset.answer, f.dataset.question, text);
+        }
+      } else if (kind === "multi") {
+        answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
+        if (!answer.length) return say(msg, "Pick at least one.", true);
+      } else if (kind === "number") {
+        const v = f.querySelector("input[type=number]").value; if (v === "") return say(msg, "Enter a number.", true);
+        answer = Number(v);
+      } else {
+        answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
+      }
+      say(msg, "Saving…");
+      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(msg); }
+      catch (err) { say(msg, err.message, true); }
+    });
+  });
+}
+
+/* Workflow page: answer the questions still open on a saved workflow. */
+(function () {
+  const root = document.querySelector("[data-workflow-answers]"); if (!root) return;
+  wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => location.reload());
+})();
+
 /* Audit page: chat, answers, undo, save, dry run. */
 (function () {
   const root = document.querySelector("[data-audit]"); if (!root) return;
@@ -155,44 +204,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
     });
   }
 
-  document.querySelectorAll("form[data-answer]").forEach(f => {
-    /* picking "No, I will answer this" opens a box to say what instead */
-    const own = f.querySelector("[data-own]");
-    if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
-      const no = (JSON.parse(f.querySelector("input[type=radio]:checked").value) || {}).keep === false;
-      own.classList.toggle("hidden", !no);
-      if (no) own.querySelector("textarea").focus();
-    }));
-    f.addEventListener("submit", async e => {
-      e.preventDefault();
-      const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
-      let answer = null;
-      if (kind === "choice" || kind === "bool") {
-        const c = f.querySelector("input[type=radio]:checked");
-        if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
-        answer = JSON.parse(c.value);
-        const own = f.querySelector("[data-own]");
-        if (own && answer && answer.keep === false) {
-          const text = own.querySelector("textarea").value.trim();
-          if (!text) return say(msg, "Say what it should be instead.", true);
-          if (!window.chatAbout) return say(msg, "The chat is not available on this page.", true);
-          say(msg, "Sent to the chat.");
-          return window.chatAbout(f.dataset.answer, f.dataset.question, text);
-        }
-      } else if (kind === "multi") {
-        answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
-        if (!answer.length) return say(msg, "Pick at least one.", true);
-      } else if (kind === "number") {
-        const v = f.querySelector("input[type=number]").value; if (v === "") return say(msg, "Enter a number.", true);
-        answer = Number(v);
-      } else {
-        answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
-      }
-      say(msg, "Saving…");
-      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(msg); }
-      catch (err) { say(msg, err.message, true); }
-    });
-  });
+  wireAnswers(base, reload);
 
   document.querySelectorAll("[data-reopen]").forEach(b => b.addEventListener("click", () => {
     const t = document.getElementById(b.dataset.reopen); if (t) { t.classList.remove("hidden"); b.classList.add("hidden"); }

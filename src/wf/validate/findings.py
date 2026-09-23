@@ -216,6 +216,24 @@ DEADLINE_OPTIONS = [
     Option(value="7d", label="A week"),
 ]
 
+LIMITS_OPTIONS = [
+    Option(
+        value={"max_depth": 1, "max_fanout": 3, "budget": "inherit"},
+        label="One level deeper, up to 3 at a time",
+        consequence="Follow-ups cannot start follow-ups of their own. They share this run's budget.",
+    ),
+    Option(
+        value={"max_depth": 2, "max_fanout": 3, "budget": "inherit"},
+        label="Two levels deeper, up to 3 at a time",
+        consequence="A follow-up can go one level further. They share this run's budget.",
+    ),
+    Option(
+        value={"max_depth": 1, "max_fanout": 1, "budget": "inherit"},
+        label="One follow-up, one level deeper",
+        consequence="The cheapest: at most one more piece of research per run.",
+    ),
+]
+
 # -- the routines a check or a tool may name ---------------------------------
 # Definitions cannot add code, so this is the whole set. Each one is described in the
 # words of someone reading the question, not in the words of the code that runs it.
@@ -282,6 +300,8 @@ def default_options(field: str) -> tuple[AnswerKind, list[Option]]:
             Option(value=["send_email"], label="It sends an email"),
             Option(value=["write_external"], label="It writes to another system"),
         ]
+    if key == "limits":
+        return "choice", LIMITS_OPTIONS
     if key in ("max_fanout", "max_depth"):
         return "number", []
     if key in ("does_not_check", "checks"):
