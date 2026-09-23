@@ -20,8 +20,10 @@ from .templates import (
     StepTemplate,
     everything_before,
     follows_the_answer,
+    holds_urls,
     is_workflow_input,
     says_it_searches,
+    with_sources,
 )
 
 
@@ -67,6 +69,7 @@ __all__ = [
     "Finding",
     "everything_before",
     "follows_the_answer",
+    "holds_urls",
     "says_it_searches",
     "Option",
     "StepTemplate",
@@ -77,4 +80,5 @@ __all__ = [
     "validate",
     "validate_semantic",
     "validate_structural",
+    "with_sources",
 ]

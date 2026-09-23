@@ -168,8 +168,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
         new_wf = load_workflow_dict(new_def)
         st().ws.save_definition(new_wf)
         rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        # an answer can rewrite a step's output shape as well as the definition
+        rels = [rel] + [r for r in (f"schemas/{name}", f"skills/{name}") if st().ws.exists(r)]
         commit = gitrepo.commit_paths(
-            st().ws.root, [rel], f"{name}: answered “{finding.question}”", *st().author
+            st().ws.root, rels, f"{name}: answered “{finding.question}”", *st().author
         )
         drafts = _carry_to_drafts(st(), name, changes)
         logger.info(

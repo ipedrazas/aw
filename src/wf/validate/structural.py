@@ -15,6 +15,7 @@ from .templates import (
     WEB_TOOLS,
     everything_before,
     follows_the_answer,
+    holds_urls,
     says_it_searches,
 )
 
@@ -123,6 +124,26 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
                     step=step,
                     unblocks=unblocks,
                     options=input_options(wf, idx),
+                )
+            )
+        # a step that searches has to hand on what it found, addresses and all
+        searches = any(t.split(".")[-1] == "search" for t in (step.tools or {}))
+        rel = step.output.schema_ if step.output else None
+        shape = ws.load_schema(rel) if (ws is not None and rel) else None
+        if step.kind == "agent" and searches and shape is not None and not holds_urls(shape):
+            findings.append(
+                make_finding(
+                    "gap",
+                    f"steps.{step.id}.hands_on",
+                    step=step,
+                    unblocks=unblocks,
+                    options=[
+                        Option(
+                            value="sources",
+                            label="Every source it used: its address, title, date and what it says",
+                            consequence="The report can cite them, and the link check can open them.",
+                        )
+                    ],
                 )
             )
         # a follow-up after a person's review has to follow what they said

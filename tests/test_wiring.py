@@ -142,3 +142,41 @@ def test_the_pdf_is_made_from_the_report_whatever_it_is_called(tmp_path):
     )
     render_pdf(ctx, {"topic": "celld", "write": {"report": "# celld\n\n" + "words " * 50}})
     assert seen["title"] == "celld" and seen["report"]["body_md"].startswith("# celld")
+
+
+def test_a_step_that_searches_has_to_hand_on_its_sources(ws):
+    """A real run searched 43 times and handed on "S1".."S30": its output shape was a
+    list of strings, with nowhere to put an address."""
+    from wf.validate import holds_urls
+
+    d = _wf()
+    search = d["spec"]["steps"][0]
+    search["tools"] = {"search": {"max_calls": 5}, "get_contents": {"max_calls": 5}}
+    search["output"] = {"schema": "schemas/t/search.json"}
+    ws.save_schema(
+        "schemas/t/search.json",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["search_results"],
+            "properties": {"search_results": {"type": "array", "items": {"type": "string"}}},
+        },
+    )
+    q = _open(d, ws)["steps.search.hands_on"]
+    assert q.question == "What does this step hand on from what it found?"
+    d2, _ = answer_definition(d, q, q.options[0].value, ws)
+    shape = ws.load_schema("schemas/t/search.json")
+    assert holds_urls(shape)
+    item = shape["properties"]["search_results"]["items"]
+    assert item["properties"]["url"]["type"] == "string" and "notes" in item["required"]
+    assert "steps.search.hands_on" not in _open(d2, ws)
+
+
+def test_a_shape_with_no_list_of_results_gains_one():
+    from wf.validate import with_sources
+
+    shape = with_sources(
+        {"type": "object", "required": ["summary"], "properties": {"summary": {"type": "string"}}}
+    )
+    assert shape["required"] == ["summary", "sources"]
+    assert shape["properties"]["sources"]["items"]["properties"]["url"]
