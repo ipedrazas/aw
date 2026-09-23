@@ -80,7 +80,13 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
 (function () {
   const root = document.querySelector("[data-audit]"); if (!root) return;
   const id = root.dataset.audit, base = "/api/audits/" + id;
-  const reload = () => location.reload();
+  /* While the chat is thinking, a reload would throw its answer away: answers, undo and
+     save are kept on the server at once, and the page refreshes when the chat is done. */
+  let chatting = false;
+  const reload = (msg) => {
+    if (!chatting) return location.reload();
+    say(msg, "Saved. The page updates when the chat answers.");
+  };
 
   const chat = document.querySelector("form[data-chat]");
   if (chat) {
@@ -128,9 +134,10 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
       bubble("msg-user", text);
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
-      box.value = ""; grow(); box.readOnly = true; say(msg, "");
-      try { await postJSON(base + "/chat", {message: text, about: about}); reload(); }
+      box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true;
+      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; location.reload(); }
       catch (err) {
+        chatting = false;
         typing.remove(); box.value = text; grow(); box.readOnly = false;
         say(msg, err.message, true);
       }
@@ -171,7 +178,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
         answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
       }
       say(msg, "Saving…");
-      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(); }
+      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(msg); }
       catch (err) { say(msg, err.message, true); }
     });
   });

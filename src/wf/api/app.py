@@ -297,6 +297,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
             )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e
+        # The model takes a while; the person may have answered a question meanwhile.
+        # Its turn goes onto the draft as it is now, not as it was when it was asked.
+        result, rec = _audit(st(), audit_id)
         applied: list[Change] = []
         refused: list[str] = []
         for edit in outcome.edits:
@@ -367,8 +370,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.post("/api/audits/{audit_id}/save")
     def save(audit_id: str) -> dict[str, Any]:
         result, _rec = _audit(st(), audit_id)
+        st().auditor.revalidate(result)  # puts right what a routine gives back, among others
         wf = result.workflow()
-        st().ws.save_definition(wf)
         rels = [
             str(st().ws.definition_path(wf.metadata.name).relative_to(st().ws.root)),
             f"skills/{wf.metadata.name}",

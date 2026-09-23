@@ -141,7 +141,53 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                     )
                 )
 
+    findings.extend(_unread_inputs(wf))
     return findings
+
+
+def _unread_inputs(wf: Workflow) -> list[Finding]:
+    """What someone types to start a run has to reach a step that does something with it.
+    A wait passes nothing on, so an input only a wait reads reaches nothing."""
+    out: list[Finding] = []
+
+    def reads(step: Step, name: str) -> bool:
+        return any(
+            f"inputs.{name}" in str(v) for v in (step.input, step.with_, step.for_each, step.when)
+        )
+
+    doers = [s for s in wf.spec.steps if s.kind != "wait"]
+    for name in wf.spec.inputs or {}:
+        if not doers or any(reads(s, name) for s in doers):
+            continue
+        first = wf.spec.steps[0]
+        options: list[Option] = []
+        if first.kind == "wait" and reads(first, name):
+            options.append(
+                Option(
+                    value={"remove": first.id, "step": doers[0].id},
+                    label=f"“{first.title or first.id}” is how it starts: remove it, and “{doers[0].title or doers[0].id}” starts from the {name}",
+                )
+            )
+        options += [
+            Option(value={"step": s.id}, label=f"“{s.title or s.id}” starts from it")
+            for s in doers[:3]
+        ]
+        waits = [s for s in wf.spec.steps if s.kind == "wait" and reads(s, name)]
+        detail = (
+            f"Only “{waits[0].title or waits[0].id}” reads it, and a wait passes nothing on, so every step after it works without the {name}."
+            if waits
+            else f"No step reads it, so every step works without the {name}."
+        )
+        out.append(
+            make_finding(
+                "conflict",
+                f"spec.inputs.{name}.read_by",
+                detail=detail,
+                options=options,
+                input=name,
+            )
+        )
+    return out
 
 
 def _unhandled_options(wf: Workflow, producer: Step | None, value: Any) -> list[Option]:
