@@ -437,3 +437,84 @@ def test_the_provider_decides_which_model_activity_is_built(monkeypatch):
     monkeypatch.setenv("WF_MODEL_PROVIDER", "some-other-gateway")
     with pytest.raises(ActivityError, match="not a provider"):
         default_model()
+
+
+def _search_tool(seen: list[dict[str, Any]]) -> ToolSpec:
+    return ToolSpec(
+        name="search",
+        description="Search the web.",
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {"query": {"type": "string"}},
+        },
+        executor=lambda i: seen.append(i) or [{"title": "A page", "url": "https://x.example"}],
+        max_calls=5,
+    )
+
+
+def _calls(query: str) -> Stream:
+    return Stream(
+        [
+            event(
+                choices=[
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search",
+                                        "arguments": json.dumps({"query": query}),
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            ),
+            event(choices=[{"delta": {}, "finish_reason": "tool_calls"}]),
+            "data: [DONE]",
+        ]
+    )
+
+
+def test_a_step_with_tools_has_to_search_before_it_is_asked_for_its_answer():
+    """Asked for the answer's shape on the first round, a model skipped the tools and
+    answered an empty list with a decision saying it had searched."""
+    seen: list[dict[str, Any]] = []
+    gateway = Gateway(
+        _calls("celld"),
+        answer("I found what I needed."),
+        answer(envelope({"verdict": "accept"})),
+    )
+    resp = OpenRouterModel(gateway).complete(request(tools=[_search_tool(seen)]))
+
+    first, second, last = gateway.asked
+    assert first["tool_choice"] == "required" and "response_format" not in first
+    assert "tool_choice" not in second and "response_format" not in second
+    assert last["response_format"]["type"] == "json_schema" and last["tool_choice"] == "none"
+    assert last["messages"][-1]["role"] == "user" and "JSON" in last["messages"][-1]["content"]
+    assert seen == [{"query": "celld"}] and resp.output == {"verdict": "accept"}
+    assert "Use them to find what you need" in first["messages"][0]["content"]
+
+
+def test_an_answer_given_straight_after_searching_is_taken_as_it_is():
+    gateway = Gateway(_calls("celld"), answer(envelope({"verdict": "accept"})))
+    resp = OpenRouterModel(gateway).complete(request(tools=[_search_tool([])]))
+    assert len(gateway.asked) == 2 and resp.output == {"verdict": "accept"}
+
+
+def test_a_provider_that_will_not_be_told_to_call_a_tool_is_asked_without_it():
+    refused = Stream(status=400, body={"error": {"message": "tool_choice not supported"}})
+    gateway = Gateway(refused, _calls("celld"), answer(envelope({"verdict": "accept"})))
+    resp = OpenRouterModel(gateway).complete(request(tools=[_search_tool([])]))
+    assert "tool_choice" not in gateway.asked[1] and resp.output == {"verdict": "accept"}
+
+
+def test_a_step_without_tools_is_asked_for_its_shape_at_once():
+    gateway = Gateway(answer(envelope({"verdict": "accept"})))
+    OpenRouterModel(gateway).complete(request())
+    assert "response_format" in gateway.asked[0] and "tool_choice" not in gateway.asked[0]

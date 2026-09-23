@@ -62,9 +62,17 @@ def envelope_schema(output_schema: dict[str, Any], decisions_required: bool) -> 
     }
 
 
-def build_system(skill_body: str) -> str:
+def build_system(skill_body: str, tools: list[str] | None = None) -> str:
+    use = (
+        "## Tools\n"
+        f"You have these tools: {', '.join(tools)}. Use them to find what you need before you "
+        "answer. Do not answer from memory what a tool could tell you, and do not say you "
+        "searched unless you called the tool. Every call is shown to the person running this.\n\n"
+        if tools
+        else ""
+    )
     return (
-        f"{skill_body.strip()}\n\n"
+        f"{skill_body.strip()}\n\n{use}"
         "## How to answer\n"
         'Reply with one JSON object: {"output": <the step\'s output>, "decisions": [...]}. '
         "Decisions are written for the person running this, in plain sentences: what you decided, why, and what else you considered.\n"
@@ -108,7 +116,7 @@ class AnthropicModel:
             kwargs: dict[str, Any] = {
                 "model": request.model,
                 "max_tokens": request.max_tokens,
-                "system": build_system(request.system),
+                "system": build_system(request.system, [t.name for t in request.tools]),
                 "messages": messages,
                 "output_config": {"format": {"type": "json_schema", "schema": schema}},
             }
