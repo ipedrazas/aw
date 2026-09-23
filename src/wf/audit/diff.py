@@ -51,6 +51,8 @@ def document_diff(
             )
             if f and f.type == "assumption" and f.status == "open":
                 status = "assumed"
+            if f and f.status == "dismissed" and path not in provenance:
+                status = "dismissed"
             fields.append(
                 {
                     "key": key,
