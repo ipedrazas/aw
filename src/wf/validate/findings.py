@@ -50,6 +50,10 @@ class Finding(BaseModel):
 # Keyed by the last meaningful part of the field path. ``{step}`` is the step title.
 
 QUESTIONS: dict[str, tuple[str, str]] = {
+    "read_by": (
+        "Which step starts from the {input} you type?",
+        "No step reads it, so every step works without it.",
+    ),
     "when": (
         "What decides which way this goes?",
         "“{step}” is a branch, but nothing says what makes it run.",

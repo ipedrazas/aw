@@ -281,12 +281,30 @@ def apply_answer(
             answer if isinstance(answer, dict) else {"policy": str(answer)},
             "When this step waits for you.",
         )
+    elif key == "read_by" and isinstance(answer, dict):
+        name = field.split(".")[2]
+        if answer.get("remove"):
+            gone = _step(d, answer["remove"])
+            change(
+                "spec.steps",
+                remove_step(d, answer["remove"]),
+                f"“{gone.get('title') or answer['remove']}” is how the run starts, not a step.",
+            )
+        reader = answer["step"]
+        cur = dict(_get(d, f"steps.{reader}.input") or {})
+        cur[name] = f"${{inputs.{name}}}"
+        change(
+            f"steps.{reader}.input",
+            cur,
+            f"“{_step(d, reader).get('title') or reader}” starts from the {name} you type.",
+        )
     elif key == "run":
         # the routines are a closed set: a name the system does not have would only
         # come straight back as a conflict, so it is refused here with the reason.
         if answer not in KNOWN_RUNNERS:
             raise AnswerRejected(why_rejected(finding, answer))
         change(field, answer, "Your answer.")
+        use_runner_schema(d, ws, sid, changes)
     elif key in ("model", "deadline"):
         # both are asked as a closed set of options (the models the deployment
         # configured, or one of the standard waits), so prose that matches none of
@@ -420,6 +438,34 @@ def _as_list(answer: Any) -> list[Any]:
     if isinstance(answer, str):
         return [ln.strip(" -•") for ln in answer.replace(";", "\n").splitlines() if ln.strip(" -•")]
     return [answer]
+
+
+def use_runner_schema(
+    d: dict[str, Any], ws: Workspace | None, sid: str, changes: list[Change] | None = None
+) -> None:
+    """A step that runs a routine gives back what the routine gives back, whatever the
+    document said it would: write the routine's shape into the step's schema file."""
+    from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
+
+    step = _step(d, sid)
+    shape = RUNNER_OUTPUT_SCHEMAS.get(step.get("run") or "")
+    if ws is None or shape is None:
+        return
+    rel = _get(d, f"steps.{sid}.output.schema") or f"schemas/{d['metadata']['name']}/{sid}.json"
+    before = ws.load_schema(rel)
+    if before == shape and _get(d, f"steps.{sid}.output.schema") == rel:
+        return
+    ws.save_schema(rel, copy.deepcopy(shape))
+    _set(d, f"steps.{sid}.output.schema", rel)
+    if changes is not None:
+        changes.append(
+            Change(
+                path=f"{rel}#",
+                before=before,
+                after=shape,
+                reason=f"“{step.get('title') or sid}” gives back what its routine gives back.",
+            )
+        )
 
 
 def _set_enum(

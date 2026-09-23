@@ -56,6 +56,23 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"].startswith("meanwhile "):
+                # while the model thinks, the person answers a question on the right
+                aid_ = state.audits.list()[0]["id"]
+                result, _rec = state.audits.load(aid_)
+                fid_ = req.input["message"].split()[1]
+                f = next(x for x in result.findings if x.id == fid_)
+                state.auditor.answer(result, fid_, f.options[0].value if f.options else "yes")
+                state.audits.save(aid_, result, [], by="answer")
+                return ModelResponse(
+                    output={
+                        "reply": "Here is my answer.",
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"].startswith("close "):
                 # the person says the question does not apply; nothing in the draft changes
                 return ModelResponse(
@@ -504,3 +521,71 @@ def test_chat_can_close_a_question_that_does_not_apply(client):
     # closing an unknown question does nothing
     body = client.post(f"/api/audits/{aid}/chat", json={"message": "close nope"}).json()
     assert body["chat"][-1]["closed"] == []
+
+
+def test_an_answer_given_while_the_chat_thinks_is_kept(client):
+    """Chatting and answering are separate: neither overwrites the other."""
+    audit = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()
+    f = next(f for g in audit["questions"] for f in g["findings"] if f["options"])
+    body = client.post(
+        f"/api/audits/{audit['id']}/chat", json={"message": f"meanwhile {f['id']}"}
+    ).json()
+    assert body["chat"][-1]["text"] == "Here is my answer."
+    assert f["id"] in [a["id"] for a in body["answered"]], "the answer given meanwhile survived"
+
+
+def test_a_step_that_runs_a_routine_gives_back_the_routines_shape(client):
+    """A document's guess at a check's output does not outlive choosing the routine."""
+    from wf.api.app import _audit
+    from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
+
+    aid = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()["id"]
+    st = client.app.state.wf
+    result, _rec = _audit(st, aid)
+    check = next(s for s in result.definition["spec"]["steps"] if s["kind"] == "check")
+    rel = check["output"]["schema"]
+    st.ws.save_schema(
+        rel,
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"ok": {"type": "boolean"}},
+        },
+    )
+    st.auditor.set_field(result, f"steps.{check['id']}.run", "checks.http_resolves", "Chosen.")
+    assert st.ws.load_schema(rel) == RUNNER_OUTPUT_SCHEMAS["checks.http_resolves"]
+
+    # a draft saved with the wrong shape is put right when it is saved again
+    st.ws.save_schema(rel, {"type": "object", "properties": {}})
+    assert client.post(f"/api/audits/{aid}/save").status_code == 200
+    assert st.ws.load_schema(rel) == RUNNER_OUTPUT_SCHEMAS["checks.http_resolves"]
+
+
+def test_a_topic_only_a_wait_reads_is_asked_about_and_fixed(client):
+    """“Get my topic” waits, reads the topic and passes nothing on: the steps after it had no topic."""
+    from wf.api.app import _audit
+
+    aid = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()["id"]
+    st = client.app.state.wf
+    result, _rec = _audit(st, aid)
+    steps = result.definition["spec"]["steps"]
+    brief = steps[0]
+    wait = {
+        "id": "get_topic",
+        "kind": "wait",
+        "title": "Get my topic",
+        "input": {"topic": "${inputs.topic}"},
+    }
+    brief.pop("input")
+    st.auditor.set_field(result, "spec.steps", [wait, *steps], "As d6 had it.")
+    st.audits.save(aid, result)
+
+    f = next(f for f in result.open_findings() if f.field == "spec.inputs.topic.read_by")
+    assert "Get my topic" in f.detail and "passes nothing on" in f.detail
+    remove = next(o for o in f.options if isinstance(o.value, dict) and o.value.get("remove"))
+    r = client.post(f"/api/audits/{aid}/answer", json={"finding_id": f.id, "answer": remove.value})
+    assert r.status_code == 200, r.text
+    result, _rec = _audit(st, aid)
+    assert [s["id"] for s in result.definition["spec"]["steps"]][0] == "brief"
+    assert result.definition["spec"]["steps"][0]["input"] == {"topic": "${inputs.topic}"}
+    assert not [x for x in result.open_findings() if x.field.endswith(".read_by")]

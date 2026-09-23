@@ -213,7 +213,14 @@ class Auditor:
         return f
 
     def revalidate(self, result: AuditResult, wf: Workflow | None = None) -> None:
-        wf = wf if wf is not None else result.workflow()
+        from .question import use_runner_schema
+
+        # a step that runs a routine gives back the routine's shape; drafts made before
+        # this was kept in step are put right on their next change
+        for s in result.definition["spec"]["steps"]:
+            if s.get("run"):
+                use_runner_schema(result.definition, self.ws, s["id"])
+        wf = result.workflow()
         self.ws.save_definition(wf)
         answered = {f.id: f for f in result.findings if f.status != "open"}
         from .question import _get
