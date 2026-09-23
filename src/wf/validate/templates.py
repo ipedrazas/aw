@@ -11,6 +11,7 @@ the one it does fit before any question is built.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,3 +42,35 @@ def is_workflow_input(step: dict[str, Any]) -> bool:
     not a step -- it is the workflow's input, given the moment someone starts it.
     """
     return step.get("kind") == "wait" and not step.get("reads_from")
+
+
+# Kinds whose output a later step can read. A wait hands on nothing and a follow-up
+# run hands on a list of runs, so neither is something to start from by default.
+PRODUCES = ("agent", "check", "tool")
+
+# What a step that searches is given: the search and the page reader, with room to do
+# the job and a ceiling so it cannot run up the bill.
+WEB_TOOLS: dict[str, dict[str, int]] = {
+    "search": {"max_calls": 15},
+    "get_contents": {"max_calls": 25},
+}
+
+_SEARCHES = re.compile(
+    # "the search results" is what a step reads, not something it does
+    r"\b(search(?:es|ing)?(?!\s+results?)|web|online|internet|look(?:s|ing)? up|browse|google)\b",
+    re.IGNORECASE,
+)
+
+
+def says_it_searches(title: str | None, description: str | None) -> bool:
+    """Whether a step describes itself as going out to the web. Such a step with no
+    search tool can only answer from memory, and says so nowhere."""
+    return bool(_SEARCHES.search(f"{title or ''} {description or ''}"))
+
+
+def everything_before(input_names: list[str], earlier: list[tuple[str, str]]) -> dict[str, str]:
+    """An input that reads the workflow's inputs and every earlier step that produces
+    something, keyed by name. ``earlier`` is ``[(step id, kind), ...]`` in order."""
+    out = {n: f"${{inputs.{n}}}" for n in input_names}
+    out.update({sid: f"${{steps.{sid}.output}}" for sid, kind in earlier if kind in PRODUCES})
+    return out

@@ -9,7 +9,7 @@ from wf.expr import ExprError, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace, parse_pin
 
 from .findings import RUNNERS, Finding, Option, make_finding, runner_options
-from .templates import STEP_TEMPLATES
+from .templates import PRODUCES, STEP_TEMPLATES, WEB_TOOLS, everything_before, says_it_searches
 
 COMMON_REQUIRED = ("title", "shows_user", "trust")
 
@@ -40,6 +40,36 @@ def _unblocks(wf: Workflow, step: Step) -> int:
         if any(f"steps.{step.id}" in s for s in srcs):
             n += 1
     return n
+
+
+def input_options(wf: Workflow, idx: int) -> list[Option]:
+    """What a step at ``idx`` could start from: everything before it, the step just
+    before it, or the inputs alone."""
+    earlier = [(s.id, s.kind) for s in wf.spec.steps[:idx]]
+    names = list(wf.spec.inputs)
+    producing = [(sid, k) for sid, k in earlier if k in PRODUCES]
+    opts = [
+        Option(
+            value=everything_before(names, earlier),
+            label="Everything before it",
+            consequence="The "
+            + (" and ".join(names) or "inputs")
+            + " you type, and what every earlier step produced.",
+        )
+    ]
+    if producing:
+        prev = wf.step(producing[-1][0])
+        opts.append(
+            Option(
+                value={
+                    **{n: f"${{inputs.{n}}}" for n in names},
+                    prev.id: f"${{steps.{prev.id}.output}}",
+                },
+                label=f"The {' and '.join(names) or 'inputs'}, and “{prev.title or prev.id}”",
+                consequence="Only the step just before it, which keeps what it reads small.",
+            )
+        )
+    return opts
 
 
 def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Finding]:
@@ -74,6 +104,40 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
                         options=opts,
                     )
                 )
+
+        # a step after the first that reads nothing starts from nothing: it gets an
+        # empty input and makes up a subject, which looks like work and is not
+        idx = wf.step_index(step.id)
+        if idx > 0 and step.kind in PRODUCES and not step.input:
+            findings.append(
+                make_finding(
+                    "gap",
+                    f"steps.{step.id}.input",
+                    step=step,
+                    unblocks=unblocks,
+                    options=input_options(wf, idx),
+                )
+            )
+        # a step that says it searches, with nothing to search with, answers from memory
+        if (
+            step.kind == "agent"
+            and not step.tools
+            and says_it_searches(step.title, step.description)
+        ):
+            findings.append(
+                make_finding(
+                    "gap",
+                    f"steps.{step.id}.tools",
+                    step=step,
+                    options=[
+                        Option(
+                            value=WEB_TOOLS,
+                            label="Yes: search the web and read the pages it finds",
+                            consequence="Up to 15 searches and 25 pages a run. Each search and page shows on the run.",
+                        )
+                    ],
+                )
+            )
 
         # a branch needs when; a fan-out needs a ceiling
         if step.for_each is not None and step.effective_max_fanout is None:

@@ -3,7 +3,8 @@ can only name one of these. Each runs behind the activity boundary."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,9 +23,62 @@ class RunnerContext:
     note: Callable[[str, str], None]  # (text, reason) -> records a control decision
 
 
+_URL = re.compile(r"https?://[^\s<>\"'`\]\[)(]+")
+_TRAILING = ").,;:!?]'\"*_"
+
+
+def _strings(value: Any) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def _sources_in(input: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    """The links to check, and whether they came as a list of sources.
+
+    A list of ``{line, claim, url}`` is what the step is meant to be handed. When it is
+    handed something else — a report, a list of strings, a step's whole output — every
+    web address in it is checked, once, with the line it sits on, rather than nothing.
+    """
+    listed = input.get("sources")
+    out: list[dict[str, Any]] = []
+    if isinstance(listed, list):
+        for s in listed:
+            if isinstance(s, dict) and (s.get("url") or s.get("link")):
+                out.append(
+                    {
+                        "line": int(s.get("line") or 0),
+                        "claim": str(s.get("claim") or s.get("title") or ""),
+                        "url": str(s.get("url") or s.get("link")),
+                    }
+                )
+    if out:
+        return out, True
+    seen: set[str] = set()
+    for text in _strings(input):
+        for n, line in enumerate(text.splitlines(), 1):
+            for m in _URL.finditer(line):
+                url = m.group(0).rstrip(_TRAILING)
+                if url in seen:
+                    continue
+                seen.add(url)
+                out.append({"line": n, "claim": line.strip()[:200], "url": url})
+    return out, False
+
+
 def http_resolves(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
-    sources = list(input.get("sources") or [])
-    urls = [s.get("url", "") for s in sources]
+    sources, listed = _sources_in(input or {})
+    if sources and not listed:
+        ctx.note(
+            f"Found {len(sources)} links in what it was given, and checked each one.",
+            "It was not handed a list of sources, so it read every web address in its input.",
+        )
+    urls = [s["url"] for s in sources]
     statuses = {ls.url: ls for ls in ctx.activities.links.check(urls)}
     out_sources = []
     for s in sources:
@@ -55,20 +109,25 @@ def http_resolves(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _longest_text(input: dict[str, Any]) -> dict[str, Any]:
+    """A report handed on under some other name — ``report``, ``report_md``, a link
+    table appended to it — is the longest piece of writing in the input. A PDF of that
+    is better than an empty one titled "Report"."""
+    body = max(_strings(input), key=len, default="")
+    if not body:
+        return {}
+    first = next((ln.strip().lstrip("#").strip() for ln in body.splitlines() if ln.strip()), "")
+    title = input.get("topic") if isinstance(input.get("topic"), str) else first
+    return {"title": str(title or "Report")[:200], "body_md": body}
+
+
 def render_pdf(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
     report = input.get("revision") or input.get("report")
     if report is None:
-        report = (
-            next(
-                (
-                    v
-                    for v in input.values()
-                    if isinstance(v, dict) and ("body_md" in v or "title" in v)
-                ),
-                None,
-            )
-            or {}
-        )
+        report = next(
+            (v for v in input.values() if isinstance(v, dict) and ("body_md" in v or "title" in v)),
+            None,
+        ) or _longest_text(input)
     if input.get("revision"):
         ctx.note(
             "Used the revised report, not the first draft.",

@@ -10,7 +10,15 @@ from pydantic import BaseModel, Field
 from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
 from wf.schema import Workflow, Workspace, load_workflow_dict
 from wf.settings import model_for
-from wf.validate import Finding, Option, is_workflow_input
+from wf.validate import (
+    PRODUCES,
+    WEB_TOOLS,
+    Finding,
+    Option,
+    everything_before,
+    is_workflow_input,
+    says_it_searches,
+)
 
 from .ingest import Passage
 
@@ -157,6 +165,16 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         if not step_input and steps_out == []:
             for name_ in inputs:
                 step_input[name_] = f"${{inputs.{name_}}}"
+        elif not step_input and kind in PRODUCES:
+            # the document did not say what this step reads; reading nothing would
+            # leave it to make up its subject, so it reads everything before it
+            step_input = everything_before(list(inputs), [(x["id"], x["kind"]) for x in steps_out])
+            assume(
+                f"steps.{sid}.input",
+                s,
+                f"“{s['title']}” starts from everything before it",
+                "The document does not say what this step reads. It is given the inputs and what every earlier step produced.",
+            )
         if step_input:
             step["input"] = step_input
 
@@ -234,6 +252,14 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 )
             if s.get("tools"):
                 step["tools"] = {t: {"max_calls": 25 if t == "search" else 40} for t in s["tools"]}
+            elif says_it_searches(s.get("title"), s.get("description")):
+                step["tools"] = {k: dict(v) for k, v in WEB_TOOLS.items()}
+                assume(
+                    f"steps.{sid}.tools",
+                    s,
+                    f"“{s['title']}” searches the web and reads the pages it finds",
+                    "It says it searches, and without a search tool it could only answer from memory.",
+                )
             step["shows_user"] = ["output", "decisions"]
             step["decision_log"] = "required"
 
