@@ -187,6 +187,34 @@ def create_app(state: AppState | None = None) -> FastAPI:
         )
         return {"deleted": name, "removed": removed, "commit": commit, "runs_kept": runs_kept}
 
+    @app.post("/api/workflows/{name}/rename")
+    def rename_workflow(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Rename the definition. Past runs keep saying the old name: they are what happened."""
+        new_name = str(body.get("name") or "").strip()
+        if not new_name:
+            raise HTTPException(400, "Give it a new name.")
+        try:
+            changed = st().ws.rename_definition(name, new_name)
+        except WorkspaceError as e:
+            raise HTTPException(404 if "no definition named" in str(e) else 400, str(e)) from e
+        commit = gitrepo.commit_paths(
+            st().ws.root, changed, f"{name}: renamed to {new_name} from the UI", *st().author
+        )
+        logger.info(
+            "workflow %s renamed to %s",
+            name,
+            new_name,
+            extra={
+                "fields": {
+                    "event": "workflow.renamed",
+                    "workflow": name,
+                    "new_name": new_name,
+                    "files": len(changed),
+                }
+            },
+        )
+        return {"renamed": name, "name": new_name, "changed": changed, "commit": commit}
+
     # -- audits --------------------------------------------------------------
 
     @app.get("/api/audits")

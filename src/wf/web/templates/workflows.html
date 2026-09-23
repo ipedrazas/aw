@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delete_button %}
+{% from "_macros.html" import delete_button, rename_button %}
 {% block title %}Workflows{% endblock %}
 {% block content %}
 <div class="card-head"><h1>Workflows</h1><a class="btn btn-primary" href="/audits/new">New workflow</a></div>
@@ -20,6 +20,7 @@
     <div class="actions">
       {% if w.open_findings %}<span class="pill pill-yellow">{{ w.open_findings }} question{{ '' if w.open_findings == 1 else 's' }} open</span>
       {% else %}<span class="pill pill-green">No open questions</span>{% endif %}
+      {{ rename_button("/api/workflows/" ~ w.name ~ "/rename", w.name) }}
       {{ delete_button("/api/workflows/" ~ w.name, "Delete “" ~ w.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.") }}
     </div>
   </div>

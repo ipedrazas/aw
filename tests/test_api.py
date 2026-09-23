@@ -388,6 +388,71 @@ def test_a_name_that_is_a_path_is_not_a_definition(client, ws):
     assert ws.path("definitions").is_dir()
 
 
+def test_a_workflow_can_be_renamed_and_its_runs_keep_the_old_name(client, ws):
+    r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
+    run = wait_for(client, r.json()["run_id"])
+
+    listing = client.get("/workflows")
+    assert 'data-rename="/api/workflows/deep-research/rename"' in listing.text
+
+    body = client.post(
+        "/api/workflows/deep-research/rename", json={"name": "deeper-research"}
+    ).json()
+    assert body == {
+        "renamed": "deep-research",
+        "name": "deeper-research",
+        "changed": body["changed"],
+        "commit": body["commit"],
+    }
+    assert not ws.definition_path("deep-research").exists()
+    assert ws.definition_path("deeper-research").exists()
+    assert client.get("/api/workflows/deep-research").status_code == 404
+    names = {w["name"] for w in client.get("/api/workflows").json()}
+    assert names == {"deeper-research"}
+    assert (
+        client.get("/api/workflows/deeper-research").json()["summary"]["name"] == "deeper-research"
+    )
+    # past runs are what happened: they keep saying the name the workflow had then
+    assert client.get(f"/api/runs/{run['id']}").json()["status"] == "done"
+
+
+def test_renaming_a_workflow_moves_the_files_its_draft_wrote(client, ws):
+    aid = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()["id"]
+    assert client.post(f"/api/audits/{aid}/save").json()["saved"]
+    assert ws.path("skills/client-research").is_dir()
+
+    changed = client.post(
+        "/api/workflows/client-research/rename", json={"name": "client-research-v2"}
+    ).json()["changed"]
+    assert any(p.startswith("skills/client-research-v2/") for p in changed)
+    assert not ws.path("skills/client-research").exists()
+    assert ws.path("skills/client-research-v2").is_dir()
+    # instruction files shared between definitions sit at the top of skills/ and stay
+    assert ws.path("skills/deep-researcher.md").is_file()
+
+
+def test_renaming_to_a_name_already_taken_is_refused(client, ws):
+    aid = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()["id"]
+    assert client.post(f"/api/audits/{aid}/save").json()["saved"]
+
+    r = client.post("/api/workflows/deep-research/rename", json={"name": "client-research"})
+    assert r.status_code == 400
+    assert ws.definition_path("deep-research").exists()
+
+
+def test_renaming_a_missing_workflow_or_to_a_path_is_refused(client, ws):
+    assert (
+        client.post("/api/workflows/no-such-workflow/rename", json={"name": "x"}).status_code == 404
+    )
+    r = client.post("/api/workflows/deep-research/rename", json={"name": "../../workspace"})
+    assert r.status_code == 400
+    assert ws.definition_path("deep-research").exists()
+
+
 def test_live_run_is_refused_while_questions_are_open(client):
     r = client.post("/api/audits", json={"document": DOC.read_text(), "name": "client-research"})
     assert r.status_code == 200
