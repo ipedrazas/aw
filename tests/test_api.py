@@ -186,6 +186,11 @@ def test_run_a_workflow_against_a_case_and_read_the_report(client):
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
     runs = client.get("/api/runs").json()
     assert runs[0]["id"] == run["id"] and runs[0]["steps"][0]["status"] == "done"
+    page = client.get(f"/runs/{run['id']}").text
+    check = next(s for s in run["steps"] if s["kind"] == "check")
+    out = check["output"]
+    assert f"{out['open_count']} of {out['total']} links open" in page
+    assert "recorded fixtures" in page and "No model involved" in page
 
 
 def test_audit_answer_chat_undo_and_dry_run(client):

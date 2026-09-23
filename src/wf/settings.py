@@ -192,6 +192,14 @@ def model_for_task(task: str) -> str:
     return answer()
 
 
+def link_check_mode() -> str:
+    """``live`` asks each server (recorded fixtures still answer the URLs they hold);
+    ``recorded`` answers from the fixtures alone, for tests and a machine with no network.
+    ``WF_LINK_CHECK`` names it; live is the default."""
+    named = (os.environ.get("WF_LINK_CHECK") or "").strip().lower()
+    return "recorded" if named in {"recorded", "fixtures", "off"} else "live"
+
+
 def offline() -> bool:
     """Whether the offline model answers everything, so no name above is asked at all."""
     return bool(os.environ.get("WF_FAKE_MODEL"))

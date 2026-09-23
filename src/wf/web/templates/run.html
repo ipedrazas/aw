@@ -85,6 +85,21 @@
       {% for d in s.decisions if d.kind == "guess" %}<div class="dec-guess" style="margin-top:8px"><strong>Guessed: {{ d.text }}</strong><div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
+      {% if s.kind == "check" and s.output is mapping and s.output.sources is defined and s.output.vantage is defined %}
+      <div style="margin-top:10px">
+        <div class="card-head" style="margin:0 0 6px"><strong>{{ s.output.open_count }} of {{ s.output.total }} links open</strong>
+          {% if s.output.open_count == s.output.total %}<span class="pill pill-green">All open</span>{% else %}<span class="pill pill-red">{{ s.output.total - s.output.open_count }} did not open</span>{% endif %}</div>
+        <table>
+          <thead><tr><th>Line</th><th>Link</th><th>Status</th><th></th></tr></thead>
+          <tbody>{% for l in s.output.sources %}
+            <tr><td class="mono">{{ l.line }}</td><td>{% if l.url.startswith("http://") or l.url.startswith("https://") %}<a class="mono small" href="{{ l.url }}" target="_blank" rel="noopener noreferrer">{{ l.url }}</a>{% else %}<span class="mono small">{{ l.url }}</span>{% endif %}{% if l.claim %}<div class="small muted">{{ l.claim }}</div>{% endif %}</td>
+              <td class="mono">{{ l.status if l.status else "—" }}</td>
+              <td>{% if l.link_opens %}<span class="pill pill-green">Opens</span>{% else %}<span class="pill pill-red">Does not open</span>{% endif %}</td></tr>
+          {% endfor %}</tbody>
+        </table>
+        <p class="small muted" style="margin:6px 0 0">Checked {{ s.output.checked_at }} from {{ s.output.vantage }}. No model involved.</p>
+      </div>
+      {% endif %}
       {% if s.output is not none %}<details style="margin-top:8px"><summary>What it produced</summary><pre>{{ s.output | tojson(indent=2) }}</pre></details>{% endif %}
       <div class="tech mono" style="margin-top:6px">{{ s.kind }}{% if s.model %} · {{ s.model }}{% endif %}{% if s.instruction_ref %} · {{ s.instruction_ref }}{% endif %}{% if s.instruction_commit %} · {{ s.instruction_commit[:10] }}{% endif %}{% if s.tool_calls %} · {{ s.tool_calls | length }} tool calls{% endif %}{% if s.duration_s %} · {{ "%.1f" | format(s.duration_s) }}s{% endif %}</div>
     </div>

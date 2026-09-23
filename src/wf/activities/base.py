@@ -139,8 +139,9 @@ class SearchActivity(Protocol):
 @dataclass
 class LinkStatus:
     url: str
-    status: int
+    status: int  # 0 when nothing answered
     opens: bool
+    reason: str = ""  # why it did not open, or where the answer came from
 
 
 class LinkCheckActivity(Protocol):
