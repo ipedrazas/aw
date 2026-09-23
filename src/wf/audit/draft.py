@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
 from wf.schema import Workflow, Workspace, load_workflow_dict
 from wf.settings import model_for
-from wf.validate import Finding, Option
+from wf.validate import Finding, Option, is_workflow_input
 
 from .ingest import Passage
 
@@ -79,7 +79,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
     # model read "first, get my topic" as waiting for someone. What it would have
     # produced becomes an input, and what read from it reads the inputs instead.
     starts: set[str] = set()
-    if steps_in and steps_in[0]["kind"] == "wait" and not steps_in[0].get("reads_from"):
+    if steps_in and is_workflow_input(steps_in[0]):
         first = steps_in[0]
         starts.add(first["id"])
         steps_in = steps_in[1:]
