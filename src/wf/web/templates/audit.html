@@ -51,6 +51,7 @@
         {% for m in audit.chat %}
           <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
           {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
+          {% for c in m.closed or [] %}<div class="msg-change"><strong>Closed:</strong> {{ c.question }} <span class="muted">{{ c.reason }}</span></div>{% endfor %}
           {% if m.point_to_finding %}<a class="small" href="#q-{{ m.point_to_finding }}" data-goto="q-{{ m.point_to_finding }}">Take me to that question</a>{% endif %}
         {% endfor %}
       </div>
@@ -60,12 +61,9 @@
           <button type="button" class="chat-about-x" data-about-clear aria-label="Not about this question">×</button>
         </div>
         <div class="chat-box">
-          <textarea rows="1" placeholder="Ask about the draft, or tell me what to change" aria-label="Message"></textarea>
-          <button class="chat-send" type="submit" aria-label="Send">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <textarea rows="2" placeholder="Ask about the draft, or tell me what to change" aria-label="Message"></textarea>
+          <div class="small muted chat-hint">Enter to send, Shift+Enter for a new line.</div>
         </div>
-        <div class="small muted chat-hint">Enter to send, Shift+Enter for a new line.</div>
         <div data-msg class="small muted"></div>
       </form>
       {% if audit.runs %}
@@ -107,10 +105,10 @@
         {% for f in g.findings %}{{ question(f, audit.id) }}{% endfor %}
       {% endfor %}
       {% if audit.answered %}
-        <details style="margin-top:14px"><summary>Answered ({{ audit.answered | length }})</summary>
+        <details style="margin-top:14px"><summary>Answered or closed ({{ audit.answered | length }})</summary>
           {% for f in audit.answered %}
             <div class="q answered"><div class="qtext">{{ f.question }}</div>
-              <div class="small">You answered: <span class="mono">{{ f.answer if f.answer is string else (f.answer | tojson) }}</span>
+              <div class="small">{% if f.status == "dismissed" %}Doesn't apply: {{ f.answer }}{% else %}You answered: <span class="mono">{{ f.answer if f.answer is string else (f.answer | tojson) }}</span>{% endif %}
                 <button class="btn btn-sm" type="button" data-reopen="re-{{ f.id }}">Change</button></div>
               <div id="re-{{ f.id }}" class="hidden">{{ question(f, audit.id) }}</div>
             </div>
@@ -158,6 +156,7 @@
             <div class="field"><span>{{ f.label }}: <span class="mono small">{{ f.value if f.value is not none else "—" }}</span></span>
               {% if f.status == "stated" %}<span class="pill pill-green">From your document</span>
               {% elif f.status == "assumed" %}<span class="pill pill-yellow">We assumed</span>
+              {% elif f.status == "dismissed" %}<span class="pill pill-grey">Doesn't apply</span>
               {% elif f.status == "open" %}<a href="#q-{{ f.finding_id }}" data-goto="q-{{ f.finding_id }}" class="pill pill-orange">Question open</a>
               {% else %}<span class="pill pill-blue">You answered</span>{% endif %}
             </div>

@@ -203,17 +203,29 @@ class Auditor:
         self.revalidate(result, wf)
         return changes
 
+    def dismiss(self, result: AuditResult, finding_id: str, reason: str) -> Finding | None:
+        """Close an open question that does not apply. The draft is unchanged; answering it
+        later, from the answered list, opens it again."""
+        f = next((x for x in result.findings if x.id == finding_id and x.status == "open"), None)
+        if f is None:
+            return None
+        f.status, f.answer = "dismissed", reason.strip() or "It does not apply."
+        return f
+
     def revalidate(self, result: AuditResult, wf: Workflow | None = None) -> None:
         wf = wf if wf is not None else result.workflow()
         self.ws.save_definition(wf)
         answered = {f.id: f for f in result.findings if f.status != "open"}
         from .question import _get
 
+        # a question about a step that is no longer there goes with it
+        step_ids = {s["id"] for s in result.definition["spec"]["steps"]}
         still_relevant = [
             f
             for f in result.findings
             if f.raised_by == "auditor"
             and f.status == "open"
+            and (f.step_id is None or f.step_id in step_ids)
             and not (f.field.endswith(".when") and _get(result.definition, f.field) is not None)
         ]
         fresh = self.validate(wf, result.provenance, result.passages, extra=still_relevant)
@@ -228,6 +240,19 @@ class Auditor:
         kept.extend(f for f in answered.values() if f.id not in ids)
         result.findings = kept
 
+    @staticmethod
+    def _step_path(result: AuditResult, path: str) -> str:
+        """The chat sees the draft as written, so it says ``spec.steps.get_topic`` or
+        ``spec.steps[0]``; both mean ``steps.get_topic``."""
+        bits = path.replace("[", ".").replace("]", "").split(".")
+        if bits[:2] == ["spec", "steps"] and len(bits) > 2:
+            bits = bits[1:]
+        if bits[0] == "steps" and len(bits) > 1 and bits[1].isdigit():
+            steps = result.definition["spec"]["steps"]
+            if int(bits[1]) < len(steps):
+                bits[1] = steps[int(bits[1])]["id"]
+        return ".".join(bits)
+
     def set_field(self, result: AuditResult, path: str, value: Any, reason: str) -> Change:
         """A direct edit (from the chat or the UI), recorded as a change.
 
@@ -236,6 +261,7 @@ class Auditor:
         """
         from .question import _get, _set, remove_step
 
+        path = self._step_path(result, path)
         bits = path.split(".")
         if value is None and len(bits) == 2 and bits[0] == "steps":
             if not any(s["id"] == bits[1] for s in result.definition["spec"]["steps"]):

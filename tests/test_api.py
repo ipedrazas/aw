@@ -56,6 +56,22 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"].startswith("close "):
+                # the person says the question does not apply; nothing in the draft changes
+                return ModelResponse(
+                    output={
+                        "reply": "Closed it.",
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [
+                            {
+                                "finding_id": req.input["message"].split()[1],
+                                "reason": "The topic comes from a form, so nobody waits.",
+                            }
+                        ],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"].startswith("answer "):
                 # the model writes prose into a question that only takes one of its choices
                 return ModelResponse(
@@ -417,3 +433,74 @@ def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):
     u = client.post(f"/api/audits/{aid}/undo", json={"seq": seq})
     assert u.status_code == 200, u.text
     assert "id: export_pdf" in u.json()["yaml"]
+
+
+def test_audit_page_serves_fresh_assets_and_a_box_for_no(client):
+    """A changed app.js reaches the browser, and “No, I will answer this” has somewhere to answer."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    page = client.get(f"/audits/{audit['id']}").text
+    assert "/static/app.js?v=" in page and "/static/app.css?v=" in page
+    assert "chat-send" not in page and "Enter to send" in page
+    if any(f["type"] == "assumption" for g in audit["questions"] for f in g["findings"]):
+        assert "data-own" in page
+
+
+@pytest.mark.parametrize(
+    "path", ["steps.brief", "spec.steps.brief", "spec.steps.0", "spec.steps[0]"]
+)
+def test_removing_a_step_takes_its_questions_with_it(client, path):
+    """However the chat names the step, it goes, and so does every question that rested on it."""
+    from wf.api.app import _audit
+    from wf.validate import Finding
+
+    aid = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()["id"]
+    st = client.app.state.wf
+    result, _rec = _audit(st, aid)
+    # a question the auditor raised about the step, as “we assumed…” questions are
+    result.findings.append(
+        Finding(
+            type="assumption",
+            step_id="brief",
+            field="steps.brief.when",
+            question="Is it?",
+            raised_by="auditor",
+        )
+    )
+    st.auditor.set_field(result, path, None, "That is how it starts, not a step.")
+    assert "brief" not in [s["id"] for s in result.definition["spec"]["steps"]]
+    assert not [f for f in result.open_findings() if f.step_id == "brief"]
+
+
+def test_an_edit_that_does_not_go_in_is_said_in_the_chat(client):
+    audit = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()
+    fid = audit["questions"][0]["findings"][0]["id"]
+    body = client.post(
+        f"/api/audits/{audit['id']}/chat", json={"message": "remove no_such_step", "about": fid}
+    ).json()
+    assert "unchanged" in body["chat"][-1]["text"]
+    assert not body["chat"][-1]["changes"]
+
+
+def test_chat_can_close_a_question_that_does_not_apply(client):
+    """Closed, not answered: the draft is unchanged, the question says why, and it can be reopened."""
+    audit = client.post("/api/audits", json={"document": DOC.read_text(), "name": "p"}).json()
+    aid, fid = audit["id"], audit["questions"][0]["findings"][0]["id"]
+    body = client.post(f"/api/audits/{aid}/chat", json={"message": f"close {fid}"}).json()
+    assert body["yaml"] == audit["yaml"], "closing a question does not touch the draft"
+    assert fid not in [f["id"] for g in body["questions"] for f in g["findings"]]
+    closed = next(f for f in body["answered"] if f["id"] == fid)
+    assert closed["status"] == "dismissed" and "form" in closed["answer"]
+    assert body["chat"][-1]["closed"][0]["finding_id"] == fid
+    page = client.get(f"/audits/{aid}").text
+    assert "Closed:" in page and "Doesn't apply: The topic comes from a form" in page
+
+    # a later edit rebuilds the questions; the closed one stays closed
+    client.post(f"/api/audits/{aid}/chat", json={"message": "shorter please"})
+    again = client.get(f"/api/audits/{aid}").json()
+    assert fid not in [f["id"] for g in again["questions"] for f in g["findings"]]
+
+    # closing an unknown question does nothing
+    body = client.post(f"/api/audits/{aid}/chat", json={"message": "close nope"}).json()
+    assert body["chat"][-1]["closed"] == []

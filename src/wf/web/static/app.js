@@ -85,7 +85,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   const chat = document.querySelector("form[data-chat]");
   if (chat) {
     const log = document.querySelector("[data-chat-log]"), box = chat.querySelector("textarea");
-    const send = chat.querySelector(".chat-send"), msg = chat.querySelector("[data-msg]");
+    const msg = chat.querySelector("[data-msg]");
     const aboutBar = chat.querySelector("[data-about]"), aboutText = chat.querySelector("[data-about-text]");
     let about = null;
     const toBottom = () => { if (log) log.scrollTop = log.scrollHeight; };
@@ -101,6 +101,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
       aboutBar.classList.toggle("hidden", !id);
     };
     toBottom();
+    box.closest(".chat-box").addEventListener("click", () => box.focus());
     box.addEventListener("input", grow);
     box.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chat.requestSubmit(); }
@@ -114,24 +115,36 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
       box.focus();
     }));
 
+    /* "No, I will answer this": what they write goes to the chat about that question, which edits the draft. */
+    window.chatAbout = (id, question, text) => {
+      setAbout(id, question); box.value = text; grow(); chat.requestSubmit();
+    };
+
     chat.addEventListener("submit", async e => {
       e.preventDefault();
       const text = box.value.trim();
-      if (!text || send.disabled) return;
+      if (!text || box.readOnly) return;
       /* what was said shows at once, with a sign that an answer is coming */
       bubble("msg-user", text);
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
-      box.value = ""; grow(); send.disabled = true; say(msg, "");
+      box.value = ""; grow(); box.readOnly = true; say(msg, "");
       try { await postJSON(base + "/chat", {message: text, about: about}); reload(); }
       catch (err) {
-        typing.remove(); box.value = text; grow(); send.disabled = false;
+        typing.remove(); box.value = text; grow(); box.readOnly = false;
         say(msg, err.message, true);
       }
     });
   }
 
   document.querySelectorAll("form[data-answer]").forEach(f => {
+    /* picking "No, I will answer this" opens a box to say what instead */
+    const own = f.querySelector("[data-own]");
+    if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
+      const no = (JSON.parse(f.querySelector("input[type=radio]:checked").value) || {}).keep === false;
+      own.classList.toggle("hidden", !no);
+      if (no) own.querySelector("textarea").focus();
+    }));
     f.addEventListener("submit", async e => {
       e.preventDefault();
       const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
@@ -140,6 +153,14 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
         const c = f.querySelector("input[type=radio]:checked");
         if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
         answer = JSON.parse(c.value);
+        const own = f.querySelector("[data-own]");
+        if (own && answer && answer.keep === false) {
+          const text = own.querySelector("textarea").value.trim();
+          if (!text) return say(msg, "Say what it should be instead.", true);
+          if (!window.chatAbout) return say(msg, "The chat is not available on this page.", true);
+          say(msg, "Sent to the chat.");
+          return window.chatAbout(f.dataset.answer, f.dataset.question, text);
+        }
       } else if (kind === "multi") {
         answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
         if (!answer.length) return say(msg, "Pick at least one.", true);
