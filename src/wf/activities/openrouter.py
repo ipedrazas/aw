@@ -49,6 +49,38 @@ ANSWER_NOW = (
     "You have finished using the tools. Now give your answer as the one JSON object "
     "described in your instructions, from what the tools returned."
 )
+MAX_REPAIRS = 2  # asked again at most this many times when the answer is the wrong shape
+
+
+def _answer_now(schema: dict[str, Any], wrong: str | None = None) -> str:
+    """Ask for the answer in the step's shape, saying what was wrong with the last one,
+    and showing the shape itself: a gateway that only suggests a schema may not have
+    passed it on to the model at all."""
+    head = (
+        f"That answer does not match the required shape: {wrong}. Give the same answer again, "
+        "keeping everything you found, but in exactly this shape."
+        if wrong
+        else ANSWER_NOW + " Use exactly this shape."
+    )
+    return f"{head} Reply with one JSON object and nothing else. Its schema:\n" + json.dumps(
+        schema, ensure_ascii=False
+    )
+
+
+def _mismatch(answer: Any, schema: dict[str, Any]) -> str | None:
+    """What is wrong with an answer against the envelope's schema, in one line, or None."""
+    import jsonschema
+
+    try:
+        err = jsonschema.exceptions.best_match(
+            jsonschema.Draft202012Validator(schema).iter_errors(answer)
+        )
+    except jsonschema.exceptions.SchemaError:
+        return None  # a schema the validator cannot read is the step's problem, not this
+    if err is None:
+        return None
+    where = "/".join(str(x) for x in err.absolute_path) or "the top level"
+    return f"at {where}: {err.message}"[:600]
 
 
 def _envelope(text: str) -> dict[str, Any] | None:
@@ -132,6 +164,7 @@ class OpenRouterModel:
         # answer is asked for in its shape once it stops.
         searching = bool(tools)
         must_call = bool(tools)
+        repairs = 0
         for _ in range(self.max_tool_rounds):
             body: dict[str, Any] = {
                 "model": request.model,
@@ -193,11 +226,12 @@ class OpenRouterModel:
             if searching:
                 searching = False
                 found = _envelope(text)
-                if found is None:
-                    # done searching, and said so in words: now the answer, in its shape
+                if found is None or _mismatch(found, schema):
+                    # done searching, and said so in words or in a shape of its own: now
+                    # the answer, in the step's shape
                     if text:
                         messages.append({"role": "assistant", "content": text})
-                    messages.append({"role": "user", "content": ANSWER_NOW})
+                    messages.append({"role": "user", "content": _answer_now(schema)})
                     continue
                 text = json.dumps(found)
             if not text:
@@ -206,6 +240,14 @@ class OpenRouterModel:
                 answer = json.loads(text)
             except json.JSONDecodeError as e:
                 raise ActivityError(f"the model's answer was not valid JSON: {e}") from e
+            wrong = _mismatch(answer, schema)
+            if wrong and repairs < MAX_REPAIRS:
+                # the gateway suggests the shape rather than enforcing it, so it is
+                # checked here, and the model is told what was wrong and asked again
+                repairs += 1
+                messages.append({"role": "assistant", "content": text})
+                messages.append({"role": "user", "content": _answer_now(schema, wrong)})
+                continue
             usage.cost_usd = (
                 round(billed, 6)
                 if billed
