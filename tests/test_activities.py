@@ -1,4 +1,14 @@
-from wf.activities import FixtureLinkCheck, FixtureSearch, cost_of, envelope_schema
+import httpx
+
+from wf.activities import (
+    FixtureLinkCheck,
+    FixtureSearch,
+    LiveLinkCheck,
+    cost_of,
+    default_activities,
+    envelope_schema,
+)
+from wf.activities import links as links_mod
 from wf.activities.safety import data_region, find_instructions
 
 
@@ -21,6 +31,49 @@ def test_fixture_link_check_records_its_vantage(sample_ws):
     assert res[dead].status == 404 and not res[dead].opens
     assert res["https://unknown.example/x"].status == 0
     assert "fixtures" in lc.vantage
+
+
+def _served(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+    if path == "/ok":
+        return httpx.Response(200)
+    if path == "/moved":
+        return httpx.Response(301, headers={"location": "/ok"})
+    if path == "/no-head":
+        return httpx.Response(405 if request.method == "HEAD" else 200)
+    if path == "/slow":
+        raise httpx.ReadTimeout("slow", request=request)
+    return httpx.Response(404)
+
+
+def test_live_link_check_asks_each_server(sample_ws, monkeypatch):
+    monkeypatch.setattr(links_mod, "_refuse", lambda url: None)
+    lc = LiveLinkCheck(sample_ws, transport=httpx.MockTransport(_served))
+    recorded = "https://research.example.com/reports/agent-pilots-to-production-2026"
+    urls = [f"https://site.test/{p}" for p in ("ok", "moved", "no-head", "gone", "slow")]
+    res = {r.url: r for r in lc.check([*urls, recorded])}
+    assert [res[u].opens for u in urls] == [True, True, True, False, False]
+    assert res["https://site.test/gone"].status == 404
+    assert "after redirect" in res["https://site.test/moved"].reason
+    assert "no answer" in res["https://site.test/slow"].reason
+    assert res[recorded].status == 404, "a recorded URL replays the way it happened"
+    assert "live" in lc.vantage and "fixtures" in lc.vantage
+
+
+def test_live_link_check_does_not_reach_inside_the_network():
+    lc = LiveLinkCheck(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    for url in ("http://127.0.0.1/admin", "http://localhost:8000/", "file:///etc/passwd"):
+        (r,) = lc.check([url])
+        assert not r.opens and r.status == 0, url
+
+
+def test_link_check_is_live_unless_told_otherwise(sample_ws, monkeypatch):
+    from wf.activities.fake import FakeModel
+
+    monkeypatch.delenv("WF_LINK_CHECK", raising=False)
+    assert isinstance(default_activities(sample_ws, FakeModel()).links, LiveLinkCheck)
+    monkeypatch.setenv("WF_LINK_CHECK", "recorded")
+    assert isinstance(default_activities(sample_ws, FakeModel()).links, FixtureLinkCheck)
 
 
 def test_instruction_like_text_is_found_and_data_is_delimited():

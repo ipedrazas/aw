@@ -38,6 +38,14 @@ def http_resolves(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
                 "status": int(ls.status) if ls else 0,
             }
         )
+    dead = [statuses[u] for u in dict.fromkeys(urls) if u in statuses and not statuses[u].opens]
+    if dead:
+        ctx.note(
+            f"{len(dead)} of {len(set(urls))} links did not open: "
+            + "; ".join(f"{d.url} ({d.status or d.reason or 'no answer'})" for d in dead)
+            + ".",
+            f"Checked from {ctx.activities.links.vantage}.",
+        )
     return {
         "sources": out_sources,
         "open_count": sum(1 for s in out_sources if s["link_opens"]),

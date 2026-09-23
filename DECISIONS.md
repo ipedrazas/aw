@@ -36,6 +36,19 @@ the demo brief says "stubbed tools, fixtures for data, nothing sent", and a live
 provider would add a key and a network dependency the demo does not need. `NoSearch`
 says so plainly if a live mode is ever wired without a provider.
 
+**The link check asks the real servers; search and fetch stay recorded.**
+`checks.http_resolves` requests every URL a report cites (HEAD, then GET if HEAD is
+refused; redirects followed by hand, five hops, ten seconds), except the ones
+`fixtures/http.json` recorded, which replay so a past case still comes out the way it
+happened. The output's `vantage` says how many were live and how many recorded, and a
+link that does not open is written into the step's decisions with its status or the
+reason nothing answered. Addresses that resolve inside a private network are not
+requested. `WF_LINK_CHECK=recorded` puts it back on fixtures alone; the tests do.
+Alternative: keep it on fixtures like the other tools. Why: a report on a topic nobody
+recorded cites URLs no fixture holds, so every link came back "does not open" — and
+the one step that involves no model is the one that should visibly do real work. It
+only reads, so it sends nothing anywhere.
+
 **SQLite when `WF_DATABASE_URL` is unset; Postgres in Docker Compose and CI.** Same
 SQLAlchemy models, JSON columns on both. Alternative: Postgres only. Why: a fresh
 checkout runs and tests with nothing else installed; CI runs the suite against a
