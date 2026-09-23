@@ -23,7 +23,7 @@ from .loader import (
     load_workflow_dict,
     load_workflow_text,
 )
-from .refs import PinnedRef, parse_pin
+from .refs import PinnedRef, parse_pin, rename_references
 
 __all__ = [
     "Budget",
@@ -49,4 +49,5 @@ __all__ = [
     "load_workflow_dict",
     "load_workflow_text",
     "parse_pin",
+    "rename_references",
 ]

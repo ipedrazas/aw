@@ -26,6 +26,7 @@ from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
 from .ingest import Passage, ingest
 from .question import AnswerRejected, Change, apply_answer, group_questions, why_rejected
+from .restore import restore_missing_files
 
 
 @dataclass
@@ -221,6 +222,7 @@ class Auditor:
             if s.get("run"):
                 use_runner_schema(result.definition, self.ws, s["id"])
         wf = result.workflow()
+        self.restore_files(result, wf)
         self.ws.save_definition(wf)
         answered = {f.id: f for f in result.findings if f.status != "open"}
         from .question import _get
@@ -246,6 +248,17 @@ class Auditor:
         ids = {f.id for f in kept}
         kept.extend(f for f in answered.values() if f.id not in ids)
         result.findings = kept
+
+    def restore_files(self, result: AuditResult, wf: Workflow | None = None) -> list[str]:
+        """Write again any file a step names that the workspace lacks, from the draft and
+        the document's words for the step, so nobody is asked where it went."""
+        by_id = {p.id: p.text for p in result.passages}
+        source_for = {
+            k.split(".", 1)[1]: by_id[v]
+            for k, v in result.provenance.items()
+            if k.count(".") == 1 and k.startswith("steps.") and v in by_id
+        }
+        return restore_missing_files(wf or result.workflow(), self.ws, source_for)
 
     @staticmethod
     def _step_path(result: AuditResult, path: str) -> str:

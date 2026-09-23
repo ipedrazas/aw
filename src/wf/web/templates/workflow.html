@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button %}
 {% set s = data.summary %}
-{% block title %}{{ s.title }}{% endblock %}
+{% block title %}{{ s.name }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
 {% block bar_right %}<span class="muted">{{ s.step_count }} steps, {{ s.model_count }} models, {{ s.skill_count }} instruction files</span>{% endblock %}
 {% block content %}
 <div class="card-head" style="margin-bottom:14px">
-  <div><h1>{{ s.title }}</h1>{% if s.title != s.name %}<p class="sub" style="margin:0">{{ s.name }}</p>{% endif %}</div>
+  <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}</div>
   <div class="actions">
     {{ tech_switch() }}
     <button class="btn" data-toggle="yaml">Open YAML</button>

@@ -120,6 +120,7 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
         "name": wf.metadata.name,
         "version": wf.metadata.version,
         "title": wf.metadata.description or wf.metadata.name,
+        "description": wf.metadata.description or "",
         "step_count": len(steps),
         "system_step_count": len(system_steps),
         "model_count": len(models),
