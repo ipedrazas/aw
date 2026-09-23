@@ -147,3 +147,4 @@ details summary{cursor:pointer;color:var(--muted)}
 .toollog>li{margin:0 0 8px}
 .toollog ul{margin:4px 0 0;padding-left:18px}
 .toollog .mono{word-break:break-all}
+.waitform{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}

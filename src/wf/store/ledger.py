@@ -4,6 +4,7 @@ so the UI can read a run while it is still going."""
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -163,7 +164,11 @@ class Ledger:
         sr.model = model
         sr.tool_calls = tool_calls or []
         sr.finished_at = now()
-        sr.duration_s = (sr.finished_at - sr.started_at).total_seconds() if sr.started_at else 0.0
+        started = sr.started_at
+        if started is not None and started.tzinfo is None:
+            # read back from SQLite, which keeps no zone; it was written in UTC
+            started = started.replace(tzinfo=UTC)
+        sr.duration_s = (sr.finished_at - started).total_seconds() if started else 0.0
         self._commit()
 
     # -- decisions, artifacts, findings, expectations ------------------------------

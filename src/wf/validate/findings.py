@@ -82,6 +82,10 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "How long do you wait, and then what?",
         "When the wait runs out, something has to happen.",
     ),
+    "follows": (
+        "When does this go deeper, and into what?",
+        "“{step}” comes after a person reviews the work, but nothing connects the two: it would run every time, with no topic to go deeper into.",
+    ),
     "input": (
         "What does this step start from?",
         "“{step}” reads nothing, so it starts with nothing and makes up what it needs.",

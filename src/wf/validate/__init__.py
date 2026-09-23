@@ -19,6 +19,7 @@ from .templates import (
     WEB_TOOLS,
     StepTemplate,
     everything_before,
+    follows_the_answer,
     is_workflow_input,
     says_it_searches,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "STEP_TEMPLATES",
     "Finding",
     "everything_before",
+    "follows_the_answer",
     "says_it_searches",
     "Option",
     "StepTemplate",

@@ -182,6 +182,67 @@ class Interpreter:
                 depth=depth,
             )
 
+    def resume(self, run: Run, wf: Workflow, answer: dict[str, Any]) -> RunResult:
+        """Carry on a run that stopped at a wait, with the person's answer as the wait's
+        output. The steps before it are not run again: their results are read back from
+        the run, so what the answer is about is what the rest of the run works from."""
+        rows = (
+            self.ledger.session.query(StepRun).filter_by(run_id=run.id).order_by(StepRun.seq).all()
+        )
+        waiting = next((r for r in rows if r.status == "waiting"), None)
+        if waiting is None:
+            raise ValueError("This run is not waiting for anyone.")
+        from wf.store.records import Decision
+
+        self.ledger._seq = max(r.seq for r in rows)
+        self.ledger._dseq = max(
+            (d.seq for d in self.ledger.session.query(Decision).filter_by(run_id=run.id)),
+            default=0,
+        )
+        steps: dict[str, Any] = {}
+        for r in rows:
+            if r.fanout_index is not None or r.id == waiting.id:
+                continue
+            fans_out = any(s.id == r.step_id and s.for_each for s in wf.spec.steps)
+            steps[r.step_id] = (
+                {"status": r.status, "output": None, "outputs": r.output}
+                if fans_out
+                else {"status": r.status, "output": r.output, "outputs": None}
+            )
+        self.ledger.finish_step(waiting, status="done", output=answer)
+        steps[waiting.step_id] = {"status": "done", "output": answer, "outputs": None}
+        run.status, run.finished_at, run.error = "running", None, None
+        self.ledger._commit()
+        topics = [t for t in answer.get("topics") or [] if t]
+        said = (
+            "You asked it to go deeper into: " + "; ".join(topics) + "."
+            if answer.get("go_deeper") and topics
+            else "You said to finish the report without going deeper."
+        )
+        if answer.get("note"):
+            said += f" You added: “{answer['note']}”"
+        b = wf.spec.budget
+        budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
+        budget.spent_usd = run.spent_usd or 0.0
+        with session_span(
+            "run", name=wf.metadata.name, title=run.title, run_id=run.id, mode=run.mode
+        ):
+            return self._walk(
+                run,
+                wf,
+                dict(run.inputs or {}),
+                run.mode,
+                budget=budget,
+                depth=run.depth or 0,
+                resume=_Resume(
+                    steps=steps,
+                    start_at=wf.step_index(waiting.step_id) + 1,
+                    spent_usd=run.spent_usd or 0.0,
+                    waiting=waiting,
+                    said=said,
+                ),
+            )
+
     def _walk(
         self,
         run: Run,
@@ -193,6 +254,7 @@ class Interpreter:
         expectation: list[dict[str, Any]] | None = None,
         budget: BudgetTracker | None = None,
         depth: int = 0,
+        resume: _Resume | None = None,
     ) -> RunResult:
         if findings is None:
             findings = validate(wf, self.ws).findings
@@ -202,12 +264,16 @@ class Interpreter:
         if budget is None:
             b = wf.spec.budget
             budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
-        for f in open_findings:
-            self.ledger.finding(run, f)
-        if expectation:
-            self.ledger.expectations(run, expectation)
+        if resume is None:
+            for f in open_findings:
+                self.ledger.finding(run, f)
+            if expectation:
+                self.ledger.expectations(run, expectation)
 
-        state: dict[str, Any] = {"inputs": inputs, "steps": {}}
+        state: dict[str, Any] = {
+            "inputs": inputs,
+            "steps": dict(resume.steps) if resume else {},
+        }
         result = RunResult(
             run_id=run.id,
             status="running",
@@ -227,12 +293,22 @@ class Interpreter:
             budget=budget,
             result=result,
             depth=depth,
+            own_spend=resume.spent_usd if resume else 0.0,
         )
+        if resume is not None:
+            self._decide(
+                ctx,
+                resume.waiting,
+                resume.waiting.step_id,
+                kind="control",
+                text=resume.said,
+                reason="Your answer to the wait. The run carried on from here.",
+            )
 
         status = "done"
         error: str | None = None
         try:
-            for step in wf.spec.steps:
+            for step in wf.spec.steps[resume.start_at if resume else 0 :]:
                 over = budget.exceeded()
                 if over:
                     self._decide(
@@ -752,6 +828,7 @@ class Interpreter:
         if on_timeout is None:
             f = self._finding(ctx, step, "on_timeout")
             on_timeout = str(self._guess(ctx, step, f, sr=sr).value) if f else "continue"
+        not_asked = {"go_deeper": False, "topics": [], "note": ""}
         if ctx.mode != "live":
             self._decide(
                 ctx,
@@ -762,14 +839,29 @@ class Interpreter:
                 reason="A dry run does not wait for people. It continued as if the wait had ended.",
             )
             ctx.result.trace.append(TraceEvent(step.id, "stub", "wait"))
-            return {"waited": False, "deadline": deadline, "on_timeout": on_timeout}, {}
+            return {
+                "waited": False,
+                "deadline": deadline,
+                "on_timeout": on_timeout,
+                **not_asked,
+            }, {}
+        if ctx.depth > 0:
+            self._decide(
+                ctx,
+                sr,
+                step.id,
+                kind="control",
+                text=f"Did not stop for “{step.title or step.id}”: this is a follow-up run.",
+                reason="You were asked once, on the run that started it. A follow-up finishes and hands its report back.",
+            )
+            return {"waited": False, **not_asked}, {}
         self._decide(
             ctx,
             sr,
             step.id,
             kind="control",
             text=f"Waiting for “{step.title or step.id}” (up to {deadline}).",
-            reason="Human waits are not automated in this phase, so the run stops here.",
+            reason="The run stops here until you answer. Your answer is what the steps after it work from.",
         )
         return None, {"status": "waiting"}
 
@@ -886,6 +978,23 @@ class Interpreter:
             except (ExprError, EvalError):
                 out[name] = None
         return out
+
+
+class _Resume:
+    """Where a resumed run picks up: the results it already has, the step after the
+    wait, what it had spent, and the answer, in words, for the run's record."""
+
+    def __init__(
+        self,
+        *,
+        steps: dict[str, Any],
+        start_at: int,
+        spent_usd: float,
+        waiting: StepRun,
+        said: str,
+    ):
+        self.steps, self.start_at, self.spent_usd = steps, start_at, spent_usd
+        self.waiting, self.said = waiting, said
 
 
 @dataclass

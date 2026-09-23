@@ -205,16 +205,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
             title = data.get("title")
         _restore_files(st(), wf)
         findings = validate(wf, st().ws).findings
-        still_open = [f for f in findings if f.status == "open"]
-        if mode == "live" and still_open:
-            named = "; ".join(
-                f"{f.question} ({f.step_id or 'the whole workflow'})" for f in still_open[:3]
-            )
-            more = f", and {len(still_open) - 3} more" if len(still_open) > 3 else ""
-            raise HTTPException(
-                409,
-                f"A real run needs every question answered first. Still open: {named}{more}. "
-                "Answer them in the draft, or run it as a dry run, which guesses instead.",
+        if mode == "live":
+            _refuse_while_open(
+                findings,
+                "Answer them on the workflow page, or run it as a dry run, which guesses instead.",
             )
         run_id = _start_in_background(st(), wf, inputs, mode, expectation, case, title, findings)
         return {"run_id": run_id, "status": "running"}
@@ -511,6 +505,35 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     # -- runs ------------------------------------------------------------------
 
+    @app.post("/api/runs/{run_id}/answer")
+    def answer_wait(run_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Answer the step a real run is waiting at, and carry the run on from there."""
+        with st().db.session() as s:
+            run = s.get(Run, run_id)
+            if run is None:
+                raise HTTPException(404, "No such run.")
+            if run.status != "waiting":
+                raise HTTPException(409, "This run is not waiting for anyone.")
+            name = run.workflow_name
+        wf = _load(st(), name)
+        _restore_files(st(), wf)
+        _refuse_while_open(
+            validate(wf, st().ws).findings,
+            "Answer them on the workflow page, then answer this again.",
+        )
+        topics = body.get("topics") or []
+        if isinstance(topics, str):
+            topics = [t.strip(" -*\t") for t in topics.splitlines()]
+        answer = {
+            "go_deeper": bool(body.get("go_deeper")),
+            "topics": [str(t).strip() for t in topics if str(t).strip()],
+            "note": str(body.get("note") or "").strip(),
+        }
+        if answer["go_deeper"] and not answer["topics"]:
+            raise HTTPException(400, "Say what to go deeper into: one topic per line.")
+        _resume_in_background(st(), run_id, wf, answer)
+        return {"run_id": run_id, "status": "running"}
+
     @app.get("/api/runs")
     def list_runs(workflow: str | None = None) -> list[dict[str, Any]]:
         return st().runner.list_runs(workflow)
@@ -786,6 +809,54 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         "cases": state.ws.list_cases(),
         "runs": state.runner.list_runs(result.name),
     }
+
+
+def _refuse_while_open(findings: list[Any], then: str) -> None:
+    """A real run does not guess: every question has to be answered before it goes on."""
+    still_open = [f for f in findings if f.status == "open"]
+    if not still_open:
+        return
+    named = "; ".join(f"{f.question} ({f.step_id or 'the whole workflow'})" for f in still_open[:3])
+    more = f", and {len(still_open) - 3} more" if len(still_open) > 3 else ""
+    raise HTTPException(
+        409, f"A real run needs every question answered first. Still open: {named}{more}. {then}"
+    )
+
+
+def _resume_in_background(state: AppState, run_id: str, wf: Any, answer: dict[str, Any]) -> None:
+    """Carry a waiting run on, on a worker thread with its own ledger, like a new one."""
+    from wf.interpret import Interpreter
+    from wf.store.ledger import Ledger
+
+    ledger = Ledger(state.db)
+    interp = Interpreter(state.ws, state.runner.activities, ledger, state.runner.config)
+    run = ledger.session.get(Run, run_id)
+    # marked running before the request returns, so the page that reloads sees it
+    run.status = "running"
+    ledger._commit()
+
+    def work() -> None:
+        try:
+            interp.resume(run, wf, answer)
+        except Exception as e:  # noqa: BLE001
+            ledger.finish_run(
+                run,
+                status="failed",
+                outputs=run.outputs,
+                spent_usd=run.spent_usd or 0.0,
+                spent_minutes=run.spent_minutes or 0.0,
+                error=str(e),
+            )
+        finally:
+            ledger.close()
+
+    logger.info(
+        "run %s of %s carries on after its wait",
+        run_id[:8],
+        wf.metadata.name,
+        extra={"fields": {"event": "run.resumed", "run": run_id, "go_deeper": answer["go_deeper"]}},
+    )
+    threading.Thread(target=work, daemon=True, name=f"resume-{run_id[:8]}").start()
 
 
 def _start_in_background(

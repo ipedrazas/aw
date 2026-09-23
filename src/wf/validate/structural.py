@@ -9,7 +9,14 @@ from wf.expr import ExprError, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace, parse_pin
 
 from .findings import RUNNERS, Finding, Option, make_finding, runner_options
-from .templates import PRODUCES, STEP_TEMPLATES, WEB_TOOLS, everything_before, says_it_searches
+from .templates import (
+    PRODUCES,
+    STEP_TEMPLATES,
+    WEB_TOOLS,
+    everything_before,
+    follows_the_answer,
+    says_it_searches,
+)
 
 COMMON_REQUIRED = ("title", "shows_user", "trust")
 
@@ -116,6 +123,29 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
                     step=step,
                     unblocks=unblocks,
                     options=input_options(wf, idx),
+                )
+            )
+        # a follow-up after a person's review has to follow what they said
+        wait = next((s for s in reversed(wf.spec.steps[:idx]) if s.kind == "wait"), None)
+        if (
+            step.kind == "subworkflow"
+            and wait is not None
+            and step.when is None
+            and step.for_each is None
+        ):
+            name = next(iter(wf.spec.inputs), "topic")
+            findings.append(
+                make_finding(
+                    "gap",
+                    f"steps.{step.id}.follows",
+                    step=step,
+                    options=[
+                        Option(
+                            value=follows_the_answer(wait.id, name),
+                            label=f"When “{wait.title or wait.id}” asks for it, once per topic named",
+                            consequence="The person answering the review says whether to go deeper and into what. Nothing starts otherwise.",
+                        )
+                    ],
                 )
             )
         # a step that says it searches, with nothing to search with, answers from memory

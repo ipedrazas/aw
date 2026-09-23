@@ -757,3 +757,108 @@ def test_limits_typed_in_words_are_read_as_numbers():
 
     assert _parse_limits("2 levels, 3 at a time") == {"max_depth": 2, "max_fanout": 3}
     assert _parse_limits("just 1") == {"max_depth": 1}
+
+
+def _with_a_review_wait(ws) -> None:
+    """The sample, with a person's review before going deeper, as a drafted one has."""
+    from tests.helpers import read_yaml, write_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    d = read_yaml(ws, rel)
+    steps = d["spec"]["steps"]
+    at = next(i for i, s in enumerate(steps) if s["id"] == "go_deeper")
+    steps.insert(
+        at,
+        {
+            "id": "request_review",
+            "kind": "wait",
+            "title": "You review it",
+            "shows_user": ["output"],
+            "trust": {"policy": "always_ask"},
+            "deadline": "4h",
+            "on_timeout": "continue",
+        },
+    )
+    go = steps[at + 1]
+    for k in ("when", "for_each", "with"):
+        go.pop(k, None)
+    write_yaml(ws, rel, d)
+
+
+def test_a_drafted_follow_up_after_a_review_is_asked_to_follow_the_answer(client, ws):
+    _with_a_review_wait(ws)
+    wf = client.get("/api/workflows/deep-research").json()
+    q = next(f for f in wf["findings"] if f["field"] == "steps.go_deeper.follows")
+    r = client.post(
+        "/api/workflows/deep-research/answer",
+        json={"finding_id": q["id"], "answer": q["options"][0]["value"]},
+    )
+    assert r.status_code == 200, r.text
+    assert "${steps.request_review.output.go_deeper}" in r.json()["yaml"]
+
+
+def _answered_wait_workflow(client, ws) -> None:
+    from tests.helpers import read_yaml, write_yaml
+    from wf.validate import follows_the_answer
+
+    _with_a_review_wait(ws)
+    rel = "definitions/deep-research.workflow.yaml"
+    d = read_yaml(ws, rel)
+    go = next(s for s in d["spec"]["steps"] if s["id"] == "go_deeper")
+    go.update(follows_the_answer("request_review", "topic"))
+    go["with"]["depth"] = "${inputs.depth + 1}"
+    # the reviewer's "go deeper" is now the person's call, so the verdict carries on
+    review = next(s for s in d["spec"]["steps"] if s["id"] == "review")
+    review["output"]["continue_on"]["verdict"].append("go_deeper")
+    write_yaml(ws, rel, d)
+
+
+def _live_run_to_the_wait(client) -> dict:
+    r = client.post(
+        "/api/workflows/deep-research/runs", json={"case": "durable-execution", "mode": "live"}
+    )
+    assert r.status_code == 200, r.text
+    run = wait_for(client, r.json()["run_id"])
+    assert run["status"] == "waiting", run["error"]
+    return run
+
+
+def test_a_real_run_waits_for_you_and_carries_on_when_you_say_finish(client, ws):
+    _answered_wait_workflow(client, ws)
+    run = _live_run_to_the_wait(client)
+    page = client.get(f"/runs/{run['id']}").text
+    assert f'data-answer-wait="{run["id"]}"' in page
+    done_before = [s["step_id"] for s in run["steps"] if s["status"] == "done"]
+
+    r = client.post(f"/api/runs/{run['id']}/answer", json={"go_deeper": False})
+    assert r.status_code == 200, r.text
+    run = wait_for(client, run["id"])
+    assert run["status"] == "done", run["error"]
+    by_id = {s["step_id"]: s for s in run["steps"]}
+    assert by_id["request_review"]["status"] == "done"
+    assert by_id["go_deeper"]["status"] == "skipped"
+    assert by_id["assemble"]["status"] == "done"
+    # what ran before the wait did not run again
+    assert [s["step_id"] for s in run["steps"]].count("plan") == 1
+    assert set(done_before) <= set(by_id)
+    texts = [d["text"] for s in run["steps"] for d in s["decisions"]]
+    assert any("finish the report without going deeper" in t for t in texts)
+    assert client.post(f"/api/runs/{run['id']}/answer", json={}).status_code == 409
+
+
+def test_going_deeper_starts_a_follow_up_per_topic_and_they_do_not_stop_to_ask(client, ws):
+    _answered_wait_workflow(client, ws)
+    run = _live_run_to_the_wait(client)
+    r = client.post(f"/api/runs/{run['id']}/answer", json={"go_deeper": True, "topics": ""})
+    assert r.status_code == 400
+    r = client.post(
+        f"/api/runs/{run['id']}/answer",
+        json={"go_deeper": True, "topics": "How approvals that take days are handled"},
+    )
+    assert r.status_code == 200, r.text
+    run = wait_for(client, run["id"], timeout=60)
+    assert run["status"] == "done", run["error"]
+    by_id = {s["step_id"]: s for s in run["steps"]}
+    assert by_id["go_deeper"]["status"] == "done"
+    children = [x for x in client.get("/api/runs").json() if x["id"] != run["id"]]
+    assert any("approvals that take days" in c["title"] for c in children)
