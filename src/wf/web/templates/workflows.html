@@ -16,12 +16,13 @@
     <p class="muted">This definition could not be read: {{ w.error }}</p>
   {% else %}
   <div class="card-head">
-    <h2><a href="/workflows/{{ w.name }}">{{ w.title }}</a></h2>
+    <div><h2 style="margin:0"><a href="/workflows/{{ w.name }}">{{ w.name }}</a></h2>
+      {% if w.description %}<p style="margin:4px 0 0">{{ w.description }}</p>{% endif %}</div>
     <div class="actions">
       {% if w.open_findings %}<span class="pill pill-yellow">{{ w.open_findings }} question{{ '' if w.open_findings == 1 else 's' }} open</span>
       {% else %}<span class="pill pill-green">No open questions</span>{% endif %}
       {{ rename_button("/api/workflows/" ~ w.name ~ "/rename", w.name) }}
-      {{ delete_button("/api/workflows/" ~ w.name, "Delete “" ~ w.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.") }}
+      {{ delete_button("/api/workflows/" ~ w.name, "Delete “" ~ w.name ~ "”? The definition and the instruction files written for it go; its past runs are kept.") }}
     </div>
   </div>
   <p class="muted" style="margin:0 0 6px">{{ w.step_count }} steps{% if w.system_step_count %}, {{ w.system_step_count }} of them suggested{% endif %}. Version {{ w.version }}.</p>

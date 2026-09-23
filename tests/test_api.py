@@ -406,6 +406,34 @@ def test_deleting_a_workflow_takes_the_files_its_draft_wrote_and_nothing_else(cl
     assert ws.path("skills/deep-researcher.md").is_file()
 
 
+def _missing_file_questions(findings) -> list:
+    return [f for f in findings if "not in the workspace" in (f.get("detail") or "")]
+
+
+def test_files_a_step_names_are_written_again_instead_of_asked_about(client, ws):
+    """A workflow deleted under its draft, or renamed before renames moved references,
+    leaves steps pointing at nothing. Those files are written back, not asked about."""
+    import shutil
+
+    aid = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()["id"]
+    assert client.post(f"/api/audits/{aid}/save").json()["saved"]
+    shutil.rmtree(ws.path("skills/client-research"))
+    shutil.rmtree(ws.path("schemas/client-research"))
+
+    audit = client.get(f"/api/audits/{aid}").json()
+    assert not _missing_file_questions(
+        audit["answered"] + [f for g in audit["questions"] for f in g["findings"]]
+    )
+    assert ws.path("skills/client-research").is_dir()
+
+    shutil.rmtree(ws.path("schemas/client-research"))
+    wf = client.get("/api/workflows/client-research").json()
+    assert not _missing_file_questions(wf["findings"])
+    assert ws.path("schemas/client-research").is_dir()
+
+
 def test_a_name_that_is_a_path_is_not_a_definition(client, ws):
     assert client.delete("/api/workflows/..%2F..%2Fworkspace").status_code == 404
     assert ws.path("definitions").is_dir()
@@ -426,6 +454,7 @@ def test_a_workflow_can_be_renamed_and_its_runs_keep_the_old_name(client, ws):
         "name": "deeper-research",
         "changed": body["changed"],
         "commit": body["commit"],
+        "drafts": 0,
     }
     assert not ws.definition_path("deep-research").exists()
     assert ws.definition_path("deeper-research").exists()
@@ -454,6 +483,14 @@ def test_renaming_a_workflow_moves_the_files_its_draft_wrote(client, ws):
     assert ws.path("skills/client-research-v2").is_dir()
     # instruction files shared between definitions sit at the top of skills/ and stay
     assert ws.path("skills/deep-researcher.md").is_file()
+    # the steps point at the files where they went, so nothing asks where they are
+    wf = client.get("/api/workflows/client-research-v2").json()
+    assert "yaml" in wf and "skills/client-research/" not in wf["yaml"]
+    assert not [f for f in wf["findings"] if "not in the workspace" in (f["detail"] or "")]
+    # and the draft it was saved from follows it
+    audit = client.get(f"/api/audits/{aid}").json()
+    assert audit["name"] == "client-research-v2"
+    assert "skills/client-research/" not in audit["yaml"]
 
 
 def test_renaming_to_a_name_already_taken_is_refused(client, ws):

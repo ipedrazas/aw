@@ -24,7 +24,7 @@ import yaml
 from pydantic import ValidationError
 
 from .definition import Workflow
-from .refs import PinnedRef, parse_pin
+from .refs import PinnedRef, parse_pin, rename_references
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
 # A definition name is a file stem and nothing else: deleting is not a place to
@@ -136,8 +136,13 @@ class Workspace:
         new_p = self.definition_path(new_name)
         if new_p.exists():
             raise WorkspaceError(f"a definition named {new_name!r} already exists")
-        wf = self.load_definition(name)
-        wf.metadata.name = new_name
+        wf = load_workflow_dict(
+            rename_references(
+                self.load_definition(name).model_dump(by_alias=True, exclude_none=True),
+                name,
+                new_name,
+            )
+        )
         changed = [str(p.relative_to(self.root))]
         p.unlink()
         new_p.parent.mkdir(parents=True, exist_ok=True)

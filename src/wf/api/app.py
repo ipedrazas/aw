@@ -24,6 +24,7 @@ from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
+from wf.audit.restore import restore_missing_files
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.logs import get_logger, setup_logging
@@ -117,6 +118,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
             except WorkspaceError as e:
                 out.append({"name": name, "error": str(e)})
                 continue
+            _restore_files(st(), wf)
             result = validate(wf, st().ws)
             out.append(
                 {
@@ -129,6 +131,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/api/workflows/{name}")
     def get_workflow(name: str) -> dict[str, Any]:
         wf = _load(st(), name)
+        _restore_files(st(), wf)
         result = validate(wf, st().ws)
         return {
             "summary": plain_summary(wf),
@@ -154,10 +157,18 @@ def create_app(state: AppState | None = None) -> FastAPI:
             inputs = {**dict(data.get("inputs", {})), **inputs}
             expectation = list(data.get("expectation", []))
             title = data.get("title")
+        _restore_files(st(), wf)
         findings = validate(wf, st().ws).findings
-        if mode == "live" and any(f.status == "open" for f in findings):
+        still_open = [f for f in findings if f.status == "open"]
+        if mode == "live" and still_open:
+            named = "; ".join(
+                f"{f.question} ({f.step_id or 'the whole workflow'})" for f in still_open[:3]
+            )
+            more = f", and {len(still_open) - 3} more" if len(still_open) > 3 else ""
             raise HTTPException(
-                409, "This workflow still has open questions. Answer them or run it as a dry run."
+                409,
+                f"A real run needs every question answered first. Still open: {named}{more}. "
+                "Answer them in the draft, or run it as a dry run, which guesses instead.",
             )
         run_id = _start_in_background(st(), wf, inputs, mode, expectation, case, title, findings)
         return {"run_id": run_id, "status": "running"}
@@ -202,6 +213,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         commit = gitrepo.commit_paths(
             st().ws.root, changed, f"{name}: renamed to {new_name} from the UI", *st().author
         )
+        drafts = st().audits.rename_workflow(name, new_name)
         logger.info(
             "workflow %s renamed to %s",
             name,
@@ -212,10 +224,17 @@ def create_app(state: AppState | None = None) -> FastAPI:
                     "workflow": name,
                     "new_name": new_name,
                     "files": len(changed),
+                    "drafts": drafts,
                 }
             },
         )
-        return {"renamed": name, "name": new_name, "changed": changed, "commit": commit}
+        return {
+            "renamed": name,
+            "name": new_name,
+            "changed": changed,
+            "commit": commit,
+            "drafts": drafts,
+        }
 
     # -- audits --------------------------------------------------------------
 
@@ -247,6 +266,12 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/api/audits/{audit_id}")
     def get_audit(audit_id: str) -> dict[str, Any]:
+        result, _rec = _audit(st(), audit_id)
+        if st().auditor.restore_files(result):
+            # files the draft's steps name had gone; written again, the questions
+            # about them no longer apply
+            st().auditor.revalidate(result)
+            st().audits.save(audit_id, result)
         return _audit_view(st(), audit_id)
 
     @app.delete("/api/audits/{audit_id}")
@@ -598,6 +623,30 @@ def _load(state: AppState, name: str):
         return state.ws.load_definition(name)
     except WorkspaceError as e:
         raise HTTPException(404, str(e)) from e
+
+
+def _restore_files(state: AppState, wf: Any) -> None:
+    """Write back any file a step names that is missing, and commit it, so the missing
+    file never becomes a question somebody has to answer."""
+    written = restore_missing_files(wf, state.ws)
+    if not written:
+        return
+    commit = gitrepo.commit_paths(
+        state.ws.root, written, f"{wf.metadata.name}: restored files its steps name", *state.author
+    )
+    logger.info(
+        "restored %d files %s names",
+        len(written),
+        wf.metadata.name,
+        extra={
+            "fields": {
+                "event": "workflow.files_restored",
+                "workflow": wf.metadata.name,
+                "files": written,
+                "commit": commit,
+            }
+        },
+    )
 
 
 def _calls_by_step(state: AppState, run_id: str) -> dict[str, list[dict[str, Any]]]:

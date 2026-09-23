@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from wf.audit import AuditResult, Change, Passage
 from wf.audit.chat import ChatTurn
+from wf.schema import rename_references
 from wf.store import Audit, Database, DraftChange, FindingRecord
 from wf.validate import Finding
 
@@ -106,6 +108,16 @@ class AuditStore:
                             reason=c.reason,
                         )
                     )
+
+    def rename_workflow(self, old: str, new: str) -> int:
+        """Drafts saved as a workflow follow it when it is renamed: their name, and the
+        files their steps point at, which moved with it. Returns how many followed."""
+        with self.db.session() as s:
+            recs = s.query(Audit).filter_by(name=old).all()
+            for rec in recs:
+                rec.name = new
+                rec.draft = rename_references(copy.deepcopy(rec.draft), old, new)
+            return len(recs)
 
     def changes(self, audit_id: str) -> list[dict[str, Any]]:
         with self.db.session() as s:
