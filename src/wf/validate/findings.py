@@ -82,6 +82,10 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "How long do you wait, and then what?",
         "When the wait runs out, something has to happen.",
     ),
+    "hands_on": (
+        "What does this step hand on from what it found?",
+        "“{step}” searches, but what it hands on has no place for an address, so the steps after it cannot cite or check a single source.",
+    ),
     "follows": (
         "When does this go deeper, and into what?",
         "“{step}” comes after a person reviews the work, but nothing connects the two: it would run every time, with no topic to go deeper into.",

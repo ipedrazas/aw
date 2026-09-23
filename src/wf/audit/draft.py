@@ -17,8 +17,10 @@ from wf.validate import (
     Option,
     everything_before,
     follows_the_answer,
+    holds_urls,
     is_workflow_input,
     says_it_searches,
+    with_sources,
 )
 
 from .ingest import Passage
@@ -261,6 +263,11 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                     f"“{s['title']}” searches the web and reads the pages it finds",
                     "It says it searches, and without a search tool it could only answer from memory.",
                 )
+            # what it found is what the next step cites and the link check opens
+            rel = (step.get("output") or {}).get("schema")
+            searches = any(t.split(".")[-1] == "search" for t in step.get("tools") or {})
+            if searches and rel in schemas and not holds_urls(schemas[rel]):
+                schemas[rel] = with_sources(schemas[rel])
             step["shows_user"] = ["output", "decisions"]
             step["decision_log"] = "required"
 

@@ -281,6 +281,22 @@ def apply_answer(
             answer if isinstance(answer, dict) else {"policy": str(answer)},
             "When this step waits for you.",
         )
+    elif key == "hands_on" and answer == "sources" and ws is not None:
+        rel = _get(d, f"steps.{sid}.output.schema")
+        before = ws.load_schema(rel) if rel else None
+        if before is None:
+            raise AnswerRejected("This step has no output shape to give sources to yet.")
+        from wf.validate import with_sources
+
+        ws.save_schema(rel, with_sources(before))
+        changes.append(
+            Change(
+                path=f"steps.{sid}.output.schema",
+                before=rel,
+                after=rel,
+                reason="It hands on every source it used, with its address.",
+            )
+        )
     elif key == "follows" and isinstance(answer, dict) and answer.get("when"):
         for k in ("when", "for_each", "with"):
             change(

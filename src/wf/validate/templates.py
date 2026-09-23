@@ -84,3 +84,70 @@ def follows_the_answer(wait_id: str, input_name: str) -> dict[str, Any]:
         "for_each": f"${{steps.{wait_id}.output.topics}}",
         "with": {input_name: "${item}"},
     }
+
+
+# What a source is, when a step hands on what it found. The address is the point: the
+# step after it cites it, and the link check opens it.
+SOURCE_ITEM: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["url", "title", "published", "notes"],
+    "properties": {
+        "url": {"type": "string", "description": "The page's address, exactly as found."},
+        "title": {"type": "string"},
+        "published": {"type": "string", "description": "When it was published, or empty."},
+        "notes": {
+            "type": "string",
+            "description": "What it says that matters here, in a few sentences.",
+        },
+    },
+}
+
+_URL_KEYS = {"url", "link", "href", "source_url", "uri"}
+_SOURCE_NAMES = re.compile(r"source|result|link|reference|citation|finding", re.IGNORECASE)
+
+
+def holds_urls(schema: Any) -> bool:
+    """Whether an output shape has somewhere to put a web address."""
+    if isinstance(schema, dict):
+        props = schema.get("properties")
+        if isinstance(props, dict) and any(k.lower() in _URL_KEYS for k in props):
+            return True
+        if schema.get("format") == "uri":
+            return True
+        return any(holds_urls(v) for v in schema.values())
+    if isinstance(schema, list):
+        return any(holds_urls(v) for v in schema)
+    return False
+
+
+def with_sources(schema: dict[str, Any] | None) -> dict[str, Any]:
+    """The same shape, with room for the sources: a list named like sources (search
+    results, links, references) becomes a list of sources, and a shape with no such
+    list gains one called ``sources``."""
+    import copy
+
+    out = copy.deepcopy(schema) if isinstance(schema, dict) else {"type": "object"}
+    out.setdefault("type", "object")
+    props = out.setdefault("properties", {})
+    changed = False
+    for name, node in props.items():
+        if (
+            isinstance(node, dict)
+            and node.get("type") == "array"
+            and _SOURCE_NAMES.search(name)
+            and not holds_urls(node)
+        ):
+            node["items"] = copy.deepcopy(SOURCE_ITEM)
+            node.setdefault("description", "Every source it found and used.")
+            changed = True
+    if not changed:
+        props["sources"] = {
+            "type": "array",
+            "description": "Every source it found and used.",
+            "items": copy.deepcopy(SOURCE_ITEM),
+        }
+        req = out.setdefault("required", [])
+        if "sources" not in req:
+            req.append("sources")
+    return out
