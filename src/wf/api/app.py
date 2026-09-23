@@ -660,7 +660,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str) -> Any:
         run = get_run(run_id)
-        calls = _calls_by_step(st(), run_id)
+        calls = _calls_by_step(st(), run_id, _tools_by_step(st(), run["workflow"]))
         for s in run["steps"]:
             s["calls"] = calls.get(s["step_id"], [])
         return page(
@@ -742,7 +742,22 @@ def _restore_files(state: AppState, wf: Any) -> None:
     )
 
 
-def _calls_by_step(state: AppState, run_id: str) -> dict[str, list[dict[str, Any]]]:
+def _tools_by_step(state: AppState, name: str) -> dict[str, list[str]]:
+    """The tools each step was offered, under the names the model saw them by."""
+    try:
+        wf = state.ws.load_definition(name)
+    except WorkspaceError:
+        return {}
+    seen = {"search": "search", "get_contents": "get_contents", "fetch": "get_contents"}
+    return {
+        s.id: [seen[t.split(".")[-1]] for t in (s.tools or {}) if t.split(".")[-1] in seen]
+        for s in wf.spec.steps
+    }
+
+
+def _calls_by_step(
+    state: AppState, run_id: str, tools: dict[str, list[str]] | None = None
+) -> dict[str, list[dict[str, Any]]]:
     """What each step asked the model, as it was sent, and every tool call it made.
 
     Rebuilt from the session: the system prompt is the instructions file wrapped the
@@ -756,7 +771,9 @@ def _calls_by_step(state: AppState, run_id: str) -> dict[str, list[dict[str, Any
         prompt = None
         if c.get("system") is not None or c.get("input") is not None:
             prompt = {
-                "system": build_system(c.get("system") or ""),
+                "system": build_system(
+                    c.get("system") or "", (tools or {}).get(c["step_id"]) or None
+                ),
                 "message": data_region("step input", c.get("input") or {}),
             }
         out.setdefault(c["step_id"], []).append({**c, "prompt": prompt})

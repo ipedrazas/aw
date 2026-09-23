@@ -45,6 +45,21 @@ RETRYABLE = frozenset({408, 409, 425, 429})
 DEFAULT_TIMEOUT_S = 300.0
 
 
+ANSWER_NOW = (
+    "You have finished using the tools. Now give your answer as the one JSON object "
+    "described in your instructions, from what the tools returned."
+)
+
+
+def _envelope(text: str) -> dict[str, Any] | None:
+    """The answer, if the text already is one: ``{"output": ..., "decisions": ...}``."""
+    try:
+        found = json.loads(text) if text else None
+    except json.JSONDecodeError:
+        return None
+    return found if isinstance(found, dict) and "output" in found else None
+
+
 class OpenRouterModel:
     """A model activity that asks OpenRouter, in the shape OpenRouter reads."""
 
@@ -98,7 +113,10 @@ class OpenRouterModel:
         executors = {t.name: t for t in request.tools}
         calls_left = {t.name: t.max_calls for t in request.tools}
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": build_system(request.system)},
+            {
+                "role": "system",
+                "content": build_system(request.system, [t.name for t in request.tools]),
+            },
             {"role": "user", "content": data_region("step input", request.input)},
         ]
         usage = Usage()
@@ -106,19 +124,40 @@ class OpenRouterModel:
         answered_by = ""
         tool_calls: list[ToolCallRecord] = []
 
+        # With tools, the step searches first and answers after. Asking for the answer's
+        # shape on the same round lets a model go straight to an answer and skip the
+        # tools, which is what a step that says "search the web" then does: an empty
+        # list, in four seconds, with a decision saying it searched. So the shape is not
+        # asked for while it is searching, the first round has to call a tool, and the
+        # answer is asked for in its shape once it stops.
+        searching = bool(tools)
+        must_call = bool(tools)
         for _ in range(self.max_tool_rounds):
             body: dict[str, Any] = {
                 "model": request.model,
                 "max_tokens": request.max_tokens,
                 "messages": messages,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": SCHEMA_NAME, "strict": strict, "schema": schema},
-                },
             }
             if tools:
                 body["tools"] = tools
-            data = self._post(body)
+            if searching:
+                if must_call:
+                    body["tool_choice"] = "required"
+            else:
+                if tools:
+                    body["tool_choice"] = "none"
+                body["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": SCHEMA_NAME, "strict": strict, "schema": schema},
+                }
+            try:
+                data = self._post(body)
+            except ActivityError:
+                if "tool_choice" not in body:
+                    raise
+                # not every provider behind the gateway takes tool_choice; ask without it
+                body.pop("tool_choice")
+                data = self._post(body)
 
             answered_by = data.get("model") or answered_by
             spent = data.get("usage") or {}
@@ -147,9 +186,20 @@ class OpenRouterModel:
                 )
                 for call in calls:
                     messages.append(self._run_tool(call, executors, calls_left, tool_calls))
+                must_call = False
                 continue
 
             text = _text_of(message)
+            if searching:
+                searching = False
+                found = _envelope(text)
+                if found is None:
+                    # done searching, and said so in words: now the answer, in its shape
+                    if text:
+                        messages.append({"role": "assistant", "content": text})
+                    messages.append({"role": "user", "content": ANSWER_NOW})
+                    continue
+                text = json.dumps(found)
             if not text:
                 raise ActivityError("the model returned no answer")
             try:

@@ -8,6 +8,15 @@ async function sendJSON(method, url, body) {
   return data;
 }
 const postJSON = (url, body) => sendJSON("POST", url, body || {});
+
+/* What you typed and have not sent yet survives a reload of the page, for this tab.
+   Answering one question reloads the page; the chat you were halfway through, or the
+   answer you were writing to another question, should still be there. */
+const kept = {
+  get(key) { try { return JSON.parse(sessionStorage.getItem("kept:" + key) || "null"); } catch (e) { return null; } },
+  set(key, value) { try { sessionStorage.setItem("kept:" + key, JSON.stringify(value)); } catch (e) { /* private mode */ } },
+  drop(key) { try { sessionStorage.removeItem("kept:" + key); } catch (e) { /* private mode */ } },
+};
 function say(el, text, isError) {
   if (!el) { if (isError) alert(text); return; }
   el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
@@ -91,6 +100,13 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
    whichever one the page is about. */
 function wireAnswers(base, reload) {
   document.querySelectorAll("form[data-answer]").forEach(f => {
+    const field = f.querySelector("textarea:not([data-own] textarea), input[type=number]");
+    const keyAnswer = "answer:" + base + ":" + f.dataset.answer;
+    if (field) {
+      const unsent = kept.get(keyAnswer);
+      if (unsent && !field.value) field.value = unsent;
+      field.addEventListener("input", () => field.value.trim() ? kept.set(keyAnswer, field.value) : kept.drop(keyAnswer));
+    }
     /* picking "No, I will answer this" opens a box to say what instead */
     const own = f.querySelector("[data-own]");
     if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
@@ -124,7 +140,7 @@ function wireAnswers(base, reload) {
         answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
       }
       say(msg, "Saving…");
-      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); reload(msg); }
+      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); kept.drop(keyAnswer); reload(msg); }
       catch (err) { say(msg, err.message, true); }
     });
   });
@@ -167,8 +183,12 @@ function wireAnswers(base, reload) {
       aboutBar.classList.toggle("hidden", !id);
     };
     toBottom();
+    const keyChat = "chat:" + id;
+    const keep = () => box.value.trim() ? kept.set(keyChat, {text: box.value, about: about, question: aboutText.textContent}) : kept.drop(keyChat);
+    const unsent = kept.get(keyChat);
+    if (unsent && !box.value) { box.value = unsent.text || ""; if (unsent.about) setAbout(unsent.about, unsent.question); grow(); }
     box.closest(".chat-box").addEventListener("click", () => box.focus());
-    box.addEventListener("input", grow);
+    box.addEventListener("input", () => { grow(); keep(); });
     box.addEventListener("keydown", e => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chat.requestSubmit(); }
     });
@@ -194,11 +214,11 @@ function wireAnswers(base, reload) {
       bubble("msg-user", text);
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
-      box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true;
+      box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true; kept.drop(keyChat);
       try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; location.reload(); }
       catch (err) {
         chatting = false;
-        typing.remove(); box.value = text; grow(); box.readOnly = false;
+        typing.remove(); box.value = text; grow(); box.readOnly = false; keep();
         say(msg, err.message, true);
       }
     });
