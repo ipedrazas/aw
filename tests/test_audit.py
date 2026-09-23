@@ -373,3 +373,61 @@ def test_a_document_with_no_stated_input_assumes_a_topic():
     assert assumption.question == "We assumed the process starts from a topic. Is that right?"
     assert assumption.detail == "The document does not say what the process starts from."
     assert assumption.unblocks == 0
+
+
+def test_a_wait_for_what_the_process_starts_from_becomes_the_input():
+    """“First, get my topic” is how the workflow starts, not a step that waits for someone."""
+    from tests.scripted import _step
+
+    extracted = {
+        "name": "demo",
+        "title": "Demo",
+        "inputs": [],
+        "steps": [
+            _step(
+                id="get_topic",
+                kind="wait",
+                title="Get my topic",
+                produces=[{"name": "topic", "type": "string", "enum": [], "passage": None}],
+            ),
+            _step(id="plan", title="Plan the search", reads_from=["get_topic"]),
+        ],
+    }
+    draft = build_draft(extracted, [])
+
+    steps = draft.definition["spec"]["steps"]
+    assert [s["id"] for s in steps] == ["plan"]
+    assert draft.definition["spec"]["inputs"] == {"topic": {"type": "string", "required": True}}
+    assert steps[0]["input"] == {"topic": "${inputs.topic}"}
+    assert not any(a.field == "spec.inputs.topic" for a in draft.assumptions)
+    assert "“Get my topic” is how the process starts" in draft.notes[0]
+
+
+def test_a_step_removed_from_the_chat_rewires_its_readers_and_can_be_put_back(ws):
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    steps = result.definition["spec"]["steps"]
+    steps.insert(
+        0, {"id": "get_topic", "kind": "wait", "title": "Get my topic", "shows_user": ["output"]}
+    )
+    steps[1]["input"] = {"get_topic": "${steps.get_topic.output}"}
+    auditor.revalidate(result)
+    assert any(f.field == "steps.get_topic.deadline" for f in result.open_findings())
+
+    ch = auditor.set_field(result, "steps.get_topic", None, "Getting the topic is how it starts.")
+
+    wf = result.workflow()
+    assert [s.id for s in wf.spec.steps][0] == "brief"
+    assert result.definition["spec"]["steps"][0]["input"] == {"topic": "${inputs.topic}"}
+    assert not any(f.step_id == "get_topic" for f in result.open_findings())
+    assert ch.path == "spec.steps"
+
+    # undo puts it back where it was, reading what it read
+    auditor.set_field(result, ch.path, ch.before, "Undid it.")
+    assert result.definition["spec"]["steps"][0]["id"] == "get_topic"
+    assert result.definition["spec"]["steps"][1]["input"] == {
+        "get_topic": "${steps.get_topic.output}"
+    }
+
+    with pytest.raises(AnswerRejected):
+        auditor.set_field(result, "steps.nope", None, "Not there.")

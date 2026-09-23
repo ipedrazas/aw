@@ -38,13 +38,7 @@
             <label class="opt"><input type="radio" name="a-{{ f.id }}" value="true"> Yes</label>
             <label class="opt"><input type="radio" name="a-{{ f.id }}" value="false"> No</label>
           {% endif %}
-          {% if f.options %}
-            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="__custom__" data-custom-toggle> Type your answer</label>
-          {% endif %}
         </div>
-        {% if f.options %}
-          <p class="hidden" data-custom-wrap><textarea placeholder="Your answer, in your words" data-custom-input></textarea></p>
-        {% endif %}
       {% elif f.answer_kind == "multi" %}
         <div class="opts">
           {% for o in f.options %}
@@ -57,7 +51,11 @@
         <p><textarea placeholder="{{ 'One per line' if f.answer_kind == 'list' else 'Your answer, in your words' }}"></textarea>
         {% if f.answer_kind == "list" %}<span class="small muted">One per line.</span>{% endif %}</p>
       {% endif %}
-      <div class="actions"><button class="btn btn-sm btn-primary" type="submit">Answer</button><span data-msg class="small muted"></span></div>
+      <div class="actions">
+        <button class="btn btn-sm btn-primary" type="submit">Answer</button>
+        <button class="btn btn-sm" type="button" data-chat-about="{{ f.id }}" data-question="{{ f.question }}">Chat about this</button>
+        <span data-msg class="small muted"></span>
+      </div>
     </form>
   </div>
 {%- endmacro %}

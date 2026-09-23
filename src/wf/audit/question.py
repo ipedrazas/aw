@@ -56,6 +56,26 @@ def _step(defn: dict[str, Any], sid: str) -> dict[str, Any]:
     raise KeyError(sid)
 
 
+def remove_step(defn: dict[str, Any], sid: str) -> list[dict[str, Any]]:
+    """The steps without ``sid``, with whatever read from it reading the workflow's inputs.
+
+    A step is usually removed because it was not a step at all: “get my topic” is how
+    the workflow starts, so what read the topic from that step reads it from the inputs.
+    """
+    reads_it = re.compile(rf"steps\.{re.escape(sid)}\b")
+    from_inputs = {name: f"${{inputs.{name}}}" for name in defn["spec"].get("inputs") or {}}
+    steps = [copy.deepcopy(s) for s in _steps(defn) if s["id"] != sid]
+    for s in steps:
+        inp = s.get("input")
+        if not isinstance(inp, dict) or not any(reads_it.search(str(v)) for v in inp.values()):
+            continue
+        kept = {k: v for k, v in inp.items() if not reads_it.search(str(v))}
+        s["input"] = {**from_inputs, **kept} if from_inputs else kept
+        if not s["input"]:
+            s.pop("input")
+    return steps
+
+
 def _get(defn: dict[str, Any], path: str) -> Any:
     cur: Any = defn
     for part in _parts(defn, path):

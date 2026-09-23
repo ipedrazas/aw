@@ -40,6 +40,22 @@ def client(ws, tmp_path: Path):
             )
         if req.tag == "audit:chat":
             fid = req.input["open_questions"][0]["id"] if req.input["open_questions"] else None
+            if req.input["message"].startswith("remove "):
+                # the person, from a question's "Chat about this", says the step is not one
+                return ModelResponse(
+                    output={
+                        "reply": f"Removed it. You asked about {req.input['about']['id']}.",
+                        "edits": [
+                            {
+                                "path": f"steps.{req.input['message'].split()[1]}",
+                                "value_json": "null",
+                                "reason": "That is how it starts, not a step.",
+                            }
+                        ],
+                        "answers": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"].startswith("answer "):
                 # the model writes prose into a question that only takes one of its choices
                 return ModelResponse(
@@ -378,3 +394,26 @@ def test_chat_answer_that_does_not_fit_leaves_the_question_open(client):
     )
     assert bad.status_code == 400
     assert "so the draft is unchanged" in bad.json()["detail"]
+
+
+def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):
+    """“Chat about this” sends the question along; the chat can take the step out, and undo it."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    aid = audit["id"]
+    page = client.get(f"/audits/{aid}").text
+    assert "Chat about this" in page and "Type your answer" not in page
+    fid = audit["questions"][0]["findings"][0]["id"]
+
+    c = client.post(f"/api/audits/{aid}/chat", json={"message": "remove export_pdf", "about": fid})
+    assert c.status_code == 200, c.text
+    body = c.json()
+    assert fid in body["chat"][-1]["text"], "the chat was told which question"
+    assert body["chat"][-1]["changes"][0]["path"] == "spec.steps"
+    assert "id: export_pdf" not in body["yaml"]
+
+    seq = next(ch["seq"] for ch in body["changes"] if ch["path"] == "spec.steps")
+    u = client.post(f"/api/audits/{aid}/undo", json={"seq": seq})
+    assert u.status_code == 200, u.text
+    assert "id: export_pdf" in u.json()["yaml"]

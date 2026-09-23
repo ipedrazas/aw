@@ -75,6 +75,31 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
             )
         )
 
+    # A wait before anything has happened is how the process starts, not a step: the
+    # model read "first, get my topic" as waiting for someone. What it would have
+    # produced becomes an input, and what read from it reads the inputs instead.
+    starts: set[str] = set()
+    if steps_in and steps_in[0]["kind"] == "wait" and not steps_in[0].get("reads_from"):
+        first = steps_in[0]
+        starts.add(first["id"])
+        steps_in = steps_in[1:]
+        extracted = {**extracted, "inputs": list(extracted.get("inputs", []))}
+        named = {i["name"] for i in extracted["inputs"]}
+        for p in first.get("produces", []):
+            if p["name"] not in named:
+                extracted["inputs"].append(
+                    {
+                        "name": p["name"],
+                        "type": p.get("type", "string"),
+                        "required": True,
+                        "passage": first.get("passage"),
+                    }
+                )
+        notes.append(
+            f"“{first['title']}” is how the process starts, so it is the workflow's input "
+            "rather than a step that waits."
+        )
+
     # inputs
     inputs: dict[str, Any] = {}
     for inp in extracted.get("inputs", []):
@@ -119,7 +144,9 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         # input: what it reads
         step_input: dict[str, Any] = {}
         for ref in s.get("reads_from", []):
-            if ref in ids and ref != sid:
+            if ref in starts:
+                step_input.update({n: f"${{inputs.{n}}}" for n in inputs})
+            elif ref in ids and ref != sid:
                 ref_step = next(x for x in steps_in if x["id"] == ref)
                 fans_out = (
                     ref_step["kind"] == "subworkflow"

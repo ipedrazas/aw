@@ -83,35 +83,63 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   const reload = () => location.reload();
 
   const chat = document.querySelector("form[data-chat]");
-  if (chat) chat.addEventListener("submit", async e => {
-    e.preventDefault();
-    const inp = chat.querySelector("input"), msg = chat.querySelector("[data-msg]");
-    if (!inp.value.trim()) return;
-    say(msg, "Thinking…"); inp.disabled = true;
-    try { await postJSON(base + "/chat", {message: inp.value}); reload(); }
-    catch (err) { say(msg, err.message, true); inp.disabled = false; }
-  });
+  if (chat) {
+    const log = document.querySelector("[data-chat-log]"), box = chat.querySelector("textarea");
+    const send = chat.querySelector(".chat-send"), msg = chat.querySelector("[data-msg]");
+    const aboutBar = chat.querySelector("[data-about]"), aboutText = chat.querySelector("[data-about-text]");
+    let about = null;
+    const toBottom = () => { if (log) log.scrollTop = log.scrollHeight; };
+    const grow = () => { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 200) + "px"; };
+    const bubble = (cls, text) => {
+      const el = document.createElement("div"); el.className = "msg " + cls;
+      if (text) el.textContent = text;
+      log.appendChild(el); toBottom(); return el;
+    };
+    const setAbout = (id, question) => {
+      about = id;
+      aboutText.textContent = question || "";
+      aboutBar.classList.toggle("hidden", !id);
+    };
+    toBottom();
+    box.addEventListener("input", grow);
+    box.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chat.requestSubmit(); }
+    });
+    chat.querySelector("[data-about-clear]").addEventListener("click", () => { setAbout(null); box.focus(); });
+
+    /* "Chat about this" on a question: the chat knows which one, and the box is ready. */
+    document.querySelectorAll("[data-chat-about]").forEach(b => b.addEventListener("click", () => {
+      setAbout(b.dataset.chatAbout, b.dataset.question);
+      chat.scrollIntoView({behavior: "smooth", block: "nearest"});
+      box.focus();
+    }));
+
+    chat.addEventListener("submit", async e => {
+      e.preventDefault();
+      const text = box.value.trim();
+      if (!text || send.disabled) return;
+      /* what was said shows at once, with a sign that an answer is coming */
+      bubble("msg-user", text);
+      const typing = bubble("msg-assistant msg-typing");
+      typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
+      box.value = ""; grow(); send.disabled = true; say(msg, "");
+      try { await postJSON(base + "/chat", {message: text, about: about}); reload(); }
+      catch (err) {
+        typing.remove(); box.value = text; grow(); send.disabled = false;
+        say(msg, err.message, true);
+      }
+    });
+  }
 
   document.querySelectorAll("form[data-answer]").forEach(f => {
-    const customWrap = f.querySelector("[data-custom-wrap]");
-    if (customWrap) {
-      f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
-        const custom = f.querySelector("[data-custom-toggle]");
-        customWrap.classList.toggle("hidden", !(custom && custom.checked));
-      }));
-    }
     f.addEventListener("submit", async e => {
       e.preventDefault();
       const kind = f.dataset.kind, msg = f.querySelector("[data-msg]");
       let answer = null;
       if (kind === "choice" || kind === "bool") {
-        const c = f.querySelector("input[type=radio]:checked"); if (!c) return say(msg, "Pick one first.", true);
-        if (c.hasAttribute("data-custom-toggle")) {
-          answer = f.querySelector("[data-custom-input]").value;
-          if (!answer.trim()) return say(msg, "Write something first.", true);
-        } else {
-          answer = JSON.parse(c.value);
-        }
+        const c = f.querySelector("input[type=radio]:checked");
+        if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
+        answer = JSON.parse(c.value);
       } else if (kind === "multi") {
         answer = Array.from(f.querySelectorAll("input[type=checkbox]:checked")).map(c => JSON.parse(c.value));
         if (!answer.length) return say(msg, "Pick at least one.", true);

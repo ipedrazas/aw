@@ -143,7 +143,10 @@ class Auditor:
             definition=draft.definition,
             provenance=draft.provenance,
             findings=findings,
-            explanations=explanations or [],
+            explanations=[
+                *(explanations or []),
+                *({"decision": n, "reason": "", "alternatives": []} for n in draft.notes),
+            ],
         )
 
     def validate(
@@ -226,9 +229,18 @@ class Auditor:
         result.findings = kept
 
     def set_field(self, result: AuditResult, path: str, value: Any, reason: str) -> Change:
-        """A direct edit (from the chat or the UI), recorded as a change."""
-        from .question import _get, _set
+        """A direct edit (from the chat or the UI), recorded as a change.
 
+        Removing a whole step (``steps.<id>`` set to null) is recorded against the step
+        list, so undoing it puts the step back where it was and rewires what read it.
+        """
+        from .question import _get, _set, remove_step
+
+        bits = path.split(".")
+        if value is None and len(bits) == 2 and bits[0] == "steps":
+            if not any(s["id"] == bits[1] for s in result.definition["spec"]["steps"]):
+                raise AnswerRejected(f"There is no step “{bits[1]}”, so the draft is unchanged.")
+            path, value = "spec.steps", remove_step(result.definition, bits[1])
         before = _get(result.definition, path)
         new_def = copy.deepcopy(result.definition)
         _set(new_def, path, value)
