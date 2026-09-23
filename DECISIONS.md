@@ -184,6 +184,25 @@ call ties that number to a timeout rather than to the model, and reading a long
 document into a draft is where the cap was actually reached — an answer that hits it
 is thrown away whole, so the number has to be the model's, not the transport's.
 
+**A question with fixed choices is answered by a choice or in the chat, not in a text
+box.** "Type your answer" is gone; every question has "Chat about this", which sends
+the question's id with the message. Alternative: keep the text box and accept more
+phrasings. Why: prose that is not one of the choices is usually not an answer but a
+correction ("nobody waits, the topic is how it starts"), and only the chat can act on
+that, by removing or changing the step the question rests on.
+
+**The chat can remove a step, and removing one is recorded against the step list.**
+`steps.<id>` set to null takes the step out and points whatever read it at the
+workflow's inputs; the change is stored as the whole of `spec.steps` before and after.
+Alternative: one change per field touched. Why: undo replays one change, and only the
+whole list puts the step back where it was with its readers rewired to it.
+
+**A wait before anything has happened is the workflow's input.** The extractor is told
+so, and a draft that still opens with a wait reading nothing drops it, makes what it
+produced an input and says so in "What I changed". Alternative: leave the wait and let
+the person answer its deadline question. Why: that question has no right answer —
+"First, get my topic" in the sample document produced exactly this.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:

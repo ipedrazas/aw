@@ -286,6 +286,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 message,
                 model_name=st().chat_model,
                 audit_id=audit_id,
+                about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e

@@ -28,8 +28,8 @@
 {% endif %}
 
 <div class="grid2">
-  <div class="card">
-    <div class="card-head"><h2>Describe the process</h2>{% if audit %}<span class="small muted">{{ audit.name }}</span>{% endif %}</div>
+  <div class="card{% if audit %} chat-card{% endif %}">
+    <div class="card-head"><h2>{{ "Chat about the draft" if audit else "Describe the process" }}</h2>{% if audit %}<span class="small muted">{{ audit.name }}</span>{% endif %}</div>
     {% if not audit %}
       <form data-new-audit>
         <p class="small muted">Say how you do it today, in your own words, or paste the document you already have. The draft on the right is built from what you say; what you do not say becomes a question.</p>
@@ -47,7 +47,7 @@
         {% endfor %}
       </form>
     {% else %}
-      <div class="chat">
+      <div class="chat" data-chat-log>
         {% for m in audit.chat %}
           <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
           {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
@@ -55,10 +55,19 @@
         {% endfor %}
       </div>
       <form class="chat-form" data-chat>
-        <input type="text" placeholder="Ask about the draft, or tell me what to change" autocomplete="off">
-        <button class="btn btn-primary" type="submit">Send</button>
+        <div class="chat-about hidden" data-about>
+          <span class="small muted">About:</span> <span class="small" data-about-text></span>
+          <button type="button" class="chat-about-x" data-about-clear aria-label="Not about this question">×</button>
+        </div>
+        <div class="chat-box">
+          <textarea rows="1" placeholder="Ask about the draft, or tell me what to change" aria-label="Message"></textarea>
+          <button class="chat-send" type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="small muted chat-hint">Enter to send, Shift+Enter for a new line.</div>
+        <div data-msg class="small muted"></div>
       </form>
-      <div data-msg class="small muted" style="margin-top:6px"></div>
       {% if audit.runs %}
         <h3 style="margin-top:20px">Dry runs of this draft</h3>
         {% for r in audit.runs %}<div class="change"><span><a href="/runs/{{ r.id }}">{{ r.title }}</a> <span class="mono muted small">{{ r.id[:8] }}</span></span><span>{{ status_pill(r.status) }} <span class="muted">${{ "%.2f" | format(r.cost or 0) }}</span></span></div>{% endfor %}
