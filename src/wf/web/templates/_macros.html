@@ -27,7 +27,7 @@
     <div class="qtext">{{ f.question }}</div>
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
     {% if f.source_text %}<div class="says">The document says: “{{ f.source_text }}”</div>{% endif %}
-    <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}">
+    <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}" data-question="{{ f.question }}">
       {% if f.answer_kind in ("choice", "bool") %}
         <div class="opts">
           {% for o in f.options %}
@@ -39,6 +39,10 @@
             <label class="opt"><input type="radio" name="a-{{ f.id }}" value="false"> No</label>
           {% endif %}
         </div>
+        {% if f.type == "assumption" %}
+          {# "No, I will answer this" needs somewhere to say what it should be; it goes to the chat, which edits the draft #}
+          <div class="own hidden" data-own><textarea placeholder="What should it be instead? In your words." aria-label="Your answer"></textarea></div>
+        {% endif %}
       {% elif f.answer_kind == "multi" %}
         <div class="opts">
           {% for o in f.options %}

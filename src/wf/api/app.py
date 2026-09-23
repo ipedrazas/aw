@@ -77,6 +77,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
     app = FastAPI(title="Agentic workflows", version="0.1.0")
     app.state.wf = state
     templates = Jinja2Templates(directory=str(WEB / "templates"))
+
+    def static_url(name: str) -> str:
+        """A static file's URL that changes when the file does, so a browser never keeps an old one."""
+        f = WEB / "static" / name
+        return f"/static/{name}?v={int(f.stat().st_mtime)}" if f.exists() else f"/static/{name}"
+
+    templates.env.globals["static_url"] = static_url
     if (WEB / "static").is_dir():
         app.mount("/static", StaticFiles(directory=str(WEB / "static")), name="static")
 
@@ -292,17 +299,25 @@ def create_app(state: AppState | None = None) -> FastAPI:
             raise HTTPException(502, f"The chat could not answer: {e}") from e
         applied: list[Change] = []
         refused: list[str] = []
-        for e in outcome.edits:
-            if not e.get("path"):
+        for edit in outcome.edits:
+            if not edit.get("path"):
                 continue
             try:
                 applied.append(
                     st().auditor.set_field(
-                        result, e["path"], e.get("value"), e.get("reason") or "From the chat."
+                        result,
+                        edit["path"],
+                        edit.get("value"),
+                        edit.get("reason") or "From the chat.",
                     )
                 )
-            except Exception:  # noqa: BLE001 - a bad path from the model is skipped, not fatal
-                continue
+            except AnswerRejected as e:
+                refused.append(str(e))
+            except Exception:  # noqa: BLE001 - a bad path from the model is not fatal, but it is said
+                refused.append(
+                    f"I could not make the change “{edit.get('reason') or edit['path']}”, "
+                    "so that part of the draft is unchanged."
+                )
         for a in outcome.answers:
             f = next(
                 (x for x in result.findings if x.id == a.get("finding_id") and x.status == "open"),
@@ -325,6 +340,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 except AnswerRejected as e:
                     # the question stays open and the person is told why
                     refused.append(str(e))
+        closed = [
+            {"finding_id": f.id, "question": f.question, "reason": f.answer}
+            for d in outcome.dismiss
+            if (
+                f := st().auditor.dismiss(
+                    result, str(d.get("finding_id")), str(d.get("reason") or "")
+                )
+            )
+        ]
         reply = "\n\n".join([outcome.reply, *refused]) if refused else outcome.reply
         new_chat = [
             *(rec.chat or []),
@@ -333,6 +357,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 "role": "assistant",
                 "text": reply,
                 "changes": [c.model_dump() for c in applied],
+                "closed": closed,
                 "point_to_finding": outcome.point_to_finding,
             },
         ]

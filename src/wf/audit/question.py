@@ -78,7 +78,11 @@ def remove_step(defn: dict[str, Any], sid: str) -> list[dict[str, Any]]:
 
 def _get(defn: dict[str, Any], path: str) -> Any:
     cur: Any = defn
-    for part in _parts(defn, path):
+    try:
+        parts = _parts(defn, path)
+    except KeyError:
+        return None  # the step is gone, so is everything under it
+    for part in parts:
         if isinstance(cur, dict):
             cur = cur.get(part)
         elif isinstance(cur, list) and isinstance(part, int) and part < len(cur):
@@ -108,7 +112,9 @@ def _parts(defn: dict[str, Any], path: str) -> list[Any]:
     """steps.review.when -> ['spec','steps',<index>,'when']; spec.budget -> ['spec','budget']."""
     bits = path.split(".")
     if bits[0] == "steps":
-        idx = next(i for i, s in enumerate(_steps(defn)) if s["id"] == bits[1])
+        idx = next((i for i, s in enumerate(_steps(defn)) if s["id"] == bits[1]), None)
+        if idx is None:
+            raise KeyError(f"There is no step “{bits[1]}”.")
         return ["spec", "steps", idx, *bits[2:]]
     return bits
 
