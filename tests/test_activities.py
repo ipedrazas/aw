@@ -1,6 +1,7 @@
 import httpx
 
 from wf.activities import (
+    ExaSearch,
     FixtureLinkCheck,
     FixtureSearch,
     LiveLinkCheck,
@@ -74,6 +75,63 @@ def test_link_check_is_live_unless_told_otherwise(sample_ws, monkeypatch):
     assert isinstance(default_activities(sample_ws, FakeModel()).links, LiveLinkCheck)
     monkeypatch.setenv("WF_LINK_CHECK", "recorded")
     assert isinstance(default_activities(sample_ws, FakeModel()).links, FixtureLinkCheck)
+
+
+def test_exa_search_and_fetch_speak_the_fixture_shape():
+    seen = []
+
+    def exa(request: httpx.Request) -> httpx.Response:
+        import json
+
+        body = json.loads(request.content)
+        seen.append((request.url.path, request.headers["x-api-key"], body))
+        if request.url.path == "/search":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "url": "https://a.example/x",
+                            "title": "A",
+                            "text": "Some   text",
+                            "publishedDate": "2026-01-02",
+                        }
+                    ]
+                },
+            )
+        if body["urls"] == ["https://gone.example/"]:
+            return httpx.Response(200, json={"results": [], "statuses": [{"status": "error"}]})
+        return httpx.Response(200, json={"results": [{"title": "A", "text": "Full page"}]})
+
+    s = ExaSearch("k", transport=httpx.MockTransport(exa))
+    (r,) = s.search("durable agents", max_results=50)
+    assert (r.url, r.title, r.snippet, r.published) == (
+        "https://a.example/x",
+        "A",
+        "Some text",
+        "2026-01-02",
+    )
+    assert seen[0][1] == "k" and seen[0][2]["numResults"] == 10
+    assert s.get_contents("https://a.example/x") == {
+        "url": "https://a.example/x",
+        "title": "A",
+        "text": "Full page",
+        "published": None,
+    }
+    assert "could not fetch" in s.get_contents("https://gone.example/")["error"]
+
+
+def test_search_is_exa_when_there_is_a_key(sample_ws, monkeypatch):
+    from wf.activities import FixtureSearch
+    from wf.activities.fake import FakeModel
+
+    monkeypatch.delenv("WF_SEARCH", raising=False)
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    assert isinstance(default_activities(sample_ws, FakeModel()).search, FixtureSearch)
+    monkeypatch.setenv("EXA_API_KEY", "k")
+    assert isinstance(default_activities(sample_ws, FakeModel()).search, ExaSearch)
+    monkeypatch.setenv("WF_SEARCH", "recorded")
+    assert isinstance(default_activities(sample_ws, FakeModel()).search, FixtureSearch)
 
 
 def test_instruction_like_text_is_found_and_data_is_delimited():

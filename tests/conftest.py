@@ -11,6 +11,7 @@ def _session_root(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _recorded_link_checks(monkeypatch):
-    """The suite does not touch the network; tests of the live check patch it in."""
+def _recorded_tools(monkeypatch):
+    """The suite does not touch the network; tests of the live tools patch it in."""
     monkeypatch.setenv("WF_LINK_CHECK", "recorded")
+    monkeypatch.setenv("WF_SEARCH", "recorded")

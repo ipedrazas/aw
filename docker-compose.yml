@@ -28,7 +28,11 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Runs, steps, decisions and sessions live here (the db service above). Outside
+      # Compose it defaults to SQLite at var/wf.db.
       WF_DATABASE_URL: postgresql+psycopg://wf:wf@db:5432/wf
+      # The model provider's key, read by the Anthropic SDK. The startup log says which
+      # provider was chosen and whether its key is set, never the key itself.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # OpenRouter instead: one key for many vendors' models, named vendor/model.
       # With only this key set, it is used without saying so; WF_MODEL_PROVIDER
@@ -38,6 +42,19 @@ services:
       # Ask the gateway to enforce the output schema rather than suggest it. Off by
       # default: not every provider behind it accepts every schema.
       WF_OPENROUTER_STRICT: ${WF_OPENROUTER_STRICT:-}
+      # Live web search and page fetch for the research step, in dry and real runs.
+      # Without it, search reads workspace/fixtures/search.json and contents.json.
+      # An Exa error (bad key, spent quota) shows on the research step with Exa's reason.
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      # exa | recorded. Empty means exa when the key is set. recorded keeps a past case
+      # replaying the way it happened; live search makes it diverge from what was recorded.
+      WF_SEARCH: ${WF_SEARCH:-}
+      # live | recorded. Empty means live: every cited URL is requested from this
+      # container (10s, redirects followed); URLs in fixtures/http.json replay instead.
+      # A 403 from here can be bot protection, not a dead link; the run says the vantage.
+      WF_LINK_CHECK: ${WF_LINK_CHECK:-}
+      # Definitions, instructions, schemas, cases and fixtures: the ./workspace mount below.
+      # Saving a draft commits into it, so it must be writable by the container user.
       WF_WORKSPACE: /app/workspace
       # The two levels of judgement a step runs at. Empty uses the defaults in
       # src/wf/settings.py, which is the only place a model is named in the code.
@@ -53,20 +70,29 @@ services:
       WF_MAX_OUTPUT_TOKENS: ${WF_MAX_OUTPUT_TOKENS:-}
       # $ per million tokens as {"model": [input, output]}; empty uses the built-in table.
       WF_MODEL_PRICING: ${WF_MODEL_PRICING:-}
-      # Set to 1 to run offline against the fake model instead of the API.
+      # Set to 1 to run offline against the fake model instead of the API. No key needed,
+      # no cost, and the answers are canned: useful to tell "the model" from "the code".
       WF_FAKE_MODEL: ${WF_FAKE_MODEL:-}
-      # How loud, in what shape, and where. debug prints every prompt and answer.
+      # How loud, in what shape, and where. Level: debug | info | warning | error;
+      # debug prints every prompt and answer. Format: text | json (json for log tools).
       WF_LOG_LEVEL: ${WF_LOG_LEVEL:-info}
       WF_LOG_FORMAT: ${WF_LOG_FORMAT:-text}
       # The healthcheck asks for /healthz every 30 seconds. Its access lines go to a log
       # of their own so they do not fill this one; WF_LOG_HEALTHCHECK=on puts them back.
       WF_HEALTH_LOG_FILE: ${WF_HEALTH_LOG_FILE:-/app/var/health.log}
       WF_LOG_HEALTHCHECK: ${WF_LOG_HEALTHCHECK:-}
-      # What is kept of each agentic session: full (prompts and answers), meta, off.
+      # What is kept of each agentic session: full (prompts and answers), meta (counts and
+      # timings only), off. The run page's "What it was asked" and "What it searched and
+      # read" come from here, so they are empty unless this is full.
       WF_SESSION_LOG: ${WF_SESSION_LOG:-full}
+      # Each prompt, answer and tool result is clipped to this many characters when
+      # stored. Empty means 40000; raise it if a recorded page or prompt looks cut short.
       WF_SESSION_MAX_CHARS: ${WF_SESSION_MAX_CHARS:-}
       # Where each session is also mirrored, one file per session.
       WF_SESSION_ROOT: ${WF_SESSION_ROOT:-/app/var/sessions}
+      # Where run artefacts (the PDFs) are written, one folder per run id. On the wfvar
+      # volume; docker compose cp app:/app/var/artifacts . copies them out.
+      WF_ARTIFACTS_DIR: ${WF_ARTIFACTS_DIR:-/app/var/artifacts}
     volumes:
       - ./workspace:/app/workspace
       - wfvar:/app/var

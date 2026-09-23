@@ -20,13 +20,15 @@ from wf.activities import (
     record_sessions,
 )
 from wf.activities.fake import FakeModel
+from wf.activities.models import build_system
+from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow
-from wf.settings import chat_model, provider
+from wf.settings import chat_model, provider, search_mode
 from wf.startup import announce
 from wf.store import Artifact, Database, Run
 from wf.store import repo as gitrepo
@@ -532,7 +534,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 status_code=200,
             )
         return templates.TemplateResponse(
-            request, f"{template}.html", {"offline": st().offline, **ctx}
+            request,
+            f"{template}.html",
+            {"offline": st().offline, "search_live": search_mode() == "exa", **ctx},
         )
 
     @app.get("/", response_class=HTMLResponse)
@@ -561,10 +565,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str) -> Any:
+        run = get_run(run_id)
+        calls = _calls_by_step(st(), run_id)
+        for s in run["steps"]:
+            s["calls"] = calls.get(s["step_id"], [])
         return page(
             request,
             "run",
-            run=get_run(run_id),
+            run=run,
             others=[r for r in list_runs(None) if r["id"] != run_id],
         )
 
@@ -590,6 +598,27 @@ def _load(state: AppState, name: str):
         return state.ws.load_definition(name)
     except WorkspaceError as e:
         raise HTTPException(404, str(e)) from e
+
+
+def _calls_by_step(state: AppState, run_id: str) -> dict[str, list[dict[str, Any]]]:
+    """What each step asked the model, as it was sent, and every tool call it made.
+
+    Rebuilt from the session: the system prompt is the instructions file wrapped the
+    way every model activity wraps it, and the message is the step's input in its data
+    region. A guess is its own exchange and is left out here; the step shows it already.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    for c in state.sessions.calls_for_run(run_id):
+        if not c.get("step_id") or str(c.get("tag", "")).startswith("guess:"):
+            continue
+        prompt = None
+        if c.get("system") is not None or c.get("input") is not None:
+            prompt = {
+                "system": build_system(c.get("system") or ""),
+                "message": data_region("step input", c.get("input") or {}),
+            }
+        out.setdefault(c["step_id"], []).append({**c, "prompt": prompt})
+    return out
 
 
 def _audit(state: AppState, audit_id: str) -> tuple[AuditResult, Any]:

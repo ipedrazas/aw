@@ -49,6 +49,22 @@ recorded cites URLs no fixture holds, so every link came back "does not open" â€
 the one step that involves no model is the one that should visibly do real work. It
 only reads, so it sends nothing anywhere.
 
+**Search is Exa when there is a key, and a run can be real from the UI.** `ExaSearch`
+answers `search` and `get_contents` in the shape the fixtures do, so no step changes;
+`EXA_API_KEY` switches it on and `WF_SEARCH=recorded` switches it off again. This
+supersedes "tools are recorded fixtures in every mode" for search, and applies to dry
+runs as well: what the model decides depends on what it finds, so a dry run on
+recorded pages would not show how the real one behaves. A past case run with a key set
+therefore searches live and may diverge from what was recorded; that divergence is
+real. "Run it for real" starts a `live` run: follow-up research starts, nothing is
+marked simulated, open questions still refuse it, and nothing is sent.
+
+**The run page shows what each step was sent and every tool call it made.** Rebuilt
+from the session: the system prompt as every model activity wraps it, the message as
+the step's input in its data region, and each search with the results it returned.
+Alternative: a separate sessions page. Why: "what did it actually ask, and what did it
+find?" is asked while looking at the step, and the answer belongs next to it.
+
 **SQLite when `WF_DATABASE_URL` is unset; Postgres in Docker Compose and CI.** Same
 SQLAlchemy models, JSON columns on both. Alternative: Postgres only. Why: a fresh
 checkout runs and tests with nothing else installed; CI runs the suite against a

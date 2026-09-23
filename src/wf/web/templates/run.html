@@ -2,7 +2,7 @@
 {% from "_macros.html" import status_pill, step_word, tech_switch %}
 {% set rep = run.report %}
 {% block title %}Run: {{ run.title }}{% endblock %}
-{% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% endif %}{% endblock %}
+{% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
 {% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
 {% block content %}
 {% if run.status == "running" %}<div data-run-refresh="{{ run.id }}"></div>{% endif %}
@@ -100,6 +100,30 @@
         <p class="small muted" style="margin:6px 0 0">Checked {{ s.output.checked_at }} from {{ s.output.vantage }}. No model involved.</p>
       </div>
       {% endif %}
+      {% for c in s.calls %}
+        {% set tcs = c.tool_calls or [] %}
+        {% if tcs %}
+        <details style="margin-top:8px"{% if loop.first %} open{% endif %}><summary>What it searched and read{% if s.calls | length > 1 %} (call {{ loop.index }} of {{ s.calls | length }}){% endif %} · {{ tcs | selectattr("name", "equalto", "search") | list | length }} searches, {{ tcs | rejectattr("name", "equalto", "search") | list | length }} pages</summary>
+          <ol class="toollog">{% for t in tcs %}
+            <li>{% if t.name == "search" %}
+              <div><span class="pill pill-blue">search</span> <strong>“{{ t.input.query }}”</strong> <span class="small muted">{{ t.summary }}</span></div>
+              {% if t.result is sequence and t.result is not string %}<ul class="small">{% for r in t.result %}<li>{{ r.title or r.url }} <span class="mono muted">{{ r.url }}</span>{% if r.published %} <span class="muted">· {{ r.published }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+            {% else %}
+              <div><span class="pill pill-grey">{{ t.name | replace('_', ' ') }}</span> <span class="mono small">{{ t.input.url or t.input }}</span></div>
+              <div class="small {{ 'muted' if not (t.result is mapping and t.result.error) }}">{% if t.result is mapping and t.result.error %}{{ t.result.error }}{% else %}{{ t.summary }}{% endif %}</div>
+            {% endif %}
+            {% if t.injection %}<div class="dec-ignored small">Text addressed to the model, read as data only: “{{ t.injection }}”</div>{% endif %}
+            </li>
+          {% endfor %}</ol>
+        </details>
+        {% endif %}
+        {% if c.prompt %}
+        <details style="margin-top:8px"><summary>What it was asked{% if s.calls | length > 1 %} (call {{ loop.index }} of {{ s.calls | length }}){% endif %} · {{ c.model }} · {{ c.input_tokens }} in / {{ c.output_tokens }} out · ${{ "%.3f" | format(c.cost_usd or 0) }}</summary>
+          <h4 class="small muted" style="margin:8px 0 4px">Instructions (system prompt)</h4><pre>{{ c.prompt.system }}</pre>
+          <h4 class="small muted" style="margin:8px 0 4px">Message, built from the step's input</h4><pre>{{ c.prompt.message }}</pre>
+        </details>
+        {% endif %}
+      {% endfor %}
       {% if s.output is not none %}<details style="margin-top:8px"><summary>What it produced</summary><pre>{{ s.output | tojson(indent=2) }}</pre></details>{% endif %}
       <div class="tech mono" style="margin-top:6px">{{ s.kind }}{% if s.model %} · {{ s.model }}{% endif %}{% if s.instruction_ref %} · {{ s.instruction_ref }}{% endif %}{% if s.instruction_commit %} · {{ s.instruction_commit[:10] }}{% endif %}{% if s.tool_calls %} · {{ s.tool_calls | length }} tool calls{% endif %}{% if s.duration_s %} · {{ "%.1f" | format(s.duration_s) }}s{% endif %}</div>
     </div>
