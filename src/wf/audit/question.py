@@ -281,6 +281,10 @@ def apply_answer(
             answer if isinstance(answer, dict) else {"policy": str(answer)},
             "When this step waits for you.",
         )
+    elif key == "input" and isinstance(answer, dict) and answer:
+        change(field, answer, "What this step starts from.")
+    elif key == "tools" and isinstance(answer, dict) and answer:
+        change(field, answer, "It can search the web and read the pages it finds.")
     elif key == "read_by" and isinstance(answer, dict):
         name = field.split(".")[2]
         if answer.get("remove"):

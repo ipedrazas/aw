@@ -82,6 +82,14 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "How long do you wait, and then what?",
         "When the wait runs out, something has to happen.",
     ),
+    "input": (
+        "What does this step start from?",
+        "“{step}” reads nothing, so it starts with nothing and makes up what it needs.",
+    ),
+    "tools": (
+        "Can this step search the web?",
+        "“{step}” says it searches, but it has no search tool, so it can only answer from memory.",
+    ),
     "limits": (
         "How far can this go, and how much can it spend?",
         "“{step}” can start more work. It needs a depth, a fan-out and a budget.",
@@ -134,10 +142,6 @@ QUESTIONS: dict[str, tuple[str, str]] = {
     "workflow": (
         "Which workflow does this start?",
         "A sub-workflow step names the workflow it runs.",
-    ),
-    "input": (
-        "What does this step work from?",
-        "The step needs to name what it reads.",
     ),
 }
 
