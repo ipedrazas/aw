@@ -68,3 +68,8 @@
   <button class="{{ cls }}" type="button" data-delete="{{ url }}" data-after="{{ after }}"
           data-delete-confirm="{{ confirm }}">{{ label }}</button>
 {%- endmacro %}
+
+{% macro rename_button(url, current, label="Rename", cls="btn btn-sm") -%}
+  <button class="{{ cls }}" type="button" data-rename="{{ url }}" data-rename-current="{{ current }}"
+          data-rename-prompt="New name for “{{ current }}”:">{{ label }}</button>
+{%- endmacro %}

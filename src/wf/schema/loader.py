@@ -120,6 +120,46 @@ class Workspace:
             shutil.rmtree(d)
         return removed
 
+    def rename_definition(self, name: str, new_name: str) -> list[str]:
+        """Rename a definition: the file, its own ``metadata.name``, and the files a draft
+        wrote for it. Returns the workspace-relative paths that changed, old and new alike.
+        """
+        if not _NAME.fullmatch(name):
+            raise WorkspaceError(f"not a definition name: {name!r}")
+        if not _NAME.fullmatch(new_name):
+            raise WorkspaceError(f"not a definition name: {new_name!r}")
+        p = self.definition_path(name)
+        if not p.exists():
+            raise WorkspaceError(f"no definition named {name!r} in {self.root / 'definitions'}")
+        if new_name == name:
+            raise WorkspaceError("the new name is the same as the current one")
+        new_p = self.definition_path(new_name)
+        if new_p.exists():
+            raise WorkspaceError(f"a definition named {new_name!r} already exists")
+        wf = self.load_definition(name)
+        wf.metadata.name = new_name
+        changed = [str(p.relative_to(self.root))]
+        p.unlink()
+        new_p.parent.mkdir(parents=True, exist_ok=True)
+        new_p.write_text(dump_workflow(wf))
+        changed.append(str(new_p.relative_to(self.root)))
+        for old_rel, new_rel in (
+            (f"skills/{name}", f"skills/{new_name}"),
+            (f"schemas/{name}", f"schemas/{new_name}"),
+        ):
+            d = self.path(old_rel)
+            if not d.is_dir():
+                continue
+            changed.extend(
+                sorted(str(f.relative_to(self.root)) for f in d.rglob("*") if f.is_file())
+            )
+            nd = self.path(new_rel)
+            shutil.move(str(d), str(nd))
+            changed.extend(
+                sorted(str(f.relative_to(self.root)) for f in nd.rglob("*") if f.is_file())
+            )
+        return changed
+
     def resolve_workflow_ref(self, ref: str, current: Workflow | None = None) -> Workflow | None:
         """``deep-research@4`` -> the definition with that name, if its version matches."""
         pin = parse_pin(ref)

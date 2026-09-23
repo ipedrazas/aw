@@ -34,6 +34,15 @@ document.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("clic
   catch (err) { alert(err.message); b.disabled = false; }
 }));
 
+/* Rename a workflow: prompt for the new name, then go to its new URL. */
+document.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("click", async () => {
+  const next = (prompt(b.dataset.renamePrompt || "New name:", b.dataset.renameCurrent || "") || "").trim();
+  if (!next || next === b.dataset.renameCurrent) return;
+  b.disabled = true;
+  try { const d = await postJSON(b.dataset.rename, {name: next}); location.href = "/workflows/" + encodeURIComponent(d.name); }
+  catch (err) { alert(err.message); b.disabled = false; }
+}));
+
 /* Toggle any element by id. */
 document.querySelectorAll("[data-toggle]").forEach(b => {
   b.addEventListener("click", () => { const t = document.getElementById(b.dataset.toggle); if (t) t.classList.toggle("hidden"); });
