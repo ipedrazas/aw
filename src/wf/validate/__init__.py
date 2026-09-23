@@ -13,6 +13,7 @@ from wf.schema import Workflow, Workspace
 from .findings import QUESTIONS, Finding, Option, make_finding, question_for
 from .semantic import validate_semantic
 from .structural import KNOWN_RUNNERS, validate_structural
+from .templates import STEP_TEMPLATES, StepTemplate, is_workflow_input
 
 
 class ValidationResult(BaseModel):
@@ -51,9 +52,12 @@ def validate(wf: Workflow, ws: Workspace | None = None) -> ValidationResult:
 __all__ = [
     "KNOWN_RUNNERS",
     "QUESTIONS",
+    "STEP_TEMPLATES",
     "Finding",
     "Option",
+    "StepTemplate",
     "ValidationResult",
+    "is_workflow_input",
     "make_finding",
     "question_for",
     "validate",

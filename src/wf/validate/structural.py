@@ -9,16 +9,9 @@ from wf.expr import ExprError, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace, parse_pin
 
 from .findings import RUNNERS, Finding, Option, make_finding, runner_options
+from .templates import STEP_TEMPLATES
 
 COMMON_REQUIRED = ("title", "shows_user", "trust")
-
-KIND_REQUIRED: dict[str, tuple[str, ...]] = {
-    "agent": ("model", "skill", "output.schema"),
-    "check": ("run", "checks", "does_not_check"),
-    "tool": ("run", "side_effects", "requires_approval"),
-    "subworkflow": ("workflow", "limits"),
-    "wait": ("deadline", "on_timeout"),
-}
 
 # registered routines a check or tool may name. Definitions cannot add code.
 KNOWN_RUNNERS = set(RUNNERS)
@@ -67,7 +60,7 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
             )
         seen.add(step.id)
 
-        for field in COMMON_REQUIRED + KIND_REQUIRED[step.kind]:
+        for field in COMMON_REQUIRED + STEP_TEMPLATES[step.kind].required:
             if not _has(step, wf, field):
                 # ``run`` is a closed set, so the question offers the routines of this
                 # kind rather than an empty box nobody can fill.
