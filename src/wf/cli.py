@@ -58,6 +58,23 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if report.status == "done" else 1
 
 
+def cmd_retry(args: argparse.Namespace) -> int:
+    from wf.dryrun import DryRunner
+
+    runner = DryRunner.from_env(_ws(args), model_guesses=not args.no_model_guesses)
+    matches = [r["id"] for r in runner.list_runs(limit=500) if r["id"].startswith(args.run_id)]
+    if len(matches) != 1:
+        print(f"{len(matches) or 'No'} runs start with {args.run_id!r}; give more of the id.")
+        return 1
+    try:
+        report = runner.retry(matches[0], skip=args.skip)
+    except ValueError as e:
+        print(e)
+        return 1
+    print(report.render_text())
+    return 0 if report.status == "done" else 1
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     from wf.audit import Auditor
 
@@ -236,6 +253,18 @@ def main(argv: list[str] | None = None) -> int:
         help="use deterministic guesses instead of asking a model",
     )
     r.set_defaults(fn=cmd_run, models=True)
+
+    t = sub.add_parser(
+        "retry", help="pick up a run that broke, at the step that broke, once it is fixed"
+    )
+    t.add_argument("run_id", help="the run's id, or enough of its start to be the only one")
+    t.add_argument(
+        "--skip",
+        action="store_true",
+        help="carry on without the step that broke, instead of running it again",
+    )
+    t.add_argument("--no-model-guesses", action="store_true")
+    t.set_defaults(fn=cmd_retry, models=True)
 
     a = sub.add_parser(
         "audit", help="turn a process document into a draft definition and questions"

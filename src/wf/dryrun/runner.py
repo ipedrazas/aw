@@ -171,6 +171,38 @@ class DryRunner:
             ledger.close()
         return self.report(result.run_id, findings=findings, result=result)
 
+    def retry(self, run_id: str, *, skip: bool = False) -> DryRunReport:
+        """Pick up a run that broke, at the step that broke, on the definition as it is
+        now; or, with ``skip``, carry it on without that step."""
+        ledger = Ledger(self.db)
+        try:
+            run = ledger.session.get(Run, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            wf = self.ws.load_definition(run.workflow_name)
+            interp = Interpreter(self.ws, self.activities, ledger, self.config)
+            result = interp.skip(run, wf) if skip else interp.retry(run, wf)
+            self.rescore_expectations(ledger, result)
+        finally:
+            ledger.close()
+        return self.report(run_id, result=result)
+
+    def rescore_expectations(self, ledger: Ledger, result: RunResult) -> None:
+        """Score a run's expectations again, against where it ended this time."""
+        rows = ledger.session.query(Expectation).filter_by(run_id=result.run_id).all()
+        for row in rows:
+            (res,) = evaluate_expectations(
+                result.state,
+                [
+                    {
+                        "step": row.step_id,
+                        "field": row.field,
+                        "equals": (row.equals or {}).get("value"),
+                    }
+                ],
+            )
+            ledger.set_expectation_result(row, res.matched, res.actual)
+
     def _record_expectations(
         self, ledger: Ledger, result: RunResult, expectation: list[dict[str, Any]]
     ) -> None:
@@ -205,12 +237,30 @@ class DryRunner:
                         "value": (d.value or {}).get("value"),
                     }
                 )
-            seen: set[str] = set()
-            step_rows = []
+            # One row per step, in the order the steps first ran: its latest attempt. A
+            # step picked up again after it broke keeps the attempt that broke in its
+            # decisions, and says how many attempts there were.
+            # the follow-up runs each step started, so the step can say how each one went
+            step_of = {st.id: st.step_id for st in steps}
+            follow_ups: dict[str, list[dict[str, Any]]] = {}
+            for child in (
+                s.query(Run).filter_by(parent_run_id=run_id).order_by(Run.started_at).all()
+            ):
+                follow_ups.setdefault(step_of.get(child.parent_step_run_id or "", ""), []).append(
+                    {
+                        "id": child.id,
+                        "title": child.title,
+                        "status": child.status,
+                        "error": child.error,
+                    }
+                )
+            latest = _latest_attempts(steps)
+            attempts: dict[str, int] = {}
             for st in steps:
-                if st.step_id in seen and st.fanout_index is not None:
-                    continue
-                seen.add(st.step_id)
+                if st.fanout_index is None:
+                    attempts[st.step_id] = attempts.get(st.step_id, 0) + 1
+            step_rows = []
+            for st in latest:
                 step_rows.append(
                     {
                         "step_id": st.step_id,
@@ -227,6 +277,8 @@ class DryRunner:
                         "instruction_sha256": st.instruction_sha256,
                         "tool_calls": st.tool_calls,
                         "error": st.error,
+                        "attempts": attempts.get(st.step_id, 1),
+                        "follow_ups": follow_ups.get(st.step_id, []),
                         "decisions": by_step.get(st.step_id, []),
                     }
                 )
@@ -344,13 +396,9 @@ class DryRunner:
             out = []
             for r in runs:
                 steps = s.query(StepRun).filter_by(run_id=r.id).order_by(StepRun.seq).all()
-                seen: set[str] = set()
-                statuses = []
-                for st in steps:
-                    if st.step_id in seen:
-                        continue
-                    seen.add(st.step_id)
-                    statuses.append({"step_id": st.step_id, "status": st.status})
+                statuses = [
+                    {"step_id": st.step_id, "status": st.status} for st in _latest_attempts(steps)
+                ]
                 out.append(
                     {
                         "id": r.id,
@@ -367,6 +415,16 @@ class DryRunner:
                     }
                 )
             return out
+
+
+def _latest_attempts(steps: list[StepRun]) -> list[StepRun]:
+    """Each step's last top-level record, in the order the steps first appeared."""
+    latest: dict[str, StepRun] = {}
+    for st in steps:
+        # a key set again keeps its first place, so the order is when the step first ran
+        if st.fanout_index is None or st.step_id not in latest:
+            latest[st.step_id] = st
+    return list(latest.values())
 
 
 def _question_for(findings: list[Finding] | None, finding_id: str | None) -> str | None:
