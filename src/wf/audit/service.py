@@ -32,6 +32,7 @@ from .question import (
     group_questions,
 )
 from .restore import restore_missing_files
+from .skills import examples, write_skills
 
 
 @dataclass
@@ -102,10 +103,16 @@ class Auditor:
         model: ModelActivity,
         extraction_model: str | None = None,
         policy: ActivityPolicy | None = None,
+        skill_model: str | None = None,
+        writes_skills: bool | None = None,
     ):
         self.ws = ws
         self.model = model
         self.extraction_model = extraction_model or settings.extraction_model()
+        self.skill_model = skill_model or settings.skill_model()
+        self.writes_skills = (
+            settings.skills_mode() == "written" if writes_skills is None else writes_skills
+        )
         self.policy = policy or ActivityPolicy(retries=1, timeout_s=300)
 
     @classmethod
@@ -125,9 +132,19 @@ class Auditor:
         req = extraction_request(passages, self.extraction_model, name_hint=name)
         with session_span("audit", name=name or "", title=_first_line(document)) as span:
             resp = run_with_policy(self.policy, lambda: self.model.complete(req))
+            extracted = normalise(resp, name)
+            draft = build_draft(extracted, passages)
+            if self.writes_skills:
+                # one step at a time: the calls land in this session in the order of the steps
+                write_skills(
+                    draft,
+                    passages,
+                    self.model,
+                    model_name=self.skill_model,
+                    policy=self.policy,
+                    shown=examples(self.ws),
+                )
             session_id = span.id
-        extracted = normalise(resp, name)
-        draft = build_draft(extracted, passages)
         result = self.finish(draft, passages, explanations=list(resp.decisions))
         result.session_id = session_id
         return result

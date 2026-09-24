@@ -60,6 +60,9 @@ class Draft(BaseModel):
         default_factory=list
     )  # a branch the document describes in words only
     skills: dict[str, str] = Field(default_factory=dict)  # rel path -> body
+    # rel path -> what the step is, for writing its instructions from the document; the
+    # body in ``skills`` is the plain outline until then, and stays it if that fails
+    skill_briefs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     schemas: dict[str, dict[str, Any]] = Field(default_factory=dict)  # rel path -> schema
     notes: list[str] = Field(default_factory=list)
 
@@ -75,6 +78,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
     assumptions: list[Finding] = []
     branch_gaps: list[Finding] = []
     skills: dict[str, str] = {}
+    skill_briefs: dict[str, dict[str, Any]] = {}
     schemas: dict[str, dict[str, Any]] = {}
     notes: list[str] = []
 
@@ -298,6 +302,9 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
             searches = any(t.split(".")[-1] == "search" for t in step.get("tools") or {})
             if searches and rel in schemas and not holds_urls(schemas[rel]):
                 schemas[rel] = with_sources(schemas[rel])
+            skill_briefs[skill_rel] = _brief(
+                s, step, schemas.get(rel or ""), instr, steps_in, set(inputs)
+            )
             step["shows_user"] = ["output", "decisions"]
             step["decision_log"] = "required"
 
@@ -463,6 +470,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         assumptions=assumptions,
         branch_gaps=branch_gaps,
         skills=skills,
+        skill_briefs=skill_briefs,
         schemas=schemas,
         notes=notes,
     )
@@ -493,6 +501,45 @@ def _when_options(sid: str, steps: list[dict[str, Any]]) -> list[Option]:
         )
     )
     return opts
+
+
+def _brief(
+    s: dict[str, Any],
+    step: dict[str, Any],
+    schema: dict[str, Any] | None,
+    instr: dict[str, Any] | None,
+    steps_in: list[dict[str, Any]],
+    inputs: set[str],
+) -> dict[str, Any]:
+    """What the writer of a step's instructions is told about the step: what it is, where
+    it sits, what it hands on, and which passages of the document are its own."""
+    titles = {x["id"]: x["title"] for x in steps_in}
+    reads = [
+        f"the workflow input `{k}`" if k in inputs else f"what “{titles.get(k, k)}” produced"
+        for k in (step.get("input") or {})
+    ]
+    produces = []
+    for name, node in ((schema or {}).get("properties") or {}).items():
+        field = {"name": name, "type": node.get("type", "string")}
+        if node.get("description"):
+            field["description"] = node["description"]
+        if node.get("enum"):
+            field["enum"] = list(node["enum"])
+        produces.append(field)
+    passages = [p for p in (s.get("passage"), (instr or {}).get("passage")) if p]
+    return {
+        "id": step["id"],
+        "title": step["title"],
+        "description": step.get("description") or "",
+        "judgement": s.get("judgement"),
+        "passages": list(dict.fromkeys(passages)),
+        "document_says_how": bool(instr and instr.get("passage")),
+        "instructions_in_brief": (instr or {}).get("summary"),
+        "reads": reads,
+        "read_by": [x["title"] for x in steps_in if step["id"] in x.get("reads_from", [])],
+        "tools": {k: v.get("max_calls") for k, v in (step.get("tools") or {}).items()},
+        "produces": produces,
+    }
 
 
 def _skill_body(step: dict[str, Any], instr: dict[str, Any] | None, source: str | None) -> str:
