@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
 from wf.schema import Workflow, Workspace, load_workflow_dict
-from wf.settings import model_for
+from wf.settings import careful_model, quick_model
 from wf.validate import (
     PRODUCES,
     WEB_TOOLS,
@@ -24,6 +24,21 @@ from wf.validate import (
 )
 
 from .ingest import Passage
+
+# The one model question the draft asks, of a step the document singles out. Saying no
+# takes the step's own model away, so it runs on the workflow's default.
+CAREFUL_OPTIONS = [
+    Option(
+        value={"keep": True},
+        label="Yes, run it with careful judgement",
+        consequence="Slower and costs more. Better at writing and review.",
+    ),
+    Option(
+        value={"keep": False, "then": "default"},
+        label="No, the default is enough",
+        consequence="It runs on the same model as the other steps.",
+    ),
+]
 
 JSON_TYPES = {
     "string": "string",
@@ -67,7 +82,14 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
         return by_id[pid].text if pid and pid in by_id else None
 
     def assume(
-        field: str, step: dict[str, Any] | None, what: str, why: str, *, unblocks: int = 0
+        field: str,
+        step: dict[str, Any] | None,
+        what: str,
+        why: str,
+        *,
+        unblocks: int = 0,
+        options: list[Option] | None = None,
+        source: str | None = None,
     ) -> None:
         assumptions.append(
             Finding(
@@ -76,8 +98,10 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 field=field,
                 question=f"We assumed {what}. Is that right?",
                 detail=why,
+                source_text=source,
                 answer_kind="choice",
-                options=[
+                options=options
+                or [
                     Option(value={"keep": True}, label="Yes, keep it"),
                     Option(value={"keep": False}, label="No, I will answer this"),
                 ],
@@ -228,14 +252,20 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 step["output"] = {"schema": schema_rel}
 
         if kind == "agent":
-            judgement = s.get("judgement")
-            step["model"] = model_for(judgement)
-            if judgement is None:
+            # Every step runs on the workflow's default model unless the document asks
+            # for more care than usual. Only that step is asked about, and it is shown
+            # the words that made it stand out; the rest are changed on the workflow page.
+            if s.get("judgement") == "careful":
+                step["model"] = careful_model()
                 assume(
                     f"steps.{sid}.model",
                     s,
-                    f"“{s['title']}” needs quick judgement rather than careful",
-                    "The document does not say how much care this step needs. Careful judgement costs more and is slower.",
+                    f"“{s['title']}” needs careful judgement",
+                    "The document asks for more care here than for the other steps. Careful "
+                    "judgement is slower and costs more per run; every other step runs on the "
+                    "workflow's default.",
+                    options=CAREFUL_OPTIONS,
+                    source=passage_text(s.get("passage")),
                 )
             skill_rel = f"skills/{name}/{sid}.md"
             instr = s.get("instructions")
@@ -402,6 +432,7 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 },
                 "decision_log": "optional",
                 "on_error": "pause_and_explain",
+                "model": quick_model(),
             },
             "steps": steps_out,
         },

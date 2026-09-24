@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question %}
+{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question, questions_summary %}
 {% set s = data.summary %}
 {% block title %}{{ s.name }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
@@ -77,13 +77,14 @@
   <div class="card"><h3>Spending limit</h3><p style="margin:0">{% if s.budget %}{{ s.budget }}. {{ s.budget_on_exceeded }}{% else %}None declared. Nothing here can start more work, so none is needed.{% endif %}</p></div>
   <div class="card"><h3>Open questions</h3>
     {% if not data.questions %}<p style="margin:0">None. Every required field is answered, so this can run for real.</p>
-    {% else %}<p style="margin:0">{{ data.questions | map(attribute="findings") | map("length") | sum }} left before this can run for real. <a href="#questions" data-goto="questions">Answer them below.</a></p>{% endif %}
+    {% else %}<p style="margin:0">{{ data.questions | sum(attribute="count") }} left before this can run for real. <a href="#questions" data-goto="questions">Answer them below.</a></p>{% endif %}
   </div>
 </div>
 
 {% if data.questions %}
 <div class="card" id="questions" data-workflow-answers="{{ name }}">
   <div class="card-head"><h2>Answer the open questions</h2><span class="muted small">Each answer is saved into the workflow and its draft</span></div>
+  {{ questions_summary(data.questions) }}
   {% for g in data.questions %}
     <h3 class="small muted" style="margin:14px 0 4px">{{ g.title }}</h3>
     {% for f in g.findings %}{{ question(f, name, chat=False) }}{% if f.step_id %}<div class="small muted" style="margin:-4px 0 10px">Step: {{ f.step_id }}</div>{% endif %}{% endfor %}
