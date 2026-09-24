@@ -6,6 +6,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -39,6 +40,7 @@ from wf.validate import validate
 
 from .audits import AuditStore
 from .plain import plain_steps, plain_summary
+from .skills import SkillError, edit_step_skill, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
@@ -88,6 +90,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return f"/static/{name}?v={int(f.stat().st_mtime)}" if f.exists() else f"/static/{name}"
 
     templates.env.globals["static_url"] = static_url
+    templates.env.globals["skill_url"] = skill_url
     if (WEB / "static").is_dir():
         app.mount("/static", StaticFiles(directory=str(WEB / "static")), name="static")
 
@@ -277,6 +280,70 @@ def create_app(state: AppState | None = None) -> FastAPI:
             "commit": commit,
             "drafts": drafts,
         }
+
+    # -- instruction files ------------------------------------------------------
+
+    @app.get("/api/skill")
+    def get_skill(
+        path: str,
+        v: int | None = None,
+        a: int | None = None,
+        b: int | None = None,
+        workflow: str | None = None,
+        step: str | None = None,
+        sha256: str | None = None,
+    ) -> dict[str, Any]:
+        """An instruction file: one version of it, every version it has had, and which
+        steps pin which. With ``workflow`` and ``step``, what editing it from there does."""
+        try:
+            return skill_view(
+                st().ws, path, version=v, a=a, b=b, workflow=workflow, step=step, sha256=sha256
+            )
+        except SkillError as e:
+            raise HTTPException(e.status, str(e)) from e
+
+    @app.post("/api/workflows/{name}/steps/{step_id}/skill")
+    def edit_skill(name: str, step_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Save edited instructions as a new version and pin the step to it. The version
+        it replaces is kept, so a past run, and any other step that pins it, still reads
+        exactly what it read. The change is committed and carried to the drafts."""
+        _load(st(), name)
+        latest = body.get("latest")
+        try:
+            result, written, change = edit_step_skill(
+                st().ws,
+                name,
+                step_id,
+                str(body.get("body") or ""),
+                int(latest) if latest is not None else None,
+            )
+        except SkillError as e:
+            raise HTTPException(e.status, str(e)) from e
+        commit = gitrepo.commit_paths(
+            st().ws.root,
+            written,
+            f"{name}: edited the instructions for “{step_id}”, now version {result['version']}",
+            *st().author,
+        )
+        drafts = _carry_to_drafts(st(), name, [change])
+        logger.info(
+            "workflow %s: instructions for %s are now %s",
+            name,
+            step_id,
+            result["skill"],
+            extra={
+                "fields": {
+                    "event": "workflow.skill_edited",
+                    "workflow": name,
+                    "step": step_id,
+                    "skill": result["skill"],
+                    "before": result["before"],
+                    "commit": commit,
+                    "drafts": drafts,
+                }
+            },
+        )
+        return {**result, "commit": commit, "drafts": drafts}
 
     # -- audits --------------------------------------------------------------
 
@@ -646,6 +713,32 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/workflows/{name}", response_class=HTMLResponse)
     def workflow_page(request: Request, name: str) -> Any:
         return page(request, "workflow", data=get_workflow(name), name=name)
+
+    @app.get("/skill", response_class=HTMLResponse)
+    def skill_page(
+        request: Request,
+        path: str,
+        v: int | None = None,
+        a: int | None = None,
+        b: int | None = None,
+        workflow: str | None = None,
+        step: str | None = None,
+        sha256: str | None = None,
+    ) -> Any:
+        here = {"path": path, "workflow": workflow, "step": step}
+
+        def link(extra: dict[str, Any]) -> str:
+            """This page, for the same file and step, at another version or comparison."""
+            q = {k: v for k, v in {**here, **extra}.items() if v is not None}
+            return "/skill?" + urlencode(q)
+
+        return page(
+            request,
+            "skill",
+            skill=get_skill(path, v, a, b, workflow, step, sha256),
+            here={k: v for k, v in here.items() if v is not None},
+            link=link,
+        )
 
     @app.get("/audits/new", response_class=HTMLResponse)
     def new_audit_page(request: Request) -> Any:

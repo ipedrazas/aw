@@ -25,6 +25,17 @@ sha256. Alternative: `@N` means the Nth commit touching the file. Why: works in 
 shallow clone and in a Docker image with no `.git`, and the version bump is an
 explicit act by whoever edits the instructions.
 
+**An edited instruction file keeps every version it replaces, beside it.** Saving from
+the skill page writes the next version to the file and copies the text it had,
+unchanged, to `.versions/<stem>/<n>.md` in the same directory; the step is pinned to
+the new version and the change committed and carried to the drafts, as an answer is.
+A pin to an older version reads the kept copy, so it is no longer a conflict; a file
+changed by hand without keeping the old text still is. Alternative: rows in the
+database, or reading old versions back out of git. Why: the files are the definition's
+content and travel with it (a shallow clone, a Docker image with no `.git`, a rename
+or delete of the workflow's own `skills/<name>/`), and a step elsewhere that reads the
+same file keeps running what it was pinned to until someone changes it there.
+
 **Checks and tools name a registered routine, not a file.** `run: checks.http_resolves`
 resolves in `wf.interpret.registry`. Alternative: `run: checks/http_resolves.py` as in
 the example YAML. Why: executing Python from the workspace would put code next to

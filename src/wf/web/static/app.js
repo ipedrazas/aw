@@ -350,3 +350,23 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
 document.querySelectorAll("select[data-compare-with]").forEach(s => s.addEventListener("change", () => {
   if (s.value) location.href = "/runs/" + s.dataset.compareWith + "/diff/" + s.value;
 }));
+
+/* Edit a step's instructions: save as a new version, then show the step's page for it.
+   What you typed and have not saved survives a reload, like an unsent answer. */
+document.querySelectorAll("form[data-skill-edit]").forEach(f => {
+  const box = f.querySelector("textarea[name=body]"), msg = f.querySelector("[data-msg]");
+  const keyBody = "skill:" + f.dataset.skillEdit + ":" + f.dataset.latest;
+  const draft = kept.get(keyBody);
+  if (draft && draft !== box.value) { box.value = draft; f.closest(".hidden")?.classList.remove("hidden"); }
+  box.addEventListener("input", () => kept.set(keyBody, box.value));
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const b = f.querySelector("button[type=submit]"); b.disabled = true; say(msg, "Saving…");
+    try {
+      const d = await postJSON(f.dataset.skillEdit, {body: box.value, latest: Number(f.dataset.latest)});
+      kept.drop(keyBody);
+      say(msg, "Saved as version " + d.version + ".");
+      location.href = f.dataset.after;
+    } catch (err) { say(msg, err.message, true); b.disabled = false; }
+  });
+});

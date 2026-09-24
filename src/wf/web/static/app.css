@@ -148,3 +148,8 @@ details summary{cursor:pointer;color:var(--muted)}
 .toollog ul{margin:4px 0 0;padding-left:18px}
 .toollog .mono{word-break:break-all}
 .waitform{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+/* Two versions of an instruction file, line by line. */
+.textdiff span{display:block}
+.textdiff .add{background:var(--green-bg);color:var(--green-ink)}
+.textdiff .del{background:var(--red-bg);color:var(--red-ink);text-decoration:line-through}
+.textdiff .gap{color:var(--muted)}
