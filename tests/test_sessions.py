@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from tests.helpers import make_db
-from tests.scripted import deep_research_script
+from tests.scripted import deep_research_script, skill_answer
 from tests.test_api import client, wait_for  # noqa: F401  (pytest fixture)
 from tests.test_audit import DOC, extraction_for_process_doc, passage_map
 from wf.activities import (
@@ -159,6 +159,8 @@ def test_an_audit_and_a_chat_turn_are_sessions_of_their_own(ws, monkeypatch):
             return ModelResponse(
                 output={"reply": "Yes.", "edits": [], "answers": [], "point_to_finding": None}
             )
+        if req.tag.startswith("audit:skill:"):
+            return skill_answer(req)
         return ModelResponse(output=extracted, decisions=[])
 
     model = record_sessions(ScriptedModel(script), db)
@@ -166,9 +168,13 @@ def test_an_audit_and_a_chat_turn_are_sessions_of_their_own(ws, monkeypatch):
     assert result.session_id, "the draft says which session read the document"
 
     audit = sessions.get(result.session_id)
-    assert audit["kind"] == "audit" and audit["calls"] == 1
+    agents = [s["id"] for s in result.definition["spec"]["steps"] if s["kind"] == "agent"]
+    assert audit["kind"] == "audit" and audit["calls"] == 1 + len(agents)
     assert audit["title"], "a session is titled by the document's own first line"
-    assert audit["calls_detail"][0]["tag"] == "audit:extract"
+    assert [c["tag"] for c in audit["calls_detail"]] == [
+        "audit:extract",
+        *(f"audit:skill:{sid}" for sid in agents),
+    ], "each step's instructions are written in the same session, in the steps' order"
 
     chat(model, result, [], "Is the brief step right?", audit_id="draft-1")
     turns = sessions.list(kind="chat")

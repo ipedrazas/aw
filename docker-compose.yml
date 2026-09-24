@@ -62,7 +62,10 @@ services:
       WF_CAREFUL_MODEL: ${WF_CAREFUL_MODEL:-}
       # What the system uses on its own behalf. Each falls back to a level above.
       WF_EXTRACTION_MODEL: ${WF_EXTRACTION_MODEL:-}   # reads a document, proposes steps (careful)
+      WF_SKILL_MODEL: ${WF_SKILL_MODEL:-}             # writes each step's instructions (extraction)
       WF_CHAT_MODEL: ${WF_CHAT_MODEL:-}               # answers in the draft chat (quick)
+      # written | template. template lays each step's instructions out with no model call.
+      WF_SKILLS: ${WF_SKILLS:-}
       WF_GUESS_MODEL: ${WF_GUESS_MODEL:-}             # fills a gap the document left (quick)
       # How much one answer may run to before it is cut off. Answers are streamed, so
       # this can be as high as the model in use allows; lower it for one that allows

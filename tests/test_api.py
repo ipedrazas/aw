@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.helpers import make_db
-from tests.scripted import deep_research_script, schema_filling_script
+from tests.scripted import deep_research_script, schema_filling_script, skill_answer
 from tests.test_audit import DOC, extraction_for_process_doc, passage_map
 from wf import settings
 from wf.activities import ScriptedModel
@@ -27,6 +27,8 @@ def client(ws, tmp_path: Path):
     def script(req):
         from wf.activities import ModelResponse
 
+        if req.tag.startswith("audit:skill:"):
+            return skill_answer(req)
         if req.tag == "audit:extract":
             return ModelResponse(
                 output=extracted,

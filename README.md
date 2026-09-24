@@ -106,6 +106,8 @@ UID=$(id -u) GID=$(id -g) docker compose up --build
 | `WF_QUICK_MODEL` | `claude-sonnet-5` | The model behind "quick judgement" in a step |
 | `WF_CAREFUL_MODEL` | `claude-opus-5` | The model behind "careful judgement" in a step |
 | `WF_EXTRACTION_MODEL` | the careful model | Turns a document into a draft |
+| `WF_SKILL_MODEL` | the extraction model | Writes the instructions for each step of a draft |
+| `WF_SKILLS` | `written` | `template` lays each step's instructions out from the draft, with no model call |
 | `WF_CHAT_MODEL` | the quick model | Answers in the chat that edits the draft |
 | `WF_GUESS_MODEL` | the quick model | Fills a gap the document left |
 | `WF_MAX_OUTPUT_TOKENS` | `32000` | How long one answer may be before it is cut off; answers are streamed, so raise it for a model that allows more |

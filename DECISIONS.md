@@ -232,6 +232,20 @@ produced an input and says so in "What I changed". Alternative: leave the wait a
 the person answer its deadline question. Why: that question has no right answer —
 "First, get my topic" in the sample document produced exactly this.
 
+**A step's instructions are written by a model, and the outline is what it falls back
+to.** After the draft is built, each agent step gets one call (`audit:skill:<id>`, in
+the audit's session, one step at a time) with the whole document, the step's place in
+the process, its output fields and the hand-written files at the top of `skills/` as
+examples. What comes back is held to what the runtime relies on: every output field
+named, decisions asked for, the `<data>` rule stated. A part it left out is added at the
+end rather than the prose thrown away. A failed or empty answer keeps the outline and
+says so in "What I changed". `WF_SKILLS=template` skips the calls. Alternative: a better
+template. Why: the outline gave every step the same five headings and a quote, and a
+user read it, correctly, as a filled-in form; the hand-written instructions it sits
+next to explain purpose, standards and why, which only reading the document gives.
+Files restored because they went missing are still the outline: there is no document
+reading in that path.
+
 ## Proposed, not decided (open questions from the brief)
 
 **How much may the extractor infer before a field becomes an `assumption`?** Proposal:

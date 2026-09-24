@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.scripted import extraction_for_process_doc
+from tests.scripted import extraction_for_process_doc, skill_answer
 from wf.activities import ModelResponse, ScriptedModel
 from wf.audit import AnswerRejected, Auditor, build_draft, ingest
 from wf.validate import make_finding, validate
@@ -39,6 +39,8 @@ def scripted_auditor(ws) -> Auditor:
     extracted = extraction_for_process_doc(passage_map(text))
 
     def script(req):
+        if req.tag.startswith("audit:skill:"):
+            return skill_answer(req)
         assert req.tag == "audit:extract"
         assert "<data" in str(req.input) or req.input.get("passages"), "the document enters as data"
         return ModelResponse(
