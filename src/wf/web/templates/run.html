@@ -136,7 +136,7 @@
         {% endif %}
       {% endfor %}
       {% if s.output is not none %}<details style="margin-top:8px"><summary>What it produced</summary><pre>{{ s.output | tojson(indent=2) }}</pre></details>{% endif %}
-      <div class="tech mono" style="margin-top:6px">{{ s.kind }}{% if s.model %} · {{ s.model }}{% endif %}{% if s.instruction_ref %} · {{ s.instruction_ref }}{% endif %}{% if s.instruction_commit %} · {{ s.instruction_commit[:10] }}{% endif %}{% if s.tool_calls %} · {{ s.tool_calls | length }} tool calls{% endif %}{% if s.duration_s %} · {{ "%.1f" | format(s.duration_s) }}s{% endif %}</div>
+      <div class="tech mono" style="margin-top:6px">{{ s.kind }}{% if s.model %} · {{ s.model }}{% endif %}{% if s.instruction_ref %} · {% set u = skill_url(s.instruction_ref, sha256=s.instruction_sha256) %}{% if u %}<a href="{{ u }}" title="The instructions this step ran with">{{ s.instruction_ref }}</a>{% else %}{{ s.instruction_ref }}{% endif %}{% endif %}{% if s.instruction_commit %} · {{ s.instruction_commit[:10] }}{% endif %}{% if s.tool_calls %} · {{ s.tool_calls | length }} tool calls{% endif %}{% if s.duration_s %} · {{ "%.1f" | format(s.duration_s) }}s{% endif %}</div>
     </div>
     {% endfor %}
 

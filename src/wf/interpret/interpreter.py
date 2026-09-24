@@ -605,7 +605,9 @@ class Interpreter:
         meta = {
             "cost_usd": cost,
             "instruction_ref": step.skill,
-            "instruction_commit": repo.file_commit(self.ws.root, skill.path) if skill else None,
+            "instruction_commit": repo.file_commit(self.ws.root, skill.file or skill.path)
+            if skill
+            else None,
             "instruction_sha256": skill.sha256 if skill else None,
             "model": resp.model or model,
             "tool_calls": [

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% set k = skill %}
+{% set e = k.edit %}
+{% block title %}{{ k.title }}{% endblock %}
+{% block bar_title %}<span class="mono">{{ k.path }}</span> <span class="muted">version {{ k.latest }}</span>{% endblock %}
+{% block bar_right %}{% if e %}<a href="/workflows/{{ e.workflow }}">Back to {{ e.workflow }}</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="card-head" style="margin-bottom:14px">
+  <div>
+    <h1>{{ k.title }}</h1>
+    <p class="sub" style="margin:0">{% if e %}The instructions “{{ e.step_title }}” runs with, version {{ e.pinned }}.{% else %}An instruction file, and every version it has had.{% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if e %}<button class="btn btn-primary" data-toggle="skill-edit">Edit the instructions</button>{% endif %}
+  </div>
+</div>
+
+{% if k.shown.matches_run == false %}
+<div class="banner banner-red">This is not the text the run read. The file was changed without a new version, so what the run was sent is on the run page, under “What it was asked”.</div>
+{% endif %}
+
+{% if e %}
+<div id="skill-edit" class="card hidden">
+  <form data-skill-edit="/api/workflows/{{ e.workflow }}/steps/{{ e.step_id }}/skill" data-latest="{{ e.latest }}" data-after="{{ link({}) }}">
+    <div class="card-head"><h2>Edit, starting from version {{ e.pinned }}</h2><span class="small muted">Saving makes version {{ e.latest + 1 }}. Every earlier version is kept.</span></div>
+    <textarea name="body" class="mono" style="min-height:420px">{{ e.body }}</textarea>
+    {% if e.trust_resets %}<div class="guess small" style="margin-top:10px">{{ e.trust_resets }}</div>{% endif %}
+    {% set others = k.used_by | rejectattr("step_id", "equalto", e.step_id) | list %}
+    {% if others %}<p class="small muted">Also read by {% for u in others %}“{{ u.step_title }}” in {{ u.workflow }} (version {{ u.version }}){{ ", " if not loop.last }}{% endfor %}. {{ "They keep" if others | length > 1 else "It keeps" }} the version pinned until changed there.</p>{% endif %}
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">Save as version {{ e.latest + 1 }}</button><button class="btn" type="button" data-toggle="skill-edit">Cancel</button><span data-msg class="small"></span></div>
+  </form>
+</div>
+{% endif %}
+
+<div class="rail">
+  <div>
+    <div class="card">
+      <h3>Versions</h3>
+      <ul class="railsteps">
+        {% for v in k.versions %}
+        <li class="{{ 'active' if not k.diff and v.version == k.shown.version }}">
+          <span class="dot {{ 'dot-done' if v.latest }}">{{ v.version }}</span>
+          <div>
+            <a href="{{ link({'v': v.version}) }}">Version {{ v.version }}</a>{% if v.latest %} <span class="small muted">latest</span>{% endif %}
+            {% for u in v.pinned_by %}<div class="small muted">{{ u.workflow }}: {{ u.step_title }}</div>{% endfor %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% if k.versions | length > 1 %}
+    <div class="card">
+      <h3>Compare two versions</h3>
+      <form method="get" action="/skill">
+        {% for key, val in here.items() if val %}<input type="hidden" name="{{ key }}" value="{{ val }}">{% endfor %}
+        <div class="grid2" style="grid-template-columns:1fr 1fr;gap:8px">
+          <select name="a">{% for v in k.versions %}<option value="{{ v.version }}" {{ 'selected' if (k.diff and k.diff.a == v.version) or (not k.diff and loop.index == 2) }}>Version {{ v.version }}</option>{% endfor %}</select>
+          <select name="b">{% for v in k.versions %}<option value="{{ v.version }}" {{ 'selected' if (k.diff and k.diff.b == v.version) or (not k.diff and loop.first) }}>Version {{ v.version }}</option>{% endfor %}</select>
+        </div>
+        <div class="actions" style="margin-top:8px"><button class="btn btn-sm" type="submit">Compare</button></div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    {% if k.diff %}
+    <div class="card">
+      <div class="card-head"><h2>Version {{ k.diff.a }} to version {{ k.diff.b }}</h2><a class="small" href="{{ link({'v': k.diff.b}) }}">Read version {{ k.diff.b }}</a></div>
+      {% if not k.diff.rows %}<p class="muted" style="margin:0">The two versions say the same thing.</p>
+      {% else %}<pre class="textdiff">{% for r in k.diff.rows %}<span class="{{ {'+': 'add', '-': 'del', '@': 'gap'}.get(r.op, '') }}">{{ r.op if r.op in '+-' else ' ' }} {{ r.text }}</span>{% endfor %}</pre>{% endif %}
+    </div>
+    {% else %}
+    <div class="card">
+      <div class="card-head"><h2>Version {{ k.shown.version }}</h2><span class="small muted mono">{% if k.shown.commit %}{{ k.shown.commit[:10] }} · {% endif %}sha256 {{ k.shown.sha256[:12] }}</span></div>
+      <pre>{{ k.shown.body }}</pre>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -969,3 +969,13 @@ def test_a_saved_workflow_takes_one_answer_for_several_steps(client, ws):
     assert r.status_code == 200, r.text
     steps = {s["id"]: s for s in read_yaml(ws, rel)["spec"]["steps"]}
     assert steps["plan"]["shows_user"] == steps["research"]["shows_user"] == ["output"]
+
+
+def test_every_row_of_the_workflow_table_has_a_cell_per_heading(client):
+    import re
+
+    page = client.get("/workflows/deep-research").text
+    table = page[page.index("<table>") : page.index("</table>")]
+    headings = len(re.findall(r"<th[ >]", table.split("</thead>")[0]))
+    rows = table.split("</thead>")[1].split("</tr>")[:-1]
+    assert rows and all(len(re.findall(r"^\s*<td[ >]", r, re.M)) == headings for r in rows)

@@ -224,6 +224,7 @@ class DryRunner:
                         "model": st.model,
                         "instruction_ref": st.instruction_ref,
                         "instruction_commit": st.instruction_commit,
+                        "instruction_sha256": st.instruction_sha256,
                         "tool_calls": st.tool_calls,
                         "error": st.error,
                         "decisions": by_step.get(st.step_id, []),

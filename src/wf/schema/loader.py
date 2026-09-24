@@ -43,6 +43,9 @@ class Skill:
     content: str
     body: str
     sha256: str
+    # The file the text was read from: ``path`` itself, or the kept copy of an earlier
+    # version under ``.versions/`` when the step pins one the file has moved on from.
+    file: str = ""
 
     @property
     def title(self) -> str:
@@ -183,6 +186,9 @@ class Workspace:
     # -- skills ------------------------------------------------------------
 
     def load_skill(self, ref: str) -> Skill | None:
+        """The instruction file ``ref`` names. A pin to a version the file has moved on
+        from reads the kept copy of that version, when there is one; otherwise the file
+        as it is, and the validator reports the difference."""
         pin = parse_pin(ref)
         rel = pin.path if pin else ref
         try:
@@ -191,15 +197,45 @@ class Workspace:
             return None
         if not p.is_file():
             return None
-        text = p.read_text()
-        version, body = split_front_matter(text)
-        return Skill(
-            path=rel,
-            version=version,
-            content=text,
-            body=body,
-            sha256=hashlib.sha256(text.encode()).hexdigest(),
+        skill = _read_skill(rel, rel, p)
+        if pin and skill.version != pin.version:
+            kept = self.load_skill_version(rel, pin.version)
+            if kept is not None:
+                return kept
+        return skill
+
+    def load_skill_version(self, rel: str, version: int) -> Skill | None:
+        """One version of an instruction file: the file itself if it is that version,
+        or the copy kept when it was replaced."""
+        try:
+            p = self.path(rel)
+        except WorkspaceError:
+            return None
+        if p.is_file():
+            current = _read_skill(rel, rel, p)
+            if current.version == version:
+                return current
+        kept = f"{_versions_dir(rel)}/{version}.md"
+        kp = self.path(kept)
+        if not kp.is_file():
+            return None
+        return _read_skill(rel, kept, kp)
+
+    def skill_versions(self, rel: str) -> list[int]:
+        """Every version of an instruction file that can still be read, oldest first."""
+        try:
+            d = self.path(_versions_dir(rel))
+            p = self.path(rel)
+        except WorkspaceError:
+            return []
+        versions = (
+            {int(f.stem) for f in d.glob("*.md") if f.stem.isdigit()} if d.is_dir() else set()
         )
+        if p.is_file():
+            current, _ = split_front_matter(p.read_text())
+            if current is not None:
+                versions.add(current)
+        return sorted(versions)
 
     def save_skill(self, rel: str, version: int, body: str, title: str | None = None) -> Path:
         p = self.path(rel)
@@ -209,6 +245,33 @@ class Workspace:
             body = f"# {title}\n\n{body}"
         p.write_text(fm + body.rstrip() + "\n")
         return p
+
+    def save_skill_version(self, rel: str, body: str) -> tuple[int, list[str]]:
+        """Write an edited instruction file as a new version, keeping the one it replaces.
+
+        The file keeps its path and gets the next version number; the text it had is
+        copied, unchanged, to ``.versions/<stem>/<n>.md`` beside it, so a step still
+        pinned to it reads exactly what it read before. Returns the new version and the
+        workspace-relative paths written.
+        """
+        p = self.path(rel)
+        if not p.is_file():
+            raise WorkspaceError(f"no instruction file {rel!r} in the workspace")
+        text = p.read_text()
+        current, _ = split_front_matter(text)
+        written: list[str] = []
+        if current is not None:
+            kept = f"{_versions_dir(rel)}/{current}.md"
+            kp = self.path(kept)
+            if not kp.exists():
+                kp.parent.mkdir(parents=True, exist_ok=True)
+                kp.write_text(text)
+                written.append(kept)
+        version = max([*self.skill_versions(rel), 0]) + 1
+        _, body = split_front_matter(body)  # front matter typed into the editor is ours to write
+        self.save_skill(rel, version, body)
+        written.append(rel)
+        return version, written
 
     # -- schemas -----------------------------------------------------------
 
@@ -258,6 +321,26 @@ class Workspace:
         if not d.is_dir():
             return []
         return sorted(p.name for p in d.glob("*.md"))
+
+
+def _versions_dir(rel: str) -> str:
+    """Where the earlier versions of an instruction file are kept: ``skills/a/b.md`` keeps
+    them in ``skills/a/.versions/b/``, so they move and go with the directory the file is in."""
+    p = Path(rel)
+    return str(p.parent / ".versions" / p.stem)
+
+
+def _read_skill(rel: str, file: str, p: Path) -> Skill:
+    text = p.read_text()
+    version, body = split_front_matter(text)
+    return Skill(
+        path=rel,
+        version=version,
+        content=text,
+        body=body,
+        sha256=hashlib.sha256(text.encode()).hexdigest(),
+        file=file,
+    )
 
 
 def split_front_matter(text: str) -> tuple[int | None, str]:

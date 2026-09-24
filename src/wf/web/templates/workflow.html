@@ -63,7 +63,7 @@
       <div class="tech small muted mono">{{ st.technical.model or "" }}</div>
       {% else %}<span class="muted">None</span>{% endif %}
     </td>
-    <td class="tech-col mono">{{ st.technical.skill or st.technical.run or st.technical.workflow or "—" }}</td>
+    <td class="tech-col mono">{% if st.technical.skill %}<a href="{{ skill_url(st.technical.skill, workflow=name, step=st.id) }}" title="Read, compare or edit these instructions">{{ st.technical.skill }}</a>{% else %}{{ st.technical.run or st.technical.workflow or "—" }}{% endif %}</td>
     <td>{{ st.shows }}</td>
     <td>{{ trust_pill(st.trust) }}<div class="small muted">{{ st.trust_detail }}</div></td>
   </tr>
