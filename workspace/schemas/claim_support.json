@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Claim support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "supports", "probabilities"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "description": "Does the page support the claim?",
+      "enum": ["supports", "partly", "not_supported", "contradicts", "unreadable"],
+      "x-criteria": {
+        "supports": "The page states what the claim says.",
+        "partly": "The page supports part of the claim; the rest is not on the page.",
+        "not_supported": "The page does not say what the claim says, and does not say the opposite.",
+        "contradicts": "The page says the opposite of the claim, or gives different figures.",
+        "unreadable": "The page has no usable text: a paywall, a cookie wall or an empty shell."
+      }
+    },
+    "supports": {
+      "type": "boolean",
+      "description": "Does the page support everything the claim says?",
+      "x-criteria": {
+        "true": "Every part of the claim is stated on the page.",
+        "false": "Some part of the claim is missing from the page or contradicted by it."
+      }
+    },
+    "probabilities": {
+      "type": "object",
+      "description": "How likely each answer is, from 0 to 1.",
+      "additionalProperties": false,
+      "required": ["verdict", "supports"],
+      "properties": {
+        "verdict": {
+          "type": "object",
+          "description": "The probability of each verdict. They sum to 1.",
+          "additionalProperties": false,
+          "required": ["supports", "partly", "not_supported", "contradicts", "unreadable"],
+          "properties": {
+            "supports": { "type": "number" },
+            "partly": { "type": "number" },
+            "not_supported": { "type": "number" },
+            "contradicts": { "type": "number" },
+            "unreadable": { "type": "number" }
+          }
+        },
+        "supports": {
+          "type": "number",
+          "description": "The probability that the page supports everything the claim says."
+        }
+      }
+    }
+  }
+}

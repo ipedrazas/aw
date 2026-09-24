@@ -44,12 +44,30 @@ DECISION_SCHEMA = {
 }
 
 
+def for_text_model(schema: Any) -> Any:
+    """A schema as a text model is shown it: what ``x-criteria`` says each answer
+    means is written into the property's description, and the ``x-`` keys, which are
+    ours and not JSON Schema's, are left out. A decisions model reads the same
+    criteria as typed questions (``jev.py``), so both are asked in the same words."""
+    if isinstance(schema, list):
+        return [for_text_model(v) for v in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: for_text_model(v) for k, v in schema.items() if not k.startswith("x-")}
+    criteria = schema.get("x-criteria")
+    if isinstance(criteria, dict) and criteria:
+        lines = "\n".join(f"- {value}: {meaning}" for value, meaning in criteria.items())
+        head = str(schema.get("description") or "").strip()
+        out["description"] = f"{head}\n{lines}" if head else lines
+    return out
+
+
 def envelope_schema(output_schema: dict[str, Any], decisions_required: bool) -> dict[str, Any]:
     """The output the model must produce: the step's output plus its decisions.
 
     Decisions are enforced by the schema, not parsed from prose.
     """
-    out = dict(output_schema)
+    out = for_text_model(dict(output_schema))
     out.pop("$schema", None)
     decisions = dict(DECISION_SCHEMA)
     if decisions_required:

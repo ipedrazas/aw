@@ -111,6 +111,44 @@ def http_resolves(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def fetch_pages(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
+    """The text of each page a report cites, for a step that reads what the page says.
+
+    Handed the link check's sources, it fetches only the links that opened; handed a
+    report's, every one. A page that cannot be read is listed, with why, rather than
+    passed on empty: an empty page would read as a page that says nothing.
+    """
+    sources, _ = _sources_in(input or {})
+    opened = {
+        str(s.get("url")): bool(s.get("link_opens", True))
+        for s in (input.get("sources") or [])
+        if isinstance(s, dict)
+    }
+    pages: list[dict[str, Any]] = []
+    unread: list[dict[str, Any]] = []
+    fetched: dict[str, dict[str, Any]] = {}
+    for s in sources:
+        url = s["url"]
+        if not opened.get(url, True):
+            unread.append({**s, "reason": "the link did not open"})
+            continue
+        if url not in fetched:
+            fetched[url] = ctx.activities.search.get_contents(url) or {}
+        page = fetched[url]
+        text = str(page.get("text") or "").strip()
+        if not text:
+            unread.append({**s, "reason": str(page.get("error") or "the page had no text")})
+            continue
+        pages.append({**s, "title": str(page.get("title") or ""), "page": text})
+    if unread:
+        ctx.note(
+            f"Could not read {len(unread)} of {len(sources)} cited pages, so nothing "
+            "will say whether they support their claims.",
+            "; ".join(f"{u['url']}: {u['reason']}" for u in unread) + ".",
+        )
+    return {"sources": pages, "unread": unread, "read_count": len(pages), "total": len(sources)}
+
+
 def _longest_text(input: dict[str, Any]) -> dict[str, Any]:
     """A report handed on under some other name — ``report``, ``report_md``, a link
     table appended to it — is the longest piece of writing in the input. A PDF of that
@@ -179,6 +217,7 @@ CHECKS: dict[str, Callable[[RunnerContext, dict[str, Any]], dict[str, Any]]] = {
 }
 
 TOOLS: dict[str, Callable[[RunnerContext, dict[str, Any]], dict[str, Any]]] = {
+    "tools.fetch_pages": fetch_pages,
     "tools.render_pdf": render_pdf,
     "tools.send_email": send_email,
 }
@@ -209,6 +248,44 @@ RUNNER_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
             "total": {"type": "integer"},
             "checked_at": {"type": "string"},
             "vantage": {"type": "string"},
+        },
+    },
+    "tools.fetch_pages": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["sources", "unread", "read_count", "total"],
+        "properties": {
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["line", "claim", "url", "title", "page"],
+                    "properties": {
+                        "line": {"type": "integer"},
+                        "claim": {"type": "string"},
+                        "url": {"type": "string"},
+                        "title": {"type": "string"},
+                        "page": {"type": "string"},
+                    },
+                },
+            },
+            "unread": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["line", "claim", "url", "reason"],
+                    "properties": {
+                        "line": {"type": "integer"},
+                        "claim": {"type": "string"},
+                        "url": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                },
+            },
+            "read_count": {"type": "integer"},
+            "total": {"type": "integer"},
         },
     },
     "tools.render_pdf": {

@@ -153,22 +153,22 @@ def test_health_and_workflow_listing(client):
     names = {w["name"] for w in wfs}
     assert "deep-research" in names
     dr = next(w for w in wfs if w["name"] == "deep-research")
-    assert dr["step_count"] == 8 and dr["open_findings"] == 0
+    assert dr["step_count"] == 10 and dr["open_findings"] == 0
 
 
 def test_workflow_view_is_in_plain_language(client):
     data = client.get("/api/workflows/deep-research").json()
     steps = data["steps"]
-    assert [s["n"] for s in steps] == list(range(1, 9))
+    assert [s["n"] for s in steps] == list(range(1, 11))
     titles = " ".join(s["title"] + " " + s["description"] for s in steps)
     assert "claude" not in titles.lower() and ".md" not in titles and "exa" not in titles.lower()
     assert steps[0]["origin"] == "I suggested this"
-    assert steps[6]["trust"] == "Always asks you"
+    assert steps[8]["trust"] == "Always asks you"
     assert steps[3]["does_not_check"] == [
         "Whether the page supports the claim",
         "How reliable or recent the source is",
     ]
-    assert steps[6]["when"].startswith("Only if")
+    assert steps[8]["when"].startswith("Only if")
     assert steps[1]["technical"]["model"] == "claude-sonnet-5"
     assert data["summary"]["recursion"].startswith("Yes")
     assert "durable-execution" in data["cases"]

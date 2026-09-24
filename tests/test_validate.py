@@ -177,7 +177,11 @@ def test_a_tool_with_no_routine_is_not_offered_a_checks_routine(ws):
     write_yaml(ws, DEF, data)
     result = run(ws)
     f = next(f for f in result.findings if f.field == "steps.assemble.run")
-    assert [o.value for o in f.options] == ["tools.render_pdf", "tools.send_email"]
+    assert [o.value for o in f.options] == [
+        "tools.fetch_pages",
+        "tools.render_pdf",
+        "tools.send_email",
+    ]
 
 
 def test_the_routines_the_validator_offers_are_the_ones_the_interpreter_has():

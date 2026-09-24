@@ -425,10 +425,11 @@ def test_the_defaults_are_the_same_models_under_the_name_the_provider_uses(monke
 
 def test_the_provider_decides_which_model_activity_is_built(monkeypatch):
     clear(monkeypatch)
-    assert isinstance(default_model(), AnthropicModel)
+    # each behind the router that sends a decisions model (Jev) to its own endpoint
+    assert isinstance(default_model().inner, AnthropicModel)
 
     monkeypatch.setenv("WF_MODEL_PROVIDER", "openrouter")
-    assert isinstance(default_model(), OpenRouterModel)
+    assert isinstance(default_model().inner, OpenRouterModel)
 
     monkeypatch.setenv("WF_FAKE_MODEL", "1")
     assert isinstance(default_model(), FakeModel), "offline beats every provider"

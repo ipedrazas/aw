@@ -111,6 +111,42 @@ spec:
       trust:
         policy: auto
 
+    - id: fetch_pages
+      kind: tool
+      title: Read the cited pages
+      description: Fetches the text of every link that opened, for the next step to read.
+      run: tools.fetch_pages
+      input:
+        sources: ${steps.check_links.output.sources}
+      output:
+        schema: schemas/pages.json
+      side_effects: none
+      requires_approval: false
+      shows_user: [output.unread]
+      trust:
+        policy: auto
+
+    # One question per citation, asked of whichever model the step names. The questions
+    # live in the output schema, so a text model and a decisions model (typesafe/jev-*)
+    # are asked the same thing in the same words.
+    - id: check_support
+      kind: agent
+      title: Check the pages say what the report says
+      description: For each citation, whether the page supports the claim, and how sure it is.
+      for_each: ${steps.fetch_pages.output.sources}
+      max_fanout: 40
+      model: claude-sonnet-5
+      skill: skills/claim-support.md@1
+      input:
+        claim: ${item.claim}
+        page: ${item.page}
+      output:
+        schema: schemas/claim_support.json
+      shows_user: [output]
+      decision_log: optional
+      trust:
+        policy: auto
+
     - id: review
       kind: agent
       title: Review the report
