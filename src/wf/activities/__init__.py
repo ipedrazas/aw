@@ -36,6 +36,7 @@ from .base import (
 )
 from .exa import ExaSearch
 from .guess import HeuristicGuesser, ModelGuesser
+from .jev import DecisionsRouter, JevModel
 from .links import FixtureLinkCheck, LiveLinkCheck
 from .models import (
     AnthropicModel,
@@ -84,10 +85,12 @@ def default_model() -> ModelActivity:
             }
         },
     )
+    # A step that names a decisions model (Jev) is answered by it whichever provider
+    # answers the rest: it is only served through OpenRouter's Decisions endpoint.
     if name == OPENROUTER:
-        return OpenRouterModel()
+        return DecisionsRouter(OpenRouterModel())
     if name == ANTHROPIC:
-        return AnthropicModel()
+        return DecisionsRouter(AnthropicModel())
     raise ActivityError(
         f"WF_MODEL_PROVIDER={name!r} is not a provider this knows; "
         f"it is one of {', '.join(PROVIDERS)}"
@@ -118,12 +121,14 @@ __all__ = [
     "ActivityError",
     "ActivityPolicy",
     "AnthropicModel",
+    "DecisionsRouter",
     "ExaSearch",
     "FixtureLinkCheck",
     "FixtureSearch",
     "Guess",
     "Guesser",
     "HeuristicGuesser",
+    "JevModel",
     "LinkCheckActivity",
     "LinkStatus",
     "LiveLinkCheck",

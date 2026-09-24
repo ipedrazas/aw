@@ -259,6 +259,11 @@ RUNNERS: dict[str, tuple[str, str, str]] = {
         "Open every link and see which ones answer",
         "Gives back each source with the code its server returned, and a count of how many opened. It does not read the page, so it cannot tell you the link still says what it said.",
     ),
+    "tools.fetch_pages": (
+        "tool",
+        "Read the pages a report cites",
+        "Gives back the text of each page whose link opened, and lists the ones it could not read and why. Nothing leaves the system.",
+    ),
     "tools.render_pdf": (
         "tool",
         "Turn the report into a PDF",

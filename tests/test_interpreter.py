@@ -55,6 +55,8 @@ def test_deep_research_runs_end_to_end_and_records_everything(sample_ws, tmp_pat
         ("research", "run"),
         ("write", "run"),
         ("check_links", "run"),
+        ("fetch_pages", "run"),
+        ("check_support", "fanout"),
         ("review", "run"),
         ("revise", "skip"),
         ("go_deeper", "skip"),
@@ -65,17 +67,29 @@ def test_deep_research_runs_end_to_end_and_records_everything(sample_ws, tmp_pat
         steps = s.query(StepRun).order_by(StepRun.seq).all()
         decisions = s.query(Decision).all()
     assert run.status == "done" and run.mode == "dry"
+    # one record for the fan-out, and one for each page it asked about
+    checked = next(t for t in result.trace if t.step_id == "check_support").detail
+    assert checked > 0, "the report's sources were read and each one asked about"
     assert [st.step_id for st in steps] == [
         "plan",
         "research",
         "write",
         "check_links",
+        "fetch_pages",
+        *["check_support"] * (1 + checked),
         "review",
         "revise",
         "go_deeper",
         "assemble",
     ]
-    agent_steps = [st for st in steps if st.kind == "agent" and st.status == "done"]
+    # a fan-out's own record holds the items; the model and instructions are on each item's
+    agent_steps = [
+        st
+        for st in steps
+        if st.kind == "agent"
+        and st.status == "done"
+        and not (st.step_id == "check_support" and st.fanout_index is None)
+    ]
     assert all(st.model and st.instruction_ref and st.instruction_sha256 for st in agent_steps)
     assert any(d.kind == "decision" and d.step_id == "plan" for d in decisions)
     assert any(d.kind == "ignored" for d in decisions), (
@@ -102,7 +116,7 @@ def test_branches_follow_the_verdict(ws, tmp_path):
     r = interp.run(wf, TOPIC, "dry")
     events = [t.as_tuple()[:2] for t in r.trace]
     assert ("go_deeper", "fanout") in events
-    fan = next(t for t in r.trace if t.event == "fanout")
+    fan = next(t for t in r.trace if t.event == "fanout" and t.step_id == "go_deeper")
     assert fan.detail == 2, "fan-out is capped by max_fanout"
     assert any("Running 2 of 3" in d["text"] for d in r.decisions)
     assert sum(1 for t in r.trace if t.event == "stub") == 2, (

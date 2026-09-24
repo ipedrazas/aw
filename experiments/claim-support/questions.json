@@ -1,0 +1,19 @@
+{
+  "verdict": {
+    "instructions": "Does the page support the claim?",
+    "criteria": {
+      "supports": "The page states what the claim says.",
+      "partly": "The page supports part of the claim; the rest is not on the page.",
+      "not_supported": "The page does not say what the claim says, and does not say the opposite.",
+      "contradicts": "The page says the opposite of the claim, or gives different figures.",
+      "unreadable": "The page has no usable text: a paywall, a cookie wall or an empty shell."
+    }
+  },
+  "supports": {
+    "instructions": "Does the page support everything the claim says?",
+    "criteria": {
+      "true": "Every part of the claim is stated on the page.",
+      "false": "Some part of the claim is missing from the page or contradicted by it."
+    }
+  }
+}

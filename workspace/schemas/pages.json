@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cited pages",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sources",
+    "unread",
+    "read_count",
+    "total"
+  ],
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "line",
+          "claim",
+          "url",
+          "title",
+          "page"
+        ],
+        "properties": {
+          "line": {
+            "type": "integer"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unread": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "line",
+          "claim",
+          "url",
+          "reason"
+        ],
+        "properties": {
+          "line": {
+            "type": "integer"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "read_count": {
+      "type": "integer"
+    },
+    "total": {
+      "type": "integer"
+    }
+  }
+}

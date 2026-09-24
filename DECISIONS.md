@@ -329,3 +329,29 @@ its own finding and its own change, so any one can be undone or changed later.
 Alternative: one finding for the group. Why: the validator, the undo and the draft
 diff all work per field, and a group finding would have to be taken apart again for
 each of them.
+
+**Whether a page supports its claim is an agent step, and a decisions model can run
+it.** `check_support` asks, for each page the report cites, whether it says what the
+claim says (plans/claim-support-experiment.md). It is an `agent` step, not a `check`:
+a check is deterministic, and this is judgement. Jev, a decisions model, writes no
+text and takes no instructions, so it sits behind the model activity as a router
+(`DecisionsRouter`): a step naming a `typesafe/` model goes to OpenRouter's Decisions
+endpoint, every other step to the provider as before. Alternative: a `check` with a
+model, or a new step kind. Why: the step's model is then the only thing that differs
+between Jev and Claude, which is what the experiment compares, and recording, replay
+and the per-step model choice apply to both unchanged.
+
+**The questions a decisions model answers are read from the step's output schema.** A
+string with an `enum` is a choice, a boolean is a yes/no, the `description` is the
+question and `x-criteria` says what each answer means; a `probabilities` property is
+filled with the model's probabilities rather than asked. A text model is shown the same
+schema with `x-criteria` written into the descriptions. Alternative: the questions in
+the skill file, or in a field of their own on the step. Why: one place for them, so
+Jev and Claude are asked the same thing in the same words; a skill is prose Jev never
+reads, and the step model rejects unknown keys.
+
+**The cited pages are fetched by a step of their own.** `fetch_pages` (a tool, no side
+effects) reads the text of each link that opened, from the recorded fixtures or Exa,
+and lists the pages it could not read. Alternative: give `check_support` the fetch
+tool. Why: a decisions model cannot call tools, and a page every model is shown
+fetched once is a page they were all shown the same.

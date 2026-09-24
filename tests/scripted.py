@@ -161,11 +161,27 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
                 ],
                 usage=usage,
             )
+        if req.tag.startswith("check_support"):
+            return ModelResponse(output=claim_support_answer(), usage=Usage(900, 60, 0.002))
         if req.tag.startswith("guess:"):
             return ModelResponse(output={"choice": 0, "reason": "Scripted guess."}, usage=usage)
         raise AssertionError(f"unexpected model request {req.tag}")
 
     return script
+
+
+def claim_support_answer(verdict: str = "supports", p: float = 0.9) -> dict[str, Any]:
+    """One citation's answer in the shape of schemas/claim_support.json."""
+    verdicts = ["supports", "partly", "not_supported", "contradicts", "unreadable"]
+    rest = round((1 - p) / (len(verdicts) - 1), 4)
+    return {
+        "verdict": verdict,
+        "supports": verdict == "supports",
+        "probabilities": {
+            "verdict": {v: (p if v == verdict else rest) for v in verdicts},
+            "supports": p if verdict == "supports" else 1 - p,
+        },
+    }
 
 
 def skill_answer(req: ModelRequest) -> ModelResponse:
