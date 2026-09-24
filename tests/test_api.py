@@ -862,3 +862,50 @@ def test_going_deeper_starts_a_follow_up_per_topic_and_they_do_not_stop_to_ask(c
     assert by_id["go_deeper"]["status"] == "done"
     children = [x for x in client.get("/api/runs").json() if x["id"] != run["id"]]
     assert any("approvals that take days" in c["title"] for c in children)
+
+
+def test_a_steps_model_and_the_default_are_chosen_on_the_workflow_page(client, ws):
+    from tests.helpers import read_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    wf = client.get("/api/workflows/deep-research").json()
+    choices = [m["value"] for m in wf["models"]]
+    assert settings.quick_model() in choices and settings.careful_model() in choices
+    # the models the workflow already names are on the list, so the current one shows
+    assert "claude-opus-5" in choices
+    page = client.get("/workflows/deep-research").text
+    assert 'data-model-step="plan"' in page and "data-model-default" in page
+    # a check has no model to choose
+    assert 'data-model-step="check_links"' not in page
+
+    url = "/api/workflows/deep-research/model"
+    r = client.post(url, json={"step": None, "model": settings.quick_model()})
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"]["default_model"] == settings.quick_model()
+    assert read_yaml(ws, rel)["spec"]["defaults"]["model"] == settings.quick_model()
+
+    # a step put back on the default names no model of its own
+    r = client.post(url, json={"step": "plan", "model": None})
+    assert r.status_code == 200, r.text
+    plan = next(s for s in r.json()["steps"] if s["id"] == "plan")
+    assert (
+        plan["technical"]["model_inherited"]
+        and plan["technical"]["model"] == settings.quick_model()
+    )
+    assert "model" not in next(s for s in read_yaml(ws, rel)["spec"]["steps"] if s["id"] == "plan")
+    assert "steps.plan.model" not in [f["field"] for f in r.json()["findings"]]
+
+    r = client.post(url, json={"step": "plan", "model": settings.careful_model()})
+    assert r.status_code == 200, r.text
+    plan = next(s for s in read_yaml(ws, rel)["spec"]["steps"] if s["id"] == "plan")
+    assert plan["model"] == settings.careful_model()
+
+    # a model nobody configured, a step with no model and a step that is not there
+    assert client.post(url, json={"step": "plan", "model": "made-up/model"}).status_code == 400
+    assert (
+        client.post(url, json={"step": "check_links", "model": settings.quick_model()}).status_code
+        == 400
+    )
+    assert (
+        client.post(url, json={"step": "nope", "model": settings.quick_model()}).status_code == 404
+    )

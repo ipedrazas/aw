@@ -30,9 +30,19 @@
 </div>
 <pre id="yaml" class="hidden">{{ data.yaml }}</pre>
 
+<div class="model-default" data-models="{{ name }}">
+  <label class="small muted" for="default-model">Steps that do not choose their own model run on</label>
+  <select id="default-model" data-model-default>
+    {% if not s.default_model %}<option value="" selected>No default: each step names its own</option>{% endif %}
+    {% for m in data.models %}<option value="{{ m.value }}"{% if m.value == s.default_model %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+  </select>
+  <span class="tech small muted mono">{{ s.default_model or "" }}</span>
+  <span data-msg class="small"></span>
+</div>
+
 <div class="tbl">
 <table>
-  <thead><tr><th>Step</th><th class="tech-col">Model</th><th class="tech-col">Instructions</th><th>What you see</th><th>How it runs</th></tr></thead>
+  <thead><tr><th>Step</th><th>Model</th><th class="tech-col">Instructions</th><th>What you see</th><th>How it runs</th></tr></thead>
   <tbody>
   {% for st in data.steps %}
   <tr>
@@ -43,7 +53,16 @@
       {% if st.when %}<div class="when">{{ st.when }}</div>{% endif %}
       {% if st.does_not_check %}<div class="small muted">Does not check: {{ st.does_not_check | join('; ') }}.</div>{% endif %}
     </td>
-    <td class="tech-col mono">{{ st.technical.model or "None" }}</td>
+    <td>
+      {% if st.kind == "agent" %}
+      <select data-model-step="{{ st.id }}" data-title="{{ st.title }}"{% if st.technical.model_resets_trust %} data-resets="1"{% endif %} aria-label="Model for {{ st.title }}">
+        {% if s.default_model %}<option value=""{% if st.technical.model_inherited %} selected{% endif %}>Default ({{ s.default_model_label }})</option>
+        {% elif not st.technical.model_own %}<option value="" selected>Not chosen yet</option>{% endif %}
+        {% for m in data.models %}<option value="{{ m.value }}"{% if m.value == st.technical.model_own %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+      </select>
+      <div class="tech small muted mono">{{ st.technical.model or "" }}</div>
+      {% else %}<span class="muted">None</span>{% endif %}
+    </td>
     <td class="tech-col mono">{{ st.technical.skill or st.technical.run or st.technical.workflow or "—" }}</td>
     <td>{{ st.shows }}</td>
     <td>{{ trust_pill(st.trust) }}<div class="small muted">{{ st.trust_detail }}</div></td>

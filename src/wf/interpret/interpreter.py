@@ -510,8 +510,8 @@ class Interpreter:
             system = f"# {step.title or step.id}\n\n{step.description or ''}\n\nDo what the title says, and no more."
         else:
             system = skill.body
-        model = step.model
-        origin = "the step names it"
+        model = ctx.wf.model_for(step)
+        origin = "the step names it" if step.model else "the workflow's default"
         if model is None:
             f = self._finding(ctx, step, "model")
             model = str(self._guess(ctx, step, f, sr=sr).value) if f else quick_model()

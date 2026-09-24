@@ -24,7 +24,7 @@ from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
 from wf.audit.chat import chat
-from wf.audit.question import answer_definition
+from wf.audit.question import _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
@@ -38,7 +38,7 @@ from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
 
 from .audits import AuditStore
-from .plain import plain_steps, plain_summary
+from .plain import model_choices, plain_steps, plain_summary
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
@@ -137,6 +137,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return {
             "summary": plain_summary(wf),
             "steps": plain_steps(wf),
+            "models": model_choices(wf),
             "yaml": dump_workflow(wf),
             "findings": [f.model_dump(mode="json") for f in result.ordered()],
             "questions": _questions(result.findings),
@@ -183,6 +184,64 @@ def create_app(state: AppState | None = None) -> FastAPI:
                     "event": "workflow.answered",
                     "workflow": name,
                     "field": finding.field,
+                    "commit": commit,
+                    "drafts": drafts,
+                }
+            },
+        )
+        return {**get_workflow(name), "commit": commit, "drafts": drafts}
+
+    @app.post("/api/workflows/{name}/model")
+    def set_model(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Choose the model one agent step runs on, or the workflow's default.
+
+        ``{"step": id, "model": m}`` sets a step's own model; ``"model": null`` puts it
+        back on the default. ``{"step": null, "model": m}`` sets the default. Only the
+        models on the page's list are taken: the ones this deployment configured, and
+        any this workflow already names."""
+        wf = _load(st(), name)
+        sid, model = body.get("step"), body.get("model") or None
+        allowed = {c["value"] for c in model_choices(wf)}
+        if model is not None and model not in allowed:
+            raise HTTPException(
+                400, f"“{model}” is not one of the models this deployment runs, so nothing changed."
+            )
+        if sid:
+            step = wf.step(sid)
+            if step is None:
+                raise HTTPException(404, f"There is no step “{sid}” in this workflow.")
+            if step.kind != "agent":
+                raise HTTPException(400, f"“{step.title or sid}” does not use a model.")
+            path, before, what = f"steps.{sid}.model", step.model, f"“{step.title or sid}”"
+            if model is None and wf.spec.defaults.model is None:
+                raise HTTPException(
+                    400, "This workflow has no default model, so the step has to name one."
+                )
+        else:
+            path, before, what = "spec.defaults.model", wf.spec.defaults.model, "the default"
+        if model == before:
+            return {**get_workflow(name), "commit": None, "drafts": 0}
+        defn = wf.model_dump(by_alias=True, exclude_none=True)
+        _set(defn, path, model)
+        st().ws.save_definition(load_workflow_dict(defn))
+        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        said = f"{what} runs on {model}" if model else f"{what} runs on the default"
+        commit = gitrepo.commit_paths(st().ws.root, [rel], f"{name}: {said}", *st().author)
+        change = Change(
+            path=path, before=before, after=model, reason="Chosen on the workflow page."
+        )
+        drafts = _carry_to_drafts(st(), name, [change])
+        logger.info(
+            "workflow %s: %s set to %s",
+            name,
+            path,
+            model,
+            extra={
+                "fields": {
+                    "event": "workflow.model_set",
+                    "workflow": name,
+                    "field": path,
+                    "model": model,
                     "commit": commit,
                     "drafts": drafts,
                 }
