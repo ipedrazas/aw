@@ -28,6 +28,11 @@
       <div class="banner"><span>Still running. This page refreshes on its own.</span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "failed" %}
       <div class="banner banner-red"><span>The run stopped: {{ run.error or "a step could not finish. See the step below." }}</span><span>{{ status_pill(run.status) }}</span></div>
+      <div class="card" data-retry="{{ run.id }}">
+        <p style="margin:0 0 8px">Fix what broke first, in the workflow or its instructions. Then pick the run up from the step that broke: the steps before it keep their results and are not run again.</p>
+        <p class="small muted" style="margin:0 0 8px">Or, if the rest can do without it, skip the step that broke and carry on. It stays in the run, marked skipped, with its error; a step after it that reads its result gets nothing from it.</p>
+        <div class="actions"><button class="btn btn-primary" type="button" data-then="retry">Pick up from where it broke</button><button class="btn" type="button" data-then="skip">Skip it and carry on</button><span data-msg class="small muted"></span></div>
+      </div>
     {% elif run.status == "paused_budget" %}
       <div class="banner banner-red"><span>Paused at the spending limit. Nothing more runs until you say so.</span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "waiting" %}
@@ -78,6 +83,12 @@
     <div class="card">
       <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
       {% if s.error %}<div class="dec-ignored">{{ s.error }}</div>{% endif %}
+      {% if s.follow_ups %}
+      <div style="margin-top:8px"><h4 class="small muted" style="margin:0 0 4px">Follow-up runs it started</h4>
+        {% for c in s.follow_ups %}<div class="dec"><a href="/runs/{{ c.id }}">{{ c.title }}</a> {{ status_pill(c.status) }}{% if c.error %}<div class="small">{{ c.error }}</div>{% endif %}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% if s.attempts and s.attempts > 1 %}<div class="small muted">Run {{ s.attempts }} times: it broke, and was picked up again. What happened each time is below.</div>{% endif %}
       {% set decs = s.decisions | selectattr("kind", "equalto", "decision") | list %}
       {% if decs %}<h4 class="small muted" style="margin:8px 0 4px">What it decided</h4>
         {% for d in decs %}<div class="dec"><strong>{{ d.text }}</strong>{% if d.reason %}<div class="small">{{ d.reason }}</div>{% endif %}{% if d.alternatives %}<div class="chips">{% for a in d.alternatives %}<span class="chip">{{ a }}</span>{% endfor %}</div>{% endif %}</div>{% endfor %}

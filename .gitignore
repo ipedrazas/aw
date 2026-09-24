@@ -21,3 +21,4 @@ var/
 # Editors
 .idea/
 .vscode/
+.claude/worktrees

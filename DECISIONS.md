@@ -355,3 +355,30 @@ effects) reads the text of each link that opened, from the recorded fixtures or 
 and lists the pages it could not read. Alternative: give `check_support` the fetch
 tool. Why: a decisions model cannot call tools, and a page every model is shown
 fetched once is a page they were all shown the same.
+
+**A run that broke is picked up at the step that broke, on the definition as it is
+now.** Once the cause is fixed (a model name, an instruction file), "Pick up from where
+it broke" on the run page, `POST /api/runs/{id}/retry` or `wf retry <id>` carries the
+same run on. The steps that finished keep their results and are not run again; the
+step that broke runs again whole, every item of a fan-out; the attempt that broke stays
+in the record, marked `retried`, and the run page shows each step's latest attempt. An
+earlier step whose definition changed since the run began is named in the run's record,
+because its result is from before the change. Alternative: start a new run, or reuse
+the fan-out items that had finished. Why: a new run pays again for everything before
+the break, and it is usually the expensive part; and the fix is usually to the step
+that broke, so its items are asked again rather than mixed across two versions of it.
+
+**A step that broke can be skipped, and the run carries on without it.** For what cannot
+be fixed from here, like a follow-up run that failed, "Skip it and carry on" (`POST
+/api/runs/{id}/skip`, `wf retry --skip`) marks the step skipped, keeps its error, and
+walks on from the next step, as if its condition had not been met; a later step that
+reads its result gets nothing. A follow-up that fails now says, in its parent, which of
+its steps broke and why, and the parent's step links to it. Alternative: only retry.
+Why: some failures are outside the run (a source that will not answer, a follow-up that
+is not worth what it would cost again), and the rest of the run is still worth having.
+
+**A model name that could never work is a question before the run.** The validator
+checks the shape of every model name (the vendor's own, or `vendor/model` through a
+gateway) and raises a conflict for anything else, such as `-typesafe/jev-1.13`.
+Alternative: a list of known models. Why: the list changes weekly and differs by
+provider, and the failure this catches, a stray character, is a shape.

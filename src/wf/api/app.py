@@ -681,6 +681,40 @@ def create_app(state: AppState | None = None) -> FastAPI:
         _resume_in_background(st(), run_id, wf, answer)
         return {"run_id": run_id, "status": "running"}
 
+    @app.post("/api/runs/{run_id}/retry")
+    def retry_run(run_id: str) -> dict[str, Any]:
+        """Pick up a run that broke, at the step that broke, once the cause is fixed.
+
+        The steps that finished are not run again. The definition is read as it is now,
+        and checked first: a real run still needs every question answered."""
+        return _pick_up(run_id, skip=False)
+
+    @app.post("/api/runs/{run_id}/skip")
+    def skip_step(run_id: str) -> dict[str, Any]:
+        """Carry a run that broke on without the step that broke, which is kept, with its
+        error, as skipped. The steps before it are not run again."""
+        return _pick_up(run_id, skip=True)
+
+    def _pick_up(run_id: str, *, skip: bool) -> dict[str, Any]:
+        with st().db.session() as s:
+            run = s.get(Run, run_id)
+            if run is None:
+                raise HTTPException(404, "No such run.")
+            if run.status != "failed":
+                raise HTTPException(
+                    409, "This run did not stop on an error, so there is nothing to pick up."
+                )
+            name, mode = run.workflow_name, run.mode
+        wf = _load(st(), name)
+        _restore_files(st(), wf)
+        if mode == "live":
+            _refuse_while_open(
+                validate(wf, st().ws).findings,
+                "Answer them on the workflow page, then pick the run up again.",
+            )
+        _retry_in_background(st(), run_id, wf, skip=skip)
+        return {"run_id": run_id, "status": "running"}
+
     @app.get("/api/runs")
     def list_runs(workflow: str | None = None) -> list[dict[str, Any]]:
         return st().runner.list_runs(workflow)
@@ -1066,6 +1100,49 @@ def _resume_in_background(state: AppState, run_id: str, wf: Any, answer: dict[st
         extra={"fields": {"event": "run.resumed", "run": run_id, "go_deeper": answer["go_deeper"]}},
     )
     threading.Thread(target=work, daemon=True, name=f"resume-{run_id[:8]}").start()
+
+
+def _retry_in_background(state: AppState, run_id: str, wf: Any, *, skip: bool = False) -> None:
+    """Pick a broken run up again, or carry it on without the step that broke, on a worker
+    thread with its own ledger, like a new one."""
+    from wf.interpret import Interpreter
+    from wf.store.ledger import Ledger
+
+    ledger = Ledger(state.db)
+    interp = Interpreter(state.ws, state.runner.activities, ledger, state.runner.config)
+    run = ledger.session.get(Run, run_id)
+    # checked here too: two clicks must not start two retries of the same run
+    if run.status != "failed":
+        ledger.close()
+        raise HTTPException(409, "This run is already being picked up.")
+    run.status = "running"  # before the request returns, so the page that reloads sees it
+    ledger._commit()
+
+    def work() -> None:
+        try:
+            pick_up = interp.skip if skip else interp.retry
+            result = pick_up(run, wf, claimed=True)
+            state.runner.rescore_expectations(ledger, result)
+        except Exception as e:  # noqa: BLE001
+            ledger.finish_run(
+                run,
+                status="failed",
+                outputs=run.outputs,
+                spent_usd=run.spent_usd or 0.0,
+                spent_minutes=run.spent_minutes or 0.0,
+                error=str(e),
+            )
+        finally:
+            ledger.close()
+
+    logger.info(
+        "run %s of %s %s after it broke",
+        run_id[:8],
+        wf.metadata.name,
+        "carries on without the step" if skip else "picked up",
+        extra={"fields": {"event": "run.skipped" if skip else "run.retried", "run": run_id}},
+    )
+    threading.Thread(target=work, daemon=True, name=f"retry-{run_id[:8]}").start()
 
 
 def _start_in_background(

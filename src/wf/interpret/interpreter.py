@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import jsonschema
+import yaml
 
 from wf.activities import Activities, ActivityError, ModelRequest, ToolSpec, run_with_policy
 from wf.expr import EvalError, ExprError, render
@@ -25,7 +26,7 @@ from wf.schema import Mode, Step, Workflow, Workspace
 from wf.settings import quick_model
 from wf.store import repo
 from wf.store.ledger import Ledger
-from wf.store.records import Run, StepRun
+from wf.store.records import Run, StepRun, WorkflowVersion
 from wf.store.sessions import session_span, step_span
 from wf.validate import Finding, validate
 
@@ -192,23 +193,8 @@ class Interpreter:
         waiting = next((r for r in rows if r.status == "waiting"), None)
         if waiting is None:
             raise ValueError("This run is not waiting for anyone.")
-        from wf.store.records import Decision
-
-        self.ledger._seq = max(r.seq for r in rows)
-        self.ledger._dseq = max(
-            (d.seq for d in self.ledger.session.query(Decision).filter_by(run_id=run.id)),
-            default=0,
-        )
-        steps: dict[str, Any] = {}
-        for r in rows:
-            if r.fanout_index is not None or r.id == waiting.id:
-                continue
-            fans_out = any(s.id == r.step_id and s.for_each for s in wf.spec.steps)
-            steps[r.step_id] = (
-                {"status": r.status, "output": None, "outputs": r.output}
-                if fans_out
-                else {"status": r.status, "output": r.output, "outputs": None}
-            )
+        self._continue_numbering(run, rows)
+        steps = self._read_back(wf, [r for r in rows if r.id != waiting.id])
         self.ledger.finish_step(waiting, status="done", output=answer)
         steps[waiting.step_id] = {"status": "done", "output": answer, "outputs": None}
         run.status, run.finished_at, run.error = "running", None, None
@@ -238,10 +224,150 @@ class Interpreter:
                     steps=steps,
                     start_at=wf.step_index(waiting.step_id) + 1,
                     spent_usd=run.spent_usd or 0.0,
-                    waiting=waiting,
+                    note_on=waiting,
+                    note_step_id=waiting.step_id,
                     said=said,
+                    why="Your answer to the wait. The run carried on from here.",
                 ),
             )
+
+    def retry(self, run: Run, wf: Workflow, *, claimed: bool = False) -> RunResult:
+        """Pick up a run that broke, at the step that broke, once the cause is fixed.
+
+        The steps that finished are not run again: their results are read back from the
+        run, as after a wait. The step that broke runs again whole, every item of it if
+        it runs over a list, and so does everything after it. It runs on the definition
+        as it is now, since that is where the fix is; an earlier step whose definition
+        changed since is named in the run's record, because its result is from before.
+
+        ``claimed`` says the caller has already marked the broken run as running, so two
+        requests cannot both pick it up.
+        """
+        return self._pick_up(run, wf, claimed=claimed, skip=False)
+
+    def skip(self, run: Run, wf: Workflow, *, claimed: bool = False) -> RunResult:
+        """Carry a run that broke on without the step that broke.
+
+        For a step whose result the rest can do without, when what broke cannot be fixed
+        from here: a follow-up that failed, a source that will not answer. The step is
+        marked skipped, its error kept, and the run goes on from the step after it, as
+        it would had the step's condition not been met; the steps before it are not run
+        again.
+        """
+        return self._pick_up(run, wf, claimed=claimed, skip=True)
+
+    def _pick_up(self, run: Run, wf: Workflow, *, claimed: bool, skip: bool) -> RunResult:
+        if run.status != "failed" and not claimed:
+            raise ValueError("This run did not stop on an error, so there is nothing to pick up.")
+        rows = (
+            self.ledger.session.query(StepRun).filter_by(run_id=run.id).order_by(StepRun.seq).all()
+        )
+        latest: dict[str, StepRun] = {}
+        for r in rows:
+            if r.fanout_index is None:
+                latest[r.step_id] = r
+        start_at = next(
+            (
+                i
+                for i, s in enumerate(wf.spec.steps)
+                if s.id not in latest or latest[s.id].status not in ("done", "skipped")
+            ),
+            len(wf.spec.steps),
+        )
+        if start_at == len(wf.spec.steps):
+            raise ValueError("Every step of this run finished, so there is nothing to pick up.")
+        step = wf.spec.steps[start_at]
+        broke = latest.get(step.id)
+
+        self._continue_numbering(run, rows)
+        # the attempt that broke stays in the record: as the one that was retried, or as
+        # the step that was skipped, with its error
+        for r in rows:
+            if r.step_id == step.id and r.status in ("failed", "running"):
+                r.status = "skipped" if skip else "retried"
+        earlier = {s.id for s in wf.spec.steps[:start_at]}
+        steps = self._read_back(wf, [r for r in rows if r.step_id in earlier])
+
+        if skip:
+            steps[step.id] = {"status": "skipped", "output": None, "outputs": None}
+            said = f"Skipped “{step.title or step.id}” after it broke, and carried on without it."
+            why = (
+                "You chose to. A step after it that reads its result gets nothing from it. "
+                "The steps before it were not run again."
+            )
+        else:
+            said = f"Picked up from “{step.title or step.id}”" + (
+                ", after it broke." if broke is not None else ", the first step without a result."
+            )
+            why = (
+                "The steps before it were not run again: their results are read back from this run."
+            )
+        commit = repo.file_commit(
+            self.ws.root, str(self.ws.definition_path(wf.metadata.name).relative_to(self.ws.root))
+        )
+        now = self.ledger.workflow_version(wf, commit)
+        if now.id != run.workflow_version_id:
+            why += " It runs on the definition as it is now, which has changed since the run began."
+            then = self.ledger.session.get(WorkflowVersion, run.workflow_version_id)
+            changed = _changed_steps(then, wf, earlier)
+            if changed:
+                why += (
+                    " These earlier steps changed too, and their results are from before: "
+                    + ", ".join(f"“{t}”" for t in changed)
+                    + "."
+                )
+
+        run.status, run.finished_at, run.error = "running", None, None
+        self.ledger._commit()
+        b = wf.spec.budget
+        budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
+        budget.spent_usd = run.spent_usd or 0.0
+        with session_span(
+            "run", name=wf.metadata.name, title=run.title, run_id=run.id, mode=run.mode
+        ):
+            return self._walk(
+                run,
+                wf,
+                dict(run.inputs or {}),
+                run.mode,
+                budget=budget,
+                depth=run.depth or 0,
+                resume=_Resume(
+                    steps=steps,
+                    start_at=start_at + 1 if skip else start_at,
+                    spent_usd=run.spent_usd or 0.0,
+                    note_on=broke,
+                    note_step_id=step.id,
+                    said=said,
+                    why=why,
+                ),
+            )
+
+    def _continue_numbering(self, run: Run, rows: list[StepRun]) -> None:
+        """New records follow the run's existing ones, so the order they happened in holds."""
+        from wf.store.records import Decision
+
+        self.ledger._seq = max((r.seq for r in rows), default=0)
+        self.ledger._dseq = max(
+            (d.seq for d in self.ledger.session.query(Decision).filter_by(run_id=run.id)),
+            default=0,
+        )
+
+    @staticmethod
+    def _read_back(wf: Workflow, rows: list[StepRun]) -> dict[str, Any]:
+        """The run's state for these step records, as the walk that made them left it.
+        The last record of a step is the one that counts."""
+        steps: dict[str, Any] = {}
+        for r in rows:
+            if r.fanout_index is not None:
+                continue
+            fans_out = any(s.id == r.step_id and s.for_each for s in wf.spec.steps)
+            steps[r.step_id] = (
+                {"status": r.status, "output": None, "outputs": r.output}
+                if fans_out
+                else {"status": r.status, "output": r.output, "outputs": None}
+            )
+        return steps
 
     def _walk(
         self,
@@ -298,11 +424,11 @@ class Interpreter:
         if resume is not None:
             self._decide(
                 ctx,
-                resume.waiting,
-                resume.waiting.step_id,
+                resume.note_on,
+                resume.note_step_id,
                 kind="control",
                 text=resume.said,
-                reason="Your answer to the wait. The run carried on from here.",
+                reason=resume.why,
             )
 
         status = "done"
@@ -818,7 +944,9 @@ class Interpreter:
         )
         ctx.result.children.append(child)
         if child.status != "done":
-            raise ActivityError(f"follow-up run “{title}” ended with status {child.status}")
+            raise ActivityError(
+                f"follow-up run “{title}” stopped: {why_it_stopped(child)} (run {child.run_id[:8]})"
+            )
         return child.outputs, {"cost_usd": child.spent_usd}
 
     def _wait(self, ctx: _Ctx, step: Step, sr: StepRun) -> tuple[Any, dict[str, Any]]:
@@ -982,9 +1110,60 @@ class Interpreter:
         return out
 
 
+def why_it_stopped(result: RunResult) -> str:
+    """Why a run that did not finish stopped, in the words its own record uses: the step
+    that broke and why, or the limit it reached. A follow-up that fails is only as
+    useful to its parent as this line."""
+    if result.error:
+        return result.error
+    if result.status == "failed":
+        broke = next((t.step_id for t in reversed(result.trace) if t.event == "failed"), None)
+        said = next(
+            (
+                d
+                for d in reversed(result.decisions)
+                if d["step_id"] == broke
+                and d["kind"] == "control"
+                and d["text"].endswith("could not finish.")
+            ),
+            None,
+        )
+        if said:
+            return f"{said['text'].removesuffix('.')}: {said['reason']}"
+    if result.status == "paused_budget":
+        said = next(
+            (d for d in reversed(result.decisions) if d["text"].startswith("Paused before")), None
+        )
+        if said:
+            return said["text"].removesuffix(".")
+    if result.status == "waiting":
+        return "it is waiting for someone to answer"
+    return f"it ended with status {result.status}"
+
+
+def _changed_steps(then: WorkflowVersion | None, wf: Workflow, ids: set[str]) -> list[str]:
+    """The titles of the steps among ``ids`` whose definition differs from ``then``."""
+    if then is None:
+        return []
+    try:
+        before = Workflow.model_validate(yaml.safe_load(then.definition_yaml))
+    except Exception:  # noqa: BLE001 - an old record that no longer reads says nothing
+        return []
+    out = []
+    for s in wf.spec.steps:
+        if s.id not in ids:
+            continue
+        old = before.step(s.id)
+        if old is None or old.model_dump(by_alias=True) != s.model_dump(by_alias=True):
+            out.append(s.title or s.id)
+    return out
+
+
 class _Resume:
-    """Where a resumed run picks up: the results it already has, the step after the
-    wait, what it had spent, and the answer, in words, for the run's record."""
+    """Where a run picks up again: the results it already has, the step it starts at,
+    what it had spent, and what happened, in words, for the run's record: the answer to
+    a wait, or the retry of a step that broke. The note is kept against ``note_on``,
+    the step record it is about, or against the step alone when there is none."""
 
     def __init__(
         self,
@@ -992,11 +1171,13 @@ class _Resume:
         steps: dict[str, Any],
         start_at: int,
         spent_usd: float,
-        waiting: StepRun,
+        note_on: StepRun | None,
+        note_step_id: str,
         said: str,
+        why: str,
     ):
         self.steps, self.start_at, self.spent_usd = steps, start_at, spent_usd
-        self.waiting, self.said = waiting, said
+        self.note_on, self.note_step_id, self.said, self.why = note_on, note_step_id, said, why
 
 
 @dataclass

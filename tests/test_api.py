@@ -174,6 +174,15 @@ def test_workflow_view_is_in_plain_language(client):
     assert "durable-execution" in data["cases"]
 
 
+def test_only_a_run_that_broke_can_be_picked_up_again(client):
+    assert client.post("/api/runs/nope/retry").status_code == 404
+    r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
+    run = wait_for(client, r.json()["run_id"])
+    assert run["status"] == "done", run["error"]
+    again = client.post(f"/api/runs/{run['id']}/retry")
+    assert again.status_code == 409 and "did not stop on an error" in again.json()["detail"]
+
+
 def test_run_a_workflow_against_a_case_and_read_the_report(client):
     r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
     assert r.status_code == 200

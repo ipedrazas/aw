@@ -5,10 +5,13 @@ Nothing here needs a model. Every failure becomes a finding with a question.
 
 from __future__ import annotations
 
+import re
+
 from wf.expr import ExprError, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace, parse_pin
+from wf.settings import quick_model
 
-from .findings import RUNNERS, Finding, Option, make_finding, runner_options
+from .findings import RUNNERS, Finding, Option, make_finding, model_options, runner_options
 from .templates import (
     PRODUCES,
     STEP_TEMPLATES,
@@ -23,6 +26,29 @@ COMMON_REQUIRED = ("title", "shows_user", "trust")
 
 # registered routines a check or tool may name. Definitions cannot add code.
 KNOWN_RUNNERS = set(RUNNERS)
+
+# What a model name looks like, to every provider here: the vendor's own name, or a
+# gateway's vendor and model (``vendor/model``, ``~vendor/model-latest``). Not a list of models, which changes weekly; only the shape,
+# so a stray character is caught before a run spends anything on the steps before it.
+MODEL_NAME = re.compile(r"~?[A-Za-z0-9][A-Za-z0-9._:-]*(/[A-Za-z0-9][A-Za-z0-9._:-]*)?")
+
+
+def _bad_model_name(model: str | None) -> bool:
+    return model is not None and MODEL_NAME.fullmatch(model) is None
+
+
+def _model_finding(field: str, model: str, step: Step | None = None) -> Finding:
+    who = f"“{step.title or step.id}”" if step else "steps that name no model of their own"
+    return make_finding(
+        "conflict",
+        field,
+        step=step,
+        detail=f"“{model}” is not a model name. A name is the vendor's own, like "
+        f"{quick_model()}, or a gateway's vendor and model, like vendor/model: no spaces, "
+        "and it starts with a letter or a digit.",
+        answer_kind="choice",
+        options=model_options(),
+    ).model_copy(update={"question": f"Which model should {who} run on?"})
 
 
 def _has(step: Step, wf: Workflow, field: str) -> bool:
@@ -86,8 +112,13 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
     findings: list[Finding] = []
     seen: set[str] = set()
 
+    if _bad_model_name(wf.spec.defaults.model):
+        findings.append(_model_finding("defaults.model", str(wf.spec.defaults.model)))
+
     for step in wf.spec.steps:
         unblocks = _unblocks(wf, step)
+        if _bad_model_name(step.model):
+            findings.append(_model_finding(f"steps.{step.id}.model", str(step.model), step))
         if step.id in seen:
             findings.append(
                 make_finding(
