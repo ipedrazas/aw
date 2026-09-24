@@ -30,7 +30,7 @@ from wf.store.sessions import session_span, step_span
 from wf.validate import Finding, validate
 
 from .context import BudgetTracker, OpenFindings, TraceEvent
-from .registry import ARTIFACT_TOOLS, CHECKS, TOOLS, RunnerContext
+from .registry import CHECKS, TOOLS, RunnerContext
 
 logger = get_logger(f"{ROOT}.interpret")
 
@@ -655,6 +655,23 @@ class Interpreter:
             note=lambda text, reason: self._decide(
                 ctx, sr, step.id, kind="control", text=text, reason=reason
             ),
+            keep=lambda path, media, simulated: self._keep(ctx, step, sr, path, media, simulated),
+        )
+
+    def _keep(
+        self, ctx: _Ctx, step: Step, sr: StepRun, path: str, media: str, simulated: bool
+    ) -> None:
+        art = self.ledger.artifact(
+            ctx.run,
+            sr,
+            name=Path(path).name,
+            path=str(path),
+            media_type=media,
+            simulated=simulated,
+            meta={"step": step.id, "mode": ctx.mode},
+        )
+        ctx.result.artifacts.append(
+            {"id": art.id, "name": art.name, "path": art.path, "simulated": simulated}
         )
 
     def _check(
@@ -727,23 +744,6 @@ class Interpreter:
             raise ActivityError(f"no tool routine named {step.run!r}")
         out = run_with_policy(self.acts.policy, lambda: fn(self._runner_ctx(ctx, step, sr), input))
         self._validate_output(step, out)
-        if step.run in ARTIFACT_TOOLS and isinstance(out, dict):
-            key, media = ARTIFACT_TOOLS[step.run]
-            path = out.get(key)
-            if path:
-                simulated = bool(out.get("simulated", ctx.mode != "live"))
-                art = self.ledger.artifact(
-                    ctx.run,
-                    sr,
-                    name=Path(path).name,
-                    path=str(path),
-                    media_type=media,
-                    simulated=simulated,
-                    meta={"step": step.id, "mode": ctx.mode},
-                )
-                ctx.result.artifacts.append(
-                    {"id": art.id, "name": art.name, "path": art.path, "simulated": simulated}
-                )
         return out, {}
 
     def _subworkflow(

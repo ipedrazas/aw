@@ -262,7 +262,7 @@ RUNNERS: dict[str, tuple[str, str, str]] = {
     "tools.render_pdf": (
         "tool",
         "Turn the report into a PDF",
-        "Gives back the file and its page count. Nothing leaves the system.",
+        "Gives back the file and its page count, and keeps the report's markdown beside it. Nothing leaves the system.",
     ),
     "tools.send_email": (
         "tool",

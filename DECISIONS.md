@@ -65,6 +65,16 @@ the step's input in its data region, and each search with the results it returne
 Alternative: a separate sessions page. Why: "what did it actually ask, and what did it
 find?" is asked while looking at the step, and the answer belongs next to it.
 
+**The report's markdown is kept beside its PDF, and the PDF reads the markdown itself.**
+`tools.render_pdf` writes `report.md` next to `report.pdf` (both `SIMULATED-` in a dry
+run, the markdown with the banner as its first line), and the routine records each as
+an artefact through `RunnerContext.keep`; the step's output keeps its shape, so no
+saved schema changes. Tables, lists, quotes and code are read by a small reader in
+`render.py` and tables drawn with fpdf2's `table()`. Alternative: markdown to HTML to
+`write_html`. Why: fpdf2's HTML tables fail on any tag inside a cell (a link, a bold
+word), and `write_html` fetches the address of any image, which a report written from
+fetched pages must not be able to make it do.
+
 **SQLite when `WF_DATABASE_URL` is unset; Postgres in Docker Compose and CI.** Same
 SQLAlchemy models, JSON columns on both. Alternative: Postgres only. Why: a fresh
 checkout runs and tests with nothing else installed; CI runs the suite against a

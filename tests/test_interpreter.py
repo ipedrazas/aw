@@ -188,10 +188,10 @@ def test_artifact_is_marked_simulated_in_name_body_and_metadata(sample_ws, tmp_p
     wf = sample_ws.load_definition("deep-research")
     interp, db = make(sample_ws, tmp_path, ScriptedModel(deep_research_script("accept")))
     r = interp.run(wf, TOPIC, "dry")
-    assert len(r.artifacts) == 1
-    art = r.artifacts[0]
-    assert art["simulated"] is True
-    assert art["name"].startswith("SIMULATED-")
+    assert [a["name"] for a in r.artifacts] == ["SIMULATED-report.pdf", "SIMULATED-report.md"]
+    art, md = r.artifacts
+    assert art["simulated"] is True and md["simulated"] is True
+    assert Path(md["path"]).read_text().startswith("> **SIMULATED")
     reader = PdfReader(art["path"])
     assert "simulated" in (reader.metadata.title or "").lower()
     assert "simulated" in (reader.metadata.subject or "").lower()
@@ -200,9 +200,10 @@ def test_artifact_is_marked_simulated_in_name_body_and_metadata(sample_ws, tmp_p
     with db.session() as s:
         from wf.store import Artifact
 
-        rec = s.query(Artifact).one()
-        sr = s.get(StepRun, rec.step_run_id)
-    assert rec.simulated and sr.step_id == "assemble" and rec.sha256
+        recs = s.query(Artifact).all()
+        steps = {s.get(StepRun, rec.step_run_id).step_id for rec in recs}
+    assert sorted(r.media_type.split(";")[0] for r in recs) == ["application/pdf", "text/markdown"]
+    assert all(rec.simulated and rec.sha256 for rec in recs) and steps == {"assemble"}
 
 
 def test_budget_pauses_the_run(sample_ws, tmp_path):

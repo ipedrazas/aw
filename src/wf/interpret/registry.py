@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,8 @@ class RunnerContext:
     step_id: str
     artifacts_dir: Path
     note: Callable[[str, str], None]  # (text, reason) -> records a control decision
+    # (path, media type, simulated) -> records a file the routine made as an artefact
+    keep: Callable[[str, str, bool], None] = field(default=lambda *a: None)
 
 
 _URL = re.compile(r"https?://[^\s<>\"'`\]\[)(]+")
@@ -145,6 +147,10 @@ def render_pdf(ctx: RunnerContext, input: dict[str, Any]) -> dict[str, Any]:
         simulated=simulated,
         out_path=str(out_path),
     )
+    ctx.keep(result["artifact"], "application/pdf", bool(result["simulated"]))
+    # the report is written in markdown, and that is the copy people edit and reuse
+    if result.get("markdown"):
+        ctx.keep(result["markdown"], "text/markdown; charset=utf-8", bool(result["simulated"]))
     return {
         "artifact": result["artifact"],
         "pages": int(result["pages"]),
@@ -176,8 +182,6 @@ TOOLS: dict[str, Callable[[RunnerContext, dict[str, Any]], dict[str, Any]]] = {
     "tools.render_pdf": render_pdf,
     "tools.send_email": send_email,
 }
-
-ARTIFACT_TOOLS = {"tools.render_pdf": ("artifact", "application/pdf")}
 
 # What each routine produces. A draft that names a routine gets this shape for its output.
 RUNNER_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
