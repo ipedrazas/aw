@@ -7,6 +7,7 @@ it beside the draft and undo it.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any
 
@@ -43,6 +44,35 @@ def group_questions(findings: list[Finding]) -> list[dict[str, Any]]:
         if items:
             groups.append({"type": t, "title": GROUP_TITLES[t], "findings": items})
     return groups
+
+
+def similar_key(f: Finding) -> tuple[str, str, str] | None:
+    """What makes two questions the same question asked of different steps: the same
+    kind of finding, about the same field, with the same answers to choose from. Only
+    questions with choices qualify; a typed answer is about one step in particular."""
+    if not f.options or not f.field.startswith("steps.") or f.field.count(".") < 2:
+        return None
+    rest = f.field.split(".", 2)[2]
+    values = json.dumps([o.value for o in f.options], sort_keys=True, default=str)
+    return (f.type, rest, values)
+
+
+def fold_similar(findings: list[Finding]) -> list[tuple[Finding, list[Finding]]]:
+    """Each question with the others that ask the same thing of other steps, in order.
+    The first one asked stands for the rest; each of them is still its own finding, so
+    it can be answered, undone or changed on its own."""
+    out: list[tuple[Finding, list[Finding]]] = []
+    lead: dict[tuple[str, str, str], list[Finding]] = {}
+    for f in findings:
+        key = similar_key(f)
+        if key is not None and key in lead:
+            lead[key].append(f)
+            continue
+        rest: list[Finding] = []
+        out.append((f, rest))
+        if key is not None:
+            lead[key] = rest
+    return out
 
 
 def _steps(defn: dict[str, Any]) -> list[dict[str, Any]]:

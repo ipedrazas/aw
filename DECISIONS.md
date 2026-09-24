@@ -277,3 +277,20 @@ and any the workflow already names, and nothing else. A change is committed and 
 to the drafts, like an answer. Alternative: a free-text model name. Why: a name the
 deployment cannot run would only fail at the first call, and the choice people
 actually wanted to make was "use this one unless I say otherwise".
+
+**The auditor asks about a step's model only when the document singles the step out.**
+A draft sets the workflow's default to the quick model and gives a step a model of
+its own only when the extraction reads it as needing careful judgement; that step is
+asked to confirm, with the document's words that singled it out, and "no" puts it
+back on the default. Every other step is not asked. Alternative: ask of every step
+whose judgement the document does not state, as before. Why: a person faced with
+27 questions, most of them "how much judgement does this step need?", wanted to
+answer once; the default and the model dropdown on the workflow page cover the rest.
+
+**The same question asked of several steps is shown once, and answered for all of them
+unless unticked.** Two questions are the same when they are the same kind of finding,
+about the same field of different steps, with the same choices. Each step still gets
+its own finding and its own change, so any one can be undone or changed later.
+Alternative: one finding for the group. Why: the validator, the undo and the draft
+diff all work per field, and a group finding would have to be taken apart again for
+each of them.

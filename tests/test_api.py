@@ -909,3 +909,57 @@ def test_a_steps_model_and_the_default_are_chosen_on_the_workflow_page(client, w
     assert (
         client.post(url, json={"step": "nope", "model": settings.quick_model()}).status_code == 404
     )
+
+
+def test_one_answer_is_given_to_the_same_question_asked_of_other_steps(client):
+    audit = client.post("/api/audits", json={"document": DOC.read_text(), "name": "folded"}).json()
+    aid = audit["id"]
+    assumed = next(g for g in audit["questions"] if g["type"] == "assumption")
+    lead = next(f for f in assumed["findings"] if f["field"].endswith(".model"))
+    assert lead["similar"], "the other careful step is folded into this question"
+    assert assumed["count"] > len(assumed["findings"])
+    page = client.get(f"/audits/{aid}").text
+    assert "data-also" in page and "answered together" in page
+
+    no = next(o["value"] for o in lead["options"] if o["value"].get("keep") is False)
+    r = client.post(
+        f"/api/audits/{aid}/answer",
+        json={"finding_id": lead["id"], "answer": no, "also": [o["id"] for o in lead["similar"]]},
+    )
+    assert r.status_code == 200, r.text
+    view = r.json()
+    assert view["not_taken"] == []
+    steps = {s["id"]: s for s in view["steps"]}
+    for sid in [lead["step_id"]] + [o["step_id"] for o in lead["similar"]]:
+        assert steps[sid]["technical"]["model_inherited"], sid
+    # one change per step, so each can be undone on its own
+    paths = [c["path"] for c in view["changes"] if c["path"].endswith(".model")]
+    assert len(paths) == 1 + len(lead["similar"])
+
+
+def test_a_saved_workflow_takes_one_answer_for_several_steps(client, ws):
+    from tests.helpers import read_yaml, write_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    d = read_yaml(ws, rel)
+    for s in d["spec"]["steps"]:
+        if s["id"] in ("plan", "research"):
+            s.pop("shows_user", None)
+    write_yaml(ws, rel, d)
+
+    wf = client.get("/api/workflows/deep-research").json()
+    lead = next(
+        f for g in wf["questions"] for f in g["findings"] if f["field"].endswith(".shows_user")
+    )
+    assert [o["step_id"] for o in lead["similar"]], "the second step is folded in"
+    r = client.post(
+        "/api/workflows/deep-research/answer",
+        json={
+            "finding_id": lead["id"],
+            "answer": lead["options"][0]["value"],
+            "also": [o["id"] for o in lead["similar"]],
+        },
+    )
+    assert r.status_code == 200, r.text
+    steps = {s["id"]: s for s in read_yaml(ws, rel)["spec"]["steps"]}
+    assert steps["plan"]["shows_user"] == steps["research"]["shows_user"] == ["output"]

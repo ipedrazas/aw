@@ -109,8 +109,10 @@ function wireAnswers(base, reload) {
     }
     /* picking "No, I will answer this" opens a box to say what instead */
     const own = f.querySelector("[data-own]");
+    /* ("No, the default is enough" says what instead by itself, so it needs no box) */
+    const saysNo = v => v && v.keep === false && !v.then;
     if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
-      const no = (JSON.parse(f.querySelector("input[type=radio]:checked").value) || {}).keep === false;
+      const no = saysNo(JSON.parse(f.querySelector("input[type=radio]:checked").value));
       own.classList.toggle("hidden", !no);
       if (no) own.querySelector("textarea").focus();
     }));
@@ -123,7 +125,7 @@ function wireAnswers(base, reload) {
         if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
         answer = JSON.parse(c.value);
         const own = f.querySelector("[data-own]");
-        if (own && answer && answer.keep === false) {
+        if (own && saysNo(answer)) {
           const text = own.querySelector("textarea").value.trim();
           if (!text) return say(msg, "Say what it should be instead.", true);
           if (!window.chatAbout) return say(msg, "The chat is not available on this page.", true);
@@ -140,7 +142,14 @@ function wireAnswers(base, reload) {
         answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
       }
       say(msg, "Saving…");
-      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); kept.drop(keyAnswer); reload(msg); }
+      /* the same answer for the ticked steps that are asked the same question */
+      const also = Array.from(f.querySelectorAll("input[data-also]:checked")).map(c => c.value);
+      try {
+        const d = await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer, also: also});
+        kept.drop(keyAnswer);
+        if (d.not_taken && d.not_taken.length) alert("Some steps did not take this answer and are still open:\n\n" + d.not_taken.join("\n"));
+        reload(msg);
+      }
       catch (err) { say(msg, err.message, true); }
     });
   });
