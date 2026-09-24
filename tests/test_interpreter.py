@@ -223,3 +223,18 @@ def test_budget_pauses_the_run(sample_ws, tmp_path):
     assert r.status == "paused_budget"
     assert any(t.event == "paused" for t in r.trace)
     assert any("spent $14.00 of a $12.00 limit" in d["text"] for d in r.decisions)
+
+
+def test_a_step_with_no_model_runs_on_the_default(ws, tmp_path):
+    data = read_yaml(ws, DEF)
+    del step(data, "plan")["model"]
+    data["spec"]["defaults"]["model"] = "a-default-model"
+    write_yaml(ws, DEF, data)
+    model = ScriptedModel(deep_research_script("accept"))
+    interp, db = make(ws, tmp_path, model)
+    result = interp.run(ws.load_definition("deep-research"), TOPIC, "dry")
+    assert result.status == "done"
+    with db.session() as s:
+        by_step = {st.step_id: st.model for st in s.query(StepRun).all()}
+    assert by_step["plan"] == "a-default-model"
+    assert by_step["write"] == "claude-opus-5"

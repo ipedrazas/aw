@@ -28,6 +28,8 @@ KNOWN_RUNNERS = set(RUNNERS)
 def _has(step: Step, wf: Workflow, field: str) -> bool:
     if field == "trust":
         return wf.trust_for(step) is not None
+    if field == "model":
+        return wf.model_for(step) is not None
     if field == "output.schema":
         return bool(step.output and step.output.schema_)
     if field == "limits":

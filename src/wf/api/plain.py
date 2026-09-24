@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from wf.schema import Step, Workflow
+from wf.validate.findings import model_options
 
 KIND_LABEL = {
     "agent": "AI agent",
@@ -65,6 +66,31 @@ def when_label(wf: Workflow, step: Step) -> str | None:
     return f"Only if “{name}” {verb} “{m.group(4).replace('_', ' ')}”"
 
 
+def model_choices(wf: Workflow) -> list[dict[str, str]]:
+    """The models a step or the workflow's default can be set to: the ones this
+    deployment configured, named by how much judgement they bring, and any other
+    model this workflow already names, so the current choice is always on the list."""
+    out = [{"value": str(o.value), "label": o.label} for o in model_options()]
+    seen = {o["value"] for o in out}
+    for m in [wf.spec.defaults.model, *(s.model for s in wf.spec.steps)]:
+        if m and m not in seen:
+            out.append({"value": m, "label": m})
+            seen.add(m)
+    return out
+
+
+def model_label(wf: Workflow, model: str | None) -> str | None:
+    if model is None:
+        return None
+    return next((c["label"] for c in model_choices(wf) if c["value"] == model), model)
+
+
+def resets_on_model(wf: Workflow, step: Step) -> bool:
+    """Whether changing this step's model starts its count of accepted runs again."""
+    t = wf.trust_for(step)
+    return bool(t and t.policy == "earned" and "model" in (t.reset_on or []))
+
+
 def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
     out = []
     for i, s in enumerate(wf.spec.steps, 1):
@@ -72,7 +98,12 @@ def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
         tech: dict[str, Any] = {
             "id": s.id,
             "kind": s.kind,
-            "model": s.model,
+            "model": wf.model_for(s) if s.kind == "agent" else s.model,
+            # the step names no model of its own and runs on the workflow's default
+            "model_inherited": s.kind == "agent" and not s.model and wf.model_for(s) is not None,
+            "model_own": s.model,
+            "model_label": model_label(wf, wf.model_for(s) if s.kind == "agent" else s.model),
+            "model_resets_trust": resets_on_model(wf, s),
             "skill": s.skill,
             "run": s.run,
             "workflow": s.workflow,
@@ -112,7 +143,7 @@ def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
 def plain_summary(wf: Workflow) -> dict[str, Any]:
     steps = wf.spec.steps
     system_steps = [s for s in steps if s.origin and s.origin.by == "system"]
-    models = {s.model for s in steps if s.model}
+    models = {m for s in steps if s.kind == "agent" and (m := wf.model_for(s))}
     skills = {s.skill for s in steps if s.skill}
     b = wf.spec.budget
     sub = next((s for s in steps if s.kind == "subworkflow"), None)
@@ -124,6 +155,8 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
         "step_count": len(steps),
         "system_step_count": len(system_steps),
         "model_count": len(models),
+        "default_model": wf.spec.defaults.model,
+        "default_model_label": model_label(wf, wf.spec.defaults.model),
         "skill_count": len(skills),
         "budget": (
             f"${b.max_usd:g} and {b.max_minutes:g} minutes per run"

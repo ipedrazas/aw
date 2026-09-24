@@ -268,3 +268,12 @@ repository, so the proposal is last-writer-on-a-branch with the diff shown befor
 - The sample workspace lives inside this repository rather than as its own git
   repository, so that a checkout is self-contained. `wf.store.repo` uses the enclosing
   repository for commits and history.
+
+**A workflow has a default model, and each agent step can be moved off it from the
+workflow page.** `spec.defaults.model` is what a step that names no model runs on;
+the validator counts it, so a step on the default is not a question. The page offers
+the models the deployment configured (quick and careful, by the judgement they bring)
+and any the workflow already names, and nothing else. A change is committed and carried
+to the drafts, like an answer. Alternative: a free-text model name. Why: a name the
+deployment cannot run would only fail at the first call, and the choice people
+actually wanted to make was "use this one unless I say otherwise".
