@@ -168,6 +168,21 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
     return script
 
 
+def skill_answer(req: ModelRequest) -> ModelResponse:
+    """The auditor asking for one step's instructions: written prose that names what the
+    step produces, and leaves the decisions and data rule for the contract to add."""
+    step = req.input["step"]
+    fields = ", ".join(f"`{f['name']}`" for f in step["produces"])
+    return ModelResponse(
+        output={
+            "body": f"# {step['title']}\n\n"
+            f"Written for {step['id']}: {step['description']} "
+            f"The next step reads what you hand on, so fill {fields} with care."
+        },
+        usage=Usage(200, 120, 0.002),
+    )
+
+
 def make_response(output: dict[str, Any], **kw: Any) -> ModelResponse:
     return ModelResponse(output=output, **kw)
 

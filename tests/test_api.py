@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.helpers import make_db
-from tests.scripted import deep_research_script, schema_filling_script
+from tests.scripted import deep_research_script, schema_filling_script, skill_answer
 from tests.test_audit import DOC, extraction_for_process_doc, passage_map
 from wf import settings
 from wf.activities import ScriptedModel
@@ -27,6 +27,8 @@ def client(ws, tmp_path: Path):
     def script(req):
         from wf.activities import ModelResponse
 
+        if req.tag.startswith("audit:skill:"):
+            return skill_answer(req)
         if req.tag == "audit:extract":
             return ModelResponse(
                 output=extracted,
@@ -967,3 +969,13 @@ def test_a_saved_workflow_takes_one_answer_for_several_steps(client, ws):
     assert r.status_code == 200, r.text
     steps = {s["id"]: s for s in read_yaml(ws, rel)["spec"]["steps"]}
     assert steps["plan"]["shows_user"] == steps["research"]["shows_user"] == ["output"]
+
+
+def test_every_row_of_the_workflow_table_has_a_cell_per_heading(client):
+    import re
+
+    page = client.get("/workflows/deep-research").text
+    table = page[page.index("<table>") : page.index("</table>")]
+    headings = len(re.findall(r"<th[ >]", table.split("</thead>")[0]))
+    rows = table.split("</thead>")[1].split("</tr>")[:-1]
+    assert rows and all(len(re.findall(r"^\s*<td[ >]", r, re.M)) == headings for r in rows)

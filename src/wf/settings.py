@@ -107,6 +107,20 @@ def extraction_model() -> str:
     return os.environ.get("WF_EXTRACTION_MODEL") or careful_model()
 
 
+def skill_model() -> str:
+    """Writes the instructions for each step of a draft. It follows the extraction, since
+    it is the same careful reading of the same document."""
+    return os.environ.get("WF_SKILL_MODEL") or extraction_model()
+
+
+def skills_mode() -> str:
+    """``written`` asks a model to write each step's instructions from the document;
+    ``template`` lays them out from the draft alone, with no call. ``WF_SKILLS`` names it;
+    written is the default."""
+    named = (os.environ.get("WF_SKILLS") or "").strip().lower()
+    return "template" if named in {"template", "off"} else "written"
+
+
 def chat_model() -> str:
     """Answers in the chat that edits a draft."""
     return os.environ.get("WF_CHAT_MODEL") or quick_model()
@@ -175,6 +189,7 @@ TASKS: tuple[tuple[str, str, str], ...] = (
     ("quick", "a step that wants quick judgement", "WF_QUICK_MODEL"),
     ("careful", "a step that wants careful judgement", "WF_CAREFUL_MODEL"),
     ("extraction", "reading a process document into a draft", "WF_EXTRACTION_MODEL"),
+    ("skill", "writing the instructions for each step of a draft", "WF_SKILL_MODEL"),
     ("chat", "the chat that edits a draft", "WF_CHAT_MODEL"),
     ("guess", "filling a gap the document left", "WF_GUESS_MODEL"),
 )
@@ -186,6 +201,7 @@ def model_for_task(task: str) -> str:
         "quick": quick_model,
         "careful": careful_model,
         "extraction": extraction_model,
+        "skill": skill_model,
         "chat": chat_model,
         "guess": guess_model,
     }[task]

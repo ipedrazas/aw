@@ -53,8 +53,6 @@
       {% if st.when %}<div class="when">{{ st.when }}</div>{% endif %}
       {% if st.does_not_check %}<div class="small muted">Does not check: {{ st.does_not_check | join('; ') }}.</div>{% endif %}
     </td>
-    <td class="tech-col mono">{{ st.technical.model or "None" }}</td>
-    <td class="tech-col mono">{% if st.technical.skill %}<a href="{{ skill_url(st.technical.skill, workflow=name, step=st.id) }}" title="Read, compare or edit these instructions">{{ st.technical.skill }}</a>{% else %}{{ st.technical.run or st.technical.workflow or "—" }}{% endif %}</td>
     <td>
       {% if st.kind == "agent" %}
       <select data-model-step="{{ st.id }}" data-title="{{ st.title }}"{% if st.technical.model_resets_trust %} data-resets="1"{% endif %} aria-label="Model for {{ st.title }}">
@@ -65,7 +63,7 @@
       <div class="tech small muted mono">{{ st.technical.model or "" }}</div>
       {% else %}<span class="muted">None</span>{% endif %}
     </td>
-    <td class="tech-col mono">{{ st.technical.skill or st.technical.run or st.technical.workflow or "—" }}</td>
+    <td class="tech-col mono">{% if st.technical.skill %}<a href="{{ skill_url(st.technical.skill, workflow=name, step=st.id) }}" title="Read, compare or edit these instructions">{{ st.technical.skill }}</a>{% else %}{{ st.technical.run or st.technical.workflow or "—" }}{% endif %}</td>
     <td>{{ st.shows }}</td>
     <td>{{ trust_pill(st.trust) }}<div class="small muted">{{ st.trust_detail }}</div></td>
   </tr>

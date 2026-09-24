@@ -39,9 +39,8 @@ from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
 
 from .audits import AuditStore
-from .plain import plain_steps, plain_summary
-from .skills import SkillError, edit_step_skill, skill_url, skill_view
 from .plain import model_choices, plain_steps, plain_summary
+from .skills import SkillError, edit_step_skill, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
