@@ -188,10 +188,10 @@ def test_artifact_is_marked_simulated_in_name_body_and_metadata(sample_ws, tmp_p
     wf = sample_ws.load_definition("deep-research")
     interp, db = make(sample_ws, tmp_path, ScriptedModel(deep_research_script("accept")))
     r = interp.run(wf, TOPIC, "dry")
-    assert len(r.artifacts) == 1
-    art = r.artifacts[0]
-    assert art["simulated"] is True
-    assert art["name"].startswith("SIMULATED-")
+    assert [a["name"] for a in r.artifacts] == ["SIMULATED-report.pdf", "SIMULATED-report.md"]
+    art, md = r.artifacts
+    assert art["simulated"] is True and md["simulated"] is True
+    assert Path(md["path"]).read_text().startswith("> **SIMULATED")
     reader = PdfReader(art["path"])
     assert "simulated" in (reader.metadata.title or "").lower()
     assert "simulated" in (reader.metadata.subject or "").lower()
@@ -200,9 +200,10 @@ def test_artifact_is_marked_simulated_in_name_body_and_metadata(sample_ws, tmp_p
     with db.session() as s:
         from wf.store import Artifact
 
-        rec = s.query(Artifact).one()
-        sr = s.get(StepRun, rec.step_run_id)
-    assert rec.simulated and sr.step_id == "assemble" and rec.sha256
+        recs = s.query(Artifact).all()
+        steps = {s.get(StepRun, rec.step_run_id).step_id for rec in recs}
+    assert sorted(r.media_type.split(";")[0] for r in recs) == ["application/pdf", "text/markdown"]
+    assert all(rec.simulated and rec.sha256 for rec in recs) and steps == {"assemble"}
 
 
 def test_budget_pauses_the_run(sample_ws, tmp_path):
@@ -223,3 +224,18 @@ def test_budget_pauses_the_run(sample_ws, tmp_path):
     assert r.status == "paused_budget"
     assert any(t.event == "paused" for t in r.trace)
     assert any("spent $14.00 of a $12.00 limit" in d["text"] for d in r.decisions)
+
+
+def test_a_step_with_no_model_runs_on_the_default(ws, tmp_path):
+    data = read_yaml(ws, DEF)
+    del step(data, "plan")["model"]
+    data["spec"]["defaults"]["model"] = "a-default-model"
+    write_yaml(ws, DEF, data)
+    model = ScriptedModel(deep_research_script("accept"))
+    interp, db = make(ws, tmp_path, model)
+    result = interp.run(ws.load_definition("deep-research"), TOPIC, "dry")
+    assert result.status == "done"
+    with db.session() as s:
+        by_step = {st.step_id: st.model for st in s.query(StepRun).all()}
+    assert by_step["plan"] == "a-default-model"
+    assert by_step["write"] == "claude-opus-5"

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import question, tech_switch, status_pill, delete_button %}
+{% from "_macros.html" import question, tech_switch, status_pill, delete_button, questions_summary %}
 {% block title %}{{ audit.title if audit else "New workflow" }}{% endblock %}
 {% block bar_title %}{{ audit.title if audit else "New workflow" }} <span class="muted small">{{ ("Saved" if audit.status == "saved" else "Draft, not saved") if audit else "Not started" }}</span>{% endblock %}
 {% block bar_right %}
@@ -99,7 +99,8 @@
 
     <div class="card">
       <div class="card-head"><h2>What you expect</h2><span class="muted">{{ audit.counts.answered }} of {{ audit.counts.total }} answered</span></div>
-      {% if not audit.questions %}<p class="muted">Nothing left to ask. The draft says everything the system needs.</p>{% endif %}
+      {% if not audit.questions %}<p class="muted">Nothing left to ask. The draft says everything the system needs.</p>
+      {% else %}{{ questions_summary(audit.questions) }}{% endif %}
       {% for g in audit.questions %}
         <h3 style="margin-top:14px">{{ g.title }}</h3>
         {% for f in g.findings %}{{ question(f, audit.id) }}{% endfor %}

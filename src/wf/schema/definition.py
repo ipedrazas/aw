@@ -49,6 +49,9 @@ class Defaults(Strict):
     trust: Trust | None = None
     decision_log: Literal["optional", "required"] = "optional"
     on_error: Literal["pause_and_explain", "fail"] = "pause_and_explain"
+    # The model an agent step runs on when it does not name one of its own. One
+    # choice for the whole workflow, so nobody is asked it once per step.
+    model: str | None = None
 
 
 class Output(Strict):
@@ -166,6 +169,10 @@ class Workflow(Strict):
 
     def trust_for(self, step: Step) -> Trust | None:
         return step.trust or self.spec.defaults.trust
+
+    def model_for(self, step: Step) -> str | None:
+        """The step's own model, or the workflow's default when it names none."""
+        return step.model or self.spec.defaults.model
 
     def decision_log_for(self, step: Step) -> str:
         return step.decision_log or self.spec.defaults.decision_log

@@ -76,6 +76,16 @@ the step's input in its data region, and each search with the results it returne
 Alternative: a separate sessions page. Why: "what did it actually ask, and what did it
 find?" is asked while looking at the step, and the answer belongs next to it.
 
+**The report's markdown is kept beside its PDF, and the PDF reads the markdown itself.**
+`tools.render_pdf` writes `report.md` next to `report.pdf` (both `SIMULATED-` in a dry
+run, the markdown with the banner as its first line), and the routine records each as
+an artefact through `RunnerContext.keep`; the step's output keeps its shape, so no
+saved schema changes. Tables, lists, quotes and code are read by a small reader in
+`render.py` and tables drawn with fpdf2's `table()`. Alternative: markdown to HTML to
+`write_html`. Why: fpdf2's HTML tables fail on any tag inside a cell (a link, a bold
+word), and `write_html` fetches the address of any image, which a report written from
+fetched pages must not be able to make it do.
+
 **SQLite when `WF_DATABASE_URL` is unset; Postgres in Docker Compose and CI.** Same
 SQLAlchemy models, JSON columns on both. Alternative: Postgres only. Why: a fresh
 checkout runs and tests with nothing else installed; CI runs the suite against a
@@ -279,3 +289,29 @@ repository, so the proposal is last-writer-on-a-branch with the diff shown befor
 - The sample workspace lives inside this repository rather than as its own git
   repository, so that a checkout is self-contained. `wf.store.repo` uses the enclosing
   repository for commits and history.
+
+**A workflow has a default model, and each agent step can be moved off it from the
+workflow page.** `spec.defaults.model` is what a step that names no model runs on;
+the validator counts it, so a step on the default is not a question. The page offers
+the models the deployment configured (quick and careful, by the judgement they bring)
+and any the workflow already names, and nothing else. A change is committed and carried
+to the drafts, like an answer. Alternative: a free-text model name. Why: a name the
+deployment cannot run would only fail at the first call, and the choice people
+actually wanted to make was "use this one unless I say otherwise".
+
+**The auditor asks about a step's model only when the document singles the step out.**
+A draft sets the workflow's default to the quick model and gives a step a model of
+its own only when the extraction reads it as needing careful judgement; that step is
+asked to confirm, with the document's words that singled it out, and "no" puts it
+back on the default. Every other step is not asked. Alternative: ask of every step
+whose judgement the document does not state, as before. Why: a person faced with
+27 questions, most of them "how much judgement does this step need?", wanted to
+answer once; the default and the model dropdown on the workflow page cover the rest.
+
+**The same question asked of several steps is shown once, and answered for all of them
+unless unticked.** Two questions are the same when they are the same kind of finding,
+about the same field of different steps, with the same choices. Each step still gets
+its own finding and its own change, so any one can be undone or changed later.
+Alternative: one finding for the group. Why: the validator, the undo and the draft
+diff all work per field, and a group finding would have to be taken apart again for
+each of them.

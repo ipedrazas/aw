@@ -23,9 +23,9 @@ from wf.activities import (
 from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
-from wf.audit import AnswerRejected, Auditor, AuditResult, Change, group_questions
+from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
 from wf.audit.chat import chat
-from wf.audit.question import answer_definition
+from wf.audit.question import _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
@@ -41,6 +41,7 @@ from wf.validate import validate
 from .audits import AuditStore
 from .plain import plain_steps, plain_summary
 from .skills import SkillError, edit_step_skill, skill_url, skill_view
+from .plain import model_choices, plain_steps, plain_summary
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
@@ -140,9 +141,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return {
             "summary": plain_summary(wf),
             "steps": plain_steps(wf),
+            "models": model_choices(wf),
             "yaml": dump_workflow(wf),
             "findings": [f.model_dump(mode="json") for f in result.ordered()],
-            "questions": _questions(result.findings),
+            "questions": _questions(result.findings, wf),
             "cases": st().ws.list_cases(),
         }
 
@@ -153,10 +155,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
         wf = _load(st(), name)
         _restore_files(st(), wf)
         fid = body.get("finding_id")
-        finding = next(
-            (f for f in validate(wf, st().ws).findings if f.id == fid and f.status == "open"),
-            None,
-        )
+        still_open = {f.id: f for f in validate(wf, st().ws).findings if f.status == "open"}
+        finding = still_open.get(fid)
         if finding is None:
             raise HTTPException(404, "That question is not open on this workflow any more.")
         try:
@@ -168,6 +168,16 @@ def create_app(state: AppState | None = None) -> FastAPI:
             )
         except AnswerRejected as e:
             raise HTTPException(400, str(e)) from e
+        # the same answer to the same question asked of other steps
+        not_taken = []
+        for other in [
+            still_open[x] for x in body.get("also") or [] if x in still_open and x != fid
+        ]:
+            try:
+                new_def, more = answer_definition(new_def, other, body.get("answer"), st().ws)
+                changes += more
+            except AnswerRejected as e:
+                not_taken.append(str(e))
         new_wf = load_workflow_dict(new_def)
         st().ws.save_definition(new_wf)
         rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
@@ -186,6 +196,64 @@ def create_app(state: AppState | None = None) -> FastAPI:
                     "event": "workflow.answered",
                     "workflow": name,
                     "field": finding.field,
+                    "commit": commit,
+                    "drafts": drafts,
+                }
+            },
+        )
+        return {**get_workflow(name), "commit": commit, "drafts": drafts, "not_taken": not_taken}
+
+    @app.post("/api/workflows/{name}/model")
+    def set_model(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Choose the model one agent step runs on, or the workflow's default.
+
+        ``{"step": id, "model": m}`` sets a step's own model; ``"model": null`` puts it
+        back on the default. ``{"step": null, "model": m}`` sets the default. Only the
+        models on the page's list are taken: the ones this deployment configured, and
+        any this workflow already names."""
+        wf = _load(st(), name)
+        sid, model = body.get("step"), body.get("model") or None
+        allowed = {c["value"] for c in model_choices(wf)}
+        if model is not None and model not in allowed:
+            raise HTTPException(
+                400, f"“{model}” is not one of the models this deployment runs, so nothing changed."
+            )
+        if sid:
+            step = wf.step(sid)
+            if step is None:
+                raise HTTPException(404, f"There is no step “{sid}” in this workflow.")
+            if step.kind != "agent":
+                raise HTTPException(400, f"“{step.title or sid}” does not use a model.")
+            path, before, what = f"steps.{sid}.model", step.model, f"“{step.title or sid}”"
+            if model is None and wf.spec.defaults.model is None:
+                raise HTTPException(
+                    400, "This workflow has no default model, so the step has to name one."
+                )
+        else:
+            path, before, what = "spec.defaults.model", wf.spec.defaults.model, "the default"
+        if model == before:
+            return {**get_workflow(name), "commit": None, "drafts": 0}
+        defn = wf.model_dump(by_alias=True, exclude_none=True)
+        _set(defn, path, model)
+        st().ws.save_definition(load_workflow_dict(defn))
+        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        said = f"{what} runs on {model}" if model else f"{what} runs on the default"
+        commit = gitrepo.commit_paths(st().ws.root, [rel], f"{name}: {said}", *st().author)
+        change = Change(
+            path=path, before=before, after=model, reason="Chosen on the workflow page."
+        )
+        drafts = _carry_to_drafts(st(), name, [change])
+        logger.info(
+            "workflow %s: %s set to %s",
+            name,
+            path,
+            model,
+            extra={
+                "fields": {
+                    "event": "workflow.model_set",
+                    "workflow": name,
+                    "field": path,
+                    "model": model,
                     "commit": commit,
                     "drafts": drafts,
                 }
@@ -405,8 +473,19 @@ def create_app(state: AppState | None = None) -> FastAPI:
             changes = st().auditor.answer(result, fid, body.get("answer"))
         except AnswerRejected as e:
             raise HTTPException(400, str(e)) from e
+        # the same answer to the same question asked of other steps, one change each so
+        # any of them can be undone on its own; one that does not take it stays open
+        not_taken = []
+        for other in [x for x in body.get("also") or [] if x != fid]:
+            f = next((x for x in result.findings if x.id == other and x.status == "open"), None)
+            if f is None:
+                continue
+            try:
+                changes += st().auditor.answer(result, other, body.get("answer"))
+            except AnswerRejected as e:
+                not_taken.append(str(e))
         st().audits.save(audit_id, result, changes, by="answer")
-        return _audit_view(st(), audit_id)
+        return {**_audit_view(st(), audit_id), "not_taken": not_taken}
 
     @app.post("/api/audits/{audit_id}/edit")
     def edit(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -882,15 +961,34 @@ def _audit(state: AppState, audit_id: str) -> tuple[AuditResult, Any]:
         raise HTTPException(404, "No such draft.") from e
 
 
-def _questions(findings) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": g["type"],
-            "title": g["title"],
-            "findings": [f.model_dump(mode="json") for f in g["findings"]],
+def _questions(findings, wf: Any = None) -> list[dict[str, Any]]:
+    """The open questions by group. A question asked the same way of several steps is
+    shown once, with the steps it can also answer for under ``similar``; ``count`` is
+    how many questions the group holds, folded ones included."""
+    titles = {s.id: s.title or s.id for s in wf.spec.steps} if wf is not None else {}
+
+    def one(f: Any, similar: list[Any]) -> dict[str, Any]:
+        return {
+            **f.model_dump(mode="json"),
+            "step_title": titles.get(f.step_id, f.step_id),
+            "similar": [
+                {"id": o.id, "step_id": o.step_id, "step_title": titles.get(o.step_id, o.step_id)}
+                for o in similar
+            ],
         }
-        for g in group_questions([f for f in findings if f.status == "open"])
-    ]
+
+    out = []
+    for g in group_questions([f for f in findings if f.status == "open"]):
+        folded = fold_similar(g["findings"])
+        out.append(
+            {
+                "type": g["type"],
+                "title": g["title"],
+                "count": len(g["findings"]),
+                "findings": [one(f, similar) for f, similar in folded],
+            }
+        )
+    return out
 
 
 def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
@@ -907,7 +1005,7 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         "summary": plain_summary(wf),
         "steps": plain_steps(wf),
         "yaml": dump_workflow(wf),
-        "questions": _questions(result.findings),
+        "questions": _questions(result.findings, wf),
         "answered": [f.model_dump(mode="json") for f in answered],
         "counts": {
             "open": len(open_findings),

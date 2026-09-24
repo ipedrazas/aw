@@ -185,3 +185,19 @@ def test_the_routines_the_validator_offers_are_the_ones_the_interpreter_has():
     from wf.validate import KNOWN_RUNNERS
 
     assert KNOWN_RUNNERS == set(CHECKS) | set(TOOLS)
+
+
+def test_a_step_without_a_model_runs_on_the_workflows_default(ws):
+    data = read_yaml(ws, DEF)
+    del step(data, "plan")["model"]
+    write_yaml(ws, DEF, data)
+    assert "steps.plan.model" in [f.field for f in run(ws).findings]
+
+    data["spec"]["defaults"]["model"] = "claude-sonnet-5"
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert "steps.plan.model" not in [f.field for f in result.findings]
+    wf = ws.load_definition("deep-research")
+    assert wf.model_for(wf.step("plan")) == "claude-sonnet-5"
+    # a step's own model still wins over the default
+    assert wf.model_for(wf.step("write")) == "claude-opus-5"

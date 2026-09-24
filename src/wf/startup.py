@@ -151,8 +151,8 @@ def _announce_steps(ws: Workspace, plan: dict[str, Any]) -> None:
         for step in wf.spec.steps:
             if step.kind != "agent":
                 continue
-            model = step.model or quick
-            declared = step.model is not None
+            model = wf.model_for(step) or quick
+            declared = wf.model_for(step) is not None
             logger.debug(
                 "  %s.%s runs on %s%s",
                 name,

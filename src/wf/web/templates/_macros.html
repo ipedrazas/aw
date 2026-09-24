@@ -55,6 +55,13 @@
         <p><textarea placeholder="{{ 'One per line' if f.answer_kind == 'list' else 'Your answer, in your words' }}"></textarea>
         {% if f.answer_kind == "list" %}<span class="small muted">One per line.</span>{% endif %}</p>
       {% endif %}
+      {% if f.similar %}
+        <fieldset class="also">
+          <legend class="small">{% if f.similar | length == 1 %}The same question is asked of one more step. Give it this answer too:{% else %}The same question is asked of {{ f.similar | length }} more steps. Give them this answer too:{% endif %}</legend>
+          {% for o in f.similar %}<label class="small"><input type="checkbox" data-also value="{{ o.id }}" checked> {{ o.step_title }}</label>{% endfor %}
+          <div class="small muted">Untick a step to answer it separately once this one is saved. Each answer can be changed or undone later, one step at a time.</div>
+        </fieldset>
+      {% endif %}
       <div class="actions">
         <button class="btn btn-sm btn-primary" type="submit">Answer</button>
         {% if chat %}<button class="btn btn-sm" type="button" data-chat-about="{{ f.id }}" data-question="{{ f.question }}">Chat about this</button>{% endif %}
@@ -72,4 +79,15 @@
 {% macro rename_button(url, current, label="Rename", cls="btn btn-sm") -%}
   <button class="{{ cls }}" type="button" data-rename="{{ url }}" data-rename-current="{{ current }}"
           data-rename-prompt="New name for “{{ current }}”:">{{ label }}</button>
+{%- endmacro %}
+
+{% macro questions_summary(groups) -%}
+  {%- set total = groups | sum(attribute="count") -%}
+  {%- set shown = groups | map(attribute="findings") | map("length") | sum -%}
+  {%- set folded = total - shown -%}
+  <p class="small" data-questions-summary>{{ total }} question{{ "s" if total != 1 }} left
+  {%- if folded == 1 %}, {{ shown }} to go through: one is a question already asked of another step, and is answered together with it.
+  {%- elif folded > 1 %}, {{ shown }} to go through: {{ folded }} are questions already asked of other steps, and are answered together with them.
+  {%- else %}.{% endif %}
+  A real run needs them all answered; a dry run guesses the rest and says where.</p>
 {%- endmacro %}

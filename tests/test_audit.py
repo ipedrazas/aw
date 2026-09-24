@@ -119,7 +119,11 @@ def test_audit_finds_the_real_gaps_in_the_process_document(ws):
 
     # assumptions are marked, not hidden
     assumed = [f for f in result.open_findings() if f.type == "assumption"]
-    assert any(f.field == "steps.brief.model" for f in assumed)
+    # a step the document asks no special care of runs on the default, and is not
+    # asked about; one it singles out is, with the words that singled it out
+    assert not any(f.field == "steps.brief.model" for f in assumed)
+    careful = next(f for f in assumed if f.field == "steps.review.model")
+    assert careful.source_text and "careful judgement" in careful.question
     assert all(f.options and f.options[0].label.startswith("Yes") for f in assumed)
 
     # ordered by what they unblock: the branch and the budget come before the send approval
@@ -190,7 +194,7 @@ def test_document_diff_shows_stated_assumed_and_open(ws):
     statuses = {(s["id"], f["key"]): f["status"] for s in diff["steps"] for f in s["fields"]}
     assert statuses[("check_links", "checks")] == "stated"
     assert statuses[("check_links", "does_not_check")] == "open"
-    assert statuses[("brief", "model")] == "assumed"
+    assert statuses[("review", "model")] == "assumed"
     assert diff["counts"]["stated"] > 0 and diff["counts"]["open"] > 0
     produced = {p["id"]: p["produced"] for p in diff["passages"]}
     assert any(produced.values()), "passages point at what they produced"
@@ -201,9 +205,11 @@ def test_the_two_levels_of_judgement_are_configurable(ws, monkeypatch):
     monkeypatch.setenv("WF_CAREFUL_MODEL", "claude-sonnet-5")
     auditor = scripted_auditor(ws)
     result = auditor.audit(DOC.read_text(), name="client-research")
-    models = {s.id: s.model for s in result.workflow().spec.steps if s.model}
-    assert set(models.values()) == {"claude-haiku-4-5", "claude-sonnet-5"}
-    assert models["review"] == "claude-sonnet-5", "a careful step takes the careful model"
+    wf = result.workflow()
+    assert wf.spec.defaults.model == "claude-haiku-4-5", "the default is the quick model"
+    assert wf.model_for(wf.step("brief")) == "claude-haiku-4-5"
+    assert wf.step("brief").model is None, "a step on the default names no model"
+    assert wf.step("review").model == "claude-sonnet-5", "a careful step takes the careful model"
 
     offered = make_finding("gap", "steps.review.model").options
     assert [o.value for o in offered] == ["claude-haiku-4-5", "claude-sonnet-5"], (
@@ -276,6 +282,8 @@ def test_a_step_s_judgement_only_takes_one_of_the_configured_models(ws):
     result = auditor.audit(DOC.read_text(), name="client-research")
     review = next(s for s in result.definition["spec"]["steps"] if s["id"] == "review")
     del review["model"]
+    # with a default, a step without a model is answered; without one, it is asked
+    del result.definition["spec"]["defaults"]["model"]
     auditor.revalidate(result)
     f = next(f for f in result.open_findings() if f.field == "steps.review.model")
 
@@ -431,3 +439,31 @@ def test_a_step_removed_from_the_chat_rewires_its_readers_and_can_be_put_back(ws
 
     with pytest.raises(AnswerRejected):
         auditor.set_field(result, "steps.nope", None, "Not there.")
+
+
+def test_the_same_question_about_different_steps_is_folded_into_one(ws):
+    from wf.audit import fold_similar
+
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    folded = dict(
+        (f.field, [o.field for o in rest]) for f, rest in fold_similar(result.open_findings())
+    )
+    # the two careful steps are asked the same thing, once
+    assert folded.get("steps.review.model") == ["steps.write.model"] or folded.get(
+        "steps.write.model"
+    ) == ["steps.review.model"]
+    # what happens after each verdict is a different question for each verdict
+    assert folded["steps.review.output.continue_on.verdict.reject"] == []
+
+
+def test_saying_a_careful_step_does_not_need_it_puts_it_on_the_default(ws):
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    f = next(f for f in result.open_findings() if f.field == "steps.review.model")
+    no = next(o.value for o in f.options if o.value.get("keep") is False)
+    auditor.answer(result, f.id, no)
+    wf = result.workflow()
+    assert wf.step("review").model is None
+    assert wf.model_for(wf.step("review")) == wf.spec.defaults.model
+    assert not any(x.field == "steps.review.model" for x in result.open_findings())

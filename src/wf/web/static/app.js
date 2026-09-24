@@ -109,8 +109,10 @@ function wireAnswers(base, reload) {
     }
     /* picking "No, I will answer this" opens a box to say what instead */
     const own = f.querySelector("[data-own]");
+    /* ("No, the default is enough" says what instead by itself, so it needs no box) */
+    const saysNo = v => v && v.keep === false && !v.then;
     if (own) f.querySelectorAll("input[type=radio]").forEach(r => r.addEventListener("change", () => {
-      const no = (JSON.parse(f.querySelector("input[type=radio]:checked").value) || {}).keep === false;
+      const no = saysNo(JSON.parse(f.querySelector("input[type=radio]:checked").value));
       own.classList.toggle("hidden", !no);
       if (no) own.querySelector("textarea").focus();
     }));
@@ -123,7 +125,7 @@ function wireAnswers(base, reload) {
         if (!c) return say(msg, "Pick one first, or chat about it if none fits.", true);
         answer = JSON.parse(c.value);
         const own = f.querySelector("[data-own]");
-        if (own && answer && answer.keep === false) {
+        if (own && saysNo(answer)) {
           const text = own.querySelector("textarea").value.trim();
           if (!text) return say(msg, "Say what it should be instead.", true);
           if (!window.chatAbout) return say(msg, "The chat is not available on this page.", true);
@@ -140,7 +142,14 @@ function wireAnswers(base, reload) {
         answer = f.querySelector("textarea").value; if (!answer.trim()) return say(msg, "Write something first.", true);
       }
       say(msg, "Saving…");
-      try { await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer}); kept.drop(keyAnswer); reload(msg); }
+      /* the same answer for the ticked steps that are asked the same question */
+      const also = Array.from(f.querySelectorAll("input[data-also]:checked")).map(c => c.value);
+      try {
+        const d = await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer, also: also});
+        kept.drop(keyAnswer);
+        if (d.not_taken && d.not_taken.length) alert("Some steps did not take this answer and are still open:\n\n" + d.not_taken.join("\n"));
+        reload(msg);
+      }
       catch (err) { say(msg, err.message, true); }
     });
   });
@@ -150,6 +159,27 @@ function wireAnswers(base, reload) {
 (function () {
   const root = document.querySelector("[data-workflow-answers]"); if (!root) return;
   wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => location.reload());
+})();
+
+/* Workflow page: the model each step runs on, and the default for the rest. */
+(function () {
+  const root = document.querySelector("[data-models]"); if (!root) return;
+  const url = "/api/workflows/" + encodeURIComponent(root.dataset.models) + "/model";
+  const msg = root.querySelector("[data-msg]");
+  const choose = async (sel, step) => {
+    if (sel.dataset.resets && !confirm("Changing the model of “" + sel.dataset.title + "” starts its count of accepted runs again, so it asks you before running on its own.")) {
+      sel.value = sel.dataset.was; return;
+    }
+    say(msg, "Saving…");
+    try { await postJSON(url, {step: step, model: sel.value || null}); location.reload(); }
+    catch (err) { sel.value = sel.dataset.was; say(msg, err.message, true); }
+  };
+  root.querySelector("[data-model-default]").addEventListener("change", e => choose(e.target, null));
+  document.querySelectorAll("[data-model-step]").forEach(sel => {
+    sel.dataset.was = sel.value;
+    sel.addEventListener("change", () => choose(sel, sel.dataset.modelStep));
+  });
+  const d = root.querySelector("[data-model-default]"); d.dataset.was = d.value;
 })();
 
 /* Audit page: chat, answers, undo, save, dry run. */

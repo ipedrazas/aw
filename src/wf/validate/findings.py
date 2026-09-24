@@ -131,8 +131,10 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "Nothing runs unattended by default.",
     ),
     "model": (
-        "How much judgement does this step need?",
-        "This decides which model runs it.",
+        "How much judgement does “{step}” need?",
+        "This picks the model that runs it. Quick judgement is faster and cheaper; careful "
+        "judgement is slower, costs more per run, and does better at writing and review. "
+        "A default for every step can be set on the workflow page.",
     ),
     "skill": (
         "What are the instructions for this step?",
@@ -260,7 +262,7 @@ RUNNERS: dict[str, tuple[str, str, str]] = {
     "tools.render_pdf": (
         "tool",
         "Turn the report into a PDF",
-        "Gives back the file and its page count. Nothing leaves the system.",
+        "Gives back the file and its page count, and keeps the report's markdown beside it. Nothing leaves the system.",
     ),
     "tools.send_email": (
         "tool",

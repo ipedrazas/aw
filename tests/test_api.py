@@ -184,6 +184,10 @@ def test_run_a_workflow_against_a_case_and_read_the_report(client):
     art = report["artifacts"][0]
     pdf = client.get(f"/api/runs/{run['id']}/artifacts/{art['id']}")
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
+    md = next(a for a in report["artifacts"] if a["name"].endswith(".md"))
+    got = client.get(f"/api/runs/{run['id']}/artifacts/{md['id']}")
+    assert got.status_code == 200 and got.headers["content-type"].startswith("text/markdown")
+    assert got.text.startswith("> **SIMULATED")
     runs = client.get("/api/runs").json()
     assert runs[0]["id"] == run["id"] and runs[0]["steps"][0]["status"] == "done"
     page = client.get(f"/runs/{run['id']}").text
@@ -862,3 +866,104 @@ def test_going_deeper_starts_a_follow_up_per_topic_and_they_do_not_stop_to_ask(c
     assert by_id["go_deeper"]["status"] == "done"
     children = [x for x in client.get("/api/runs").json() if x["id"] != run["id"]]
     assert any("approvals that take days" in c["title"] for c in children)
+
+
+def test_a_steps_model_and_the_default_are_chosen_on_the_workflow_page(client, ws):
+    from tests.helpers import read_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    wf = client.get("/api/workflows/deep-research").json()
+    choices = [m["value"] for m in wf["models"]]
+    assert settings.quick_model() in choices and settings.careful_model() in choices
+    # the models the workflow already names are on the list, so the current one shows
+    assert "claude-opus-5" in choices
+    page = client.get("/workflows/deep-research").text
+    assert 'data-model-step="plan"' in page and "data-model-default" in page
+    # a check has no model to choose
+    assert 'data-model-step="check_links"' not in page
+
+    url = "/api/workflows/deep-research/model"
+    r = client.post(url, json={"step": None, "model": settings.quick_model()})
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"]["default_model"] == settings.quick_model()
+    assert read_yaml(ws, rel)["spec"]["defaults"]["model"] == settings.quick_model()
+
+    # a step put back on the default names no model of its own
+    r = client.post(url, json={"step": "plan", "model": None})
+    assert r.status_code == 200, r.text
+    plan = next(s for s in r.json()["steps"] if s["id"] == "plan")
+    assert (
+        plan["technical"]["model_inherited"]
+        and plan["technical"]["model"] == settings.quick_model()
+    )
+    assert "model" not in next(s for s in read_yaml(ws, rel)["spec"]["steps"] if s["id"] == "plan")
+    assert "steps.plan.model" not in [f["field"] for f in r.json()["findings"]]
+
+    r = client.post(url, json={"step": "plan", "model": settings.careful_model()})
+    assert r.status_code == 200, r.text
+    plan = next(s for s in read_yaml(ws, rel)["spec"]["steps"] if s["id"] == "plan")
+    assert plan["model"] == settings.careful_model()
+
+    # a model nobody configured, a step with no model and a step that is not there
+    assert client.post(url, json={"step": "plan", "model": "made-up/model"}).status_code == 400
+    assert (
+        client.post(url, json={"step": "check_links", "model": settings.quick_model()}).status_code
+        == 400
+    )
+    assert (
+        client.post(url, json={"step": "nope", "model": settings.quick_model()}).status_code == 404
+    )
+
+
+def test_one_answer_is_given_to_the_same_question_asked_of_other_steps(client):
+    audit = client.post("/api/audits", json={"document": DOC.read_text(), "name": "folded"}).json()
+    aid = audit["id"]
+    assumed = next(g for g in audit["questions"] if g["type"] == "assumption")
+    lead = next(f for f in assumed["findings"] if f["field"].endswith(".model"))
+    assert lead["similar"], "the other careful step is folded into this question"
+    assert assumed["count"] > len(assumed["findings"])
+    page = client.get(f"/audits/{aid}").text
+    assert "data-also" in page and "answered together" in page
+
+    no = next(o["value"] for o in lead["options"] if o["value"].get("keep") is False)
+    r = client.post(
+        f"/api/audits/{aid}/answer",
+        json={"finding_id": lead["id"], "answer": no, "also": [o["id"] for o in lead["similar"]]},
+    )
+    assert r.status_code == 200, r.text
+    view = r.json()
+    assert view["not_taken"] == []
+    steps = {s["id"]: s for s in view["steps"]}
+    for sid in [lead["step_id"]] + [o["step_id"] for o in lead["similar"]]:
+        assert steps[sid]["technical"]["model_inherited"], sid
+    # one change per step, so each can be undone on its own
+    paths = [c["path"] for c in view["changes"] if c["path"].endswith(".model")]
+    assert len(paths) == 1 + len(lead["similar"])
+
+
+def test_a_saved_workflow_takes_one_answer_for_several_steps(client, ws):
+    from tests.helpers import read_yaml, write_yaml
+
+    rel = "definitions/deep-research.workflow.yaml"
+    d = read_yaml(ws, rel)
+    for s in d["spec"]["steps"]:
+        if s["id"] in ("plan", "research"):
+            s.pop("shows_user", None)
+    write_yaml(ws, rel, d)
+
+    wf = client.get("/api/workflows/deep-research").json()
+    lead = next(
+        f for g in wf["questions"] for f in g["findings"] if f["field"].endswith(".shows_user")
+    )
+    assert [o["step_id"] for o in lead["similar"]], "the second step is folded in"
+    r = client.post(
+        "/api/workflows/deep-research/answer",
+        json={
+            "finding_id": lead["id"],
+            "answer": lead["options"][0]["value"],
+            "also": [o["id"] for o in lead["similar"]],
+        },
+    )
+    assert r.status_code == 200, r.text
+    steps = {s["id"]: s for s in read_yaml(ws, rel)["spec"]["steps"]}
+    assert steps["plan"]["shows_user"] == steps["research"]["shows_user"] == ["output"]
