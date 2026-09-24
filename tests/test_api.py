@@ -184,6 +184,10 @@ def test_run_a_workflow_against_a_case_and_read_the_report(client):
     art = report["artifacts"][0]
     pdf = client.get(f"/api/runs/{run['id']}/artifacts/{art['id']}")
     assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
+    md = next(a for a in report["artifacts"] if a["name"].endswith(".md"))
+    got = client.get(f"/api/runs/{run['id']}/artifacts/{md['id']}")
+    assert got.status_code == 200 and got.headers["content-type"].startswith("text/markdown")
+    assert got.text.startswith("> **SIMULATED")
     runs = client.get("/api/runs").json()
     assert runs[0]["id"] == run["id"] and runs[0]["steps"][0]["status"] == "done"
     page = client.get(f"/runs/{run['id']}").text
