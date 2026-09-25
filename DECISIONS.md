@@ -307,7 +307,7 @@ repository, so the proposal is last-writer-on-a-branch with the diff shown befor
 **A workflow has a default model, and each agent step can be moved off it from the
 workflow page.** `spec.defaults.model` is what a step that names no model runs on;
 the validator counts it, so a step on the default is not a question. The page offers
-the models the deployment configured (quick and careful, by the judgement they bring)
+the models the deployment configured (shown as standard and thorough)
 and any the workflow already names, and nothing else. A change is committed and carried
 to the drafts, like an answer. Alternative: a free-text model name. Why: a name the
 deployment cannot run would only fail at the first call, and the choice people
@@ -382,3 +382,20 @@ checks the shape of every model name (the vendor's own, or `vendor/model` throug
 gateway) and raises a conflict for anything else, such as `-typesafe/jev-1.13`.
 Alternative: a list of known models. Why: the list changes weekly and differs by
 provider, and the failure this catches, a stray character, is a shape.
+
+**The two models are shown as "Standard" and "Thorough", not quick and careful
+judgement.** Only the words people see changed; `WF_QUICK_MODEL`, `WF_CAREFUL_MODEL` and
+the extractor's `judgement` field keep their names. Alternative: keep the old labels.
+Why: at the demo, "quick judgement" read as "not careful", which is not what it means.
+
+**The chat opens with what the person first wrote, and is sent it every turn.** The
+document was saved with the draft but never shown or given to the chat, so nobody
+could see what the draft came from, and the chat could not quote it. Alternative: show
+it on a panel of its own. Why: it is the first thing they said in the conversation.
+
+**The runs list puts each follow-up under the run that started it, and shows what the
+run cost with them.** A run's own cost is still what it spent itself, so adding up the
+list counts nothing twice; the parent's figure is its own plus everything below it.
+Alternative: order by start time, as before. Why: follow-ups start after their parent,
+so newest-first put them above it, and a parent's own cost hid most of what starting
+it cost.

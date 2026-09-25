@@ -23,13 +23,13 @@
   {% if not runs %}<tr><td colspan="4" class="muted">No runs yet. Open a workflow and run it with a topic.</td></tr>{% endif %}
   {% for r in runs %}
   <tr data-status="{{ r.status }}">
-    <td class="{{ 'indent' if r.parent_run_id }}">
+    <td class="{{ 'indent' if r.level }}" style="--level:{{ r.level }}">
       <a href="/runs/{{ r.id }}"><strong>{{ r.title }}</strong></a>
       <div class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else r.mode }}{% if r.parent_run_id %} · follow-up, level {{ r.depth }}{% endif %}{% if r.case_name %} · case: {{ r.case_name }}{% endif %} · started {{ (r.started_at or '')[:16] | replace('T', ' ') }}</div>
     </td>
     <td>{{ status_pill(r.status) }}</td>
     <td>{{ step_squares(r.steps) }}</td>
-    <td style="text-align:right">${{ "%.2f" | format(r.cost or 0) }}</td>
+    <td style="text-align:right">${{ "%.2f" | format(r.total_cost) }}{% if r.followups %}<div class="small muted" title="This run ${{ '%.2f' | format(r.cost or 0) }}, its follow-ups the rest">with {{ r.followups }} follow-up{{ 's' if r.followups != 1 }}</div>{% endif %}</td>
   </tr>
   {% endfor %}
   </tbody>

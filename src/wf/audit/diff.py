@@ -19,7 +19,7 @@ FIELD_LABELS = {
     "on_timeout": "when the wait runs out",
     "limits": "limits",
     "skill": "instructions",
-    "model": "judgement",
+    "model": "model",
     "output.schema": "produces",
     "run": "runs",
     "for_each": "runs once per",

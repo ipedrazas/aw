@@ -535,6 +535,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 message,
                 model_name=st().chat_model,
                 audit_id=audit_id,
+                document=rec.document,
                 about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001
@@ -1047,6 +1048,8 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         },
         "diff": result.diff(),
         "changes": state.audits.changes(audit_id),
+        # what the person first wrote; the chat opens with it, as they said it
+        "document": rec.document,
         "chat": rec.chat or [],
         "explanations": result.explanations,
         "cases": state.ws.list_cases(),

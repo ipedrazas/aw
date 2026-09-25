@@ -30,7 +30,7 @@ from .ingest import Passage
 CAREFUL_OPTIONS = [
     Option(
         value={"keep": True},
-        label="Yes, run it with careful judgement",
+        label="Yes, use the thorough model",
         consequence="Slower and costs more. Better at writing and review.",
     ),
     Option(
@@ -264,9 +264,9 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                 assume(
                     f"steps.{sid}.model",
                     s,
-                    f"“{s['title']}” needs careful judgement",
-                    "The document asks for more care here than for the other steps. Careful "
-                    "judgement is slower and costs more per run; every other step runs on the "
+                    f"“{s['title']}” looks like it needs the thorough model",
+                    "The document asks for more care here than for the other steps. The thorough "
+                    "model is slower and costs more per run; every other step runs on the "
                     "workflow's default.",
                     options=CAREFUL_OPTIONS,
                     source=passage_text(s.get("passage")),

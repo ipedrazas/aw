@@ -48,6 +48,7 @@
       </form>
     {% else %}
       <div class="chat" data-chat-log>
+        {% if audit.document %}<div class="msg msg-user msg-doc" title="What you first wrote">{{ audit.document }}</div>{% endif %}
         {% for m in audit.chat %}
           <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
           {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
