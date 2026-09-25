@@ -29,7 +29,7 @@ def test_removing_the_branch_condition_surfaces_the_unhandled_outcome(ws):
     kinds = {(f.type, f.field) for f in result.findings}
     assert ("gap", "steps.review.output.continue_on.verdict.go_deeper") in kinds
     f = next(f for f in result.findings if f.field.endswith("verdict.go_deeper"))
-    assert "go_deeper" in f.question and f.answer_kind == "choice"
+    assert "“go deeper”" in f.question and f.answer_kind == "choice", "said as a person would"
     assert len(result.findings) == 1
 
 
@@ -41,7 +41,7 @@ def test_dropping_does_not_check_is_a_gap_with_the_right_question(ws):
     assert [(f.type, f.field) for f in result.findings] == [
         ("gap", "steps.check_links.does_not_check")
     ]
-    assert result.findings[0].question == "What does this check not tell you?"
+    assert result.findings[0].question == "What can “Check the links” miss?"
 
 
 def test_an_outcome_no_branch_handles_is_a_gap(ws):
@@ -65,7 +65,7 @@ def test_an_unbounded_fan_out_is_a_gap(ws):
     write_yaml(ws, DEF, data)
     result = run(ws)
     assert [(f.type, f.field) for f in result.findings] == [("gap", "steps.go_deeper.max_fanout")]
-    assert result.findings[0].question == "How many of these can run at once?"
+    assert result.findings[0].question.startswith("At most how many times should “")
 
 
 def test_a_branch_value_nothing_can_produce_is_unreachable(ws):
@@ -86,7 +86,7 @@ def test_reading_a_later_step_is_a_conflict(ws):
     write_yaml(ws, DEF, data)
     result = run(ws)
     assert [(f.type, f.field) for f in result.findings] == [("conflict", "steps.write.input")]
-    assert "runs later" in result.findings[0].detail
+    assert "comes after it" in result.findings[0].detail
 
 
 def test_reading_a_field_nothing_produces_is_a_conflict(ws):
@@ -117,7 +117,7 @@ def test_missing_required_fields_become_gaps_with_questions(ws):
     assert set(fields) == {"steps.assemble.requires_approval", "steps.assemble.title"}
     assert (
         fields["steps.assemble.requires_approval"].question
-        == "Who signs this off before it leaves the system?"
+        == "Should someone approve “assemble” before it goes out?"
     )
     assert fields["steps.assemble.requires_approval"].answer_kind == "choice"
 

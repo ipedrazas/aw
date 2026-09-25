@@ -44,7 +44,7 @@ def _open(d: dict, ws) -> dict:
 def test_a_later_step_that_reads_nothing_is_asked_what_it_starts_from(ws):
     found = _open(_wf(), ws)
     q = found["steps.write.input"]
-    assert q.question == "What does this step start from?"
+    assert q.question == "What does “Write a sourced report” work from?"
     everything = q.options[0].value
     assert everything == {"topic": "${inputs.topic}", "search": "${steps.search.output}"}
     assert "steps.links.input" in found
@@ -56,7 +56,7 @@ def test_a_later_step_that_reads_nothing_is_asked_what_it_starts_from(ws):
 
 def test_a_step_that_says_it_searches_and_cannot_is_asked(ws):
     q = _open(_wf(), ws)["steps.search.tools"]
-    assert q.question == "Can this step search the web?"
+    assert q.question.startswith("Should “") and q.question.endswith("” search the web?")
     d, _ = answer_definition(_wf(), q, q.options[0].value, ws)
     step = next(s for s in d["spec"]["steps"] if s["id"] == "search")
     assert set(step["tools"]) == {"search", "get_contents"}
@@ -163,7 +163,9 @@ def test_a_step_that_searches_has_to_hand_on_its_sources(ws):
         },
     )
     q = _open(d, ws)["steps.search.hands_on"]
-    assert q.question == "What does this step hand on from what it found?"
+    assert q.question.startswith("What should “") and q.question.endswith(
+        "” pass on from what it finds?"
+    )
     d2, _ = answer_definition(d, q, q.options[0].value, ws)
     shape = ws.load_schema("schemas/t/search.json")
     assert holds_urls(shape)

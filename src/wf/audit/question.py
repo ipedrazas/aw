@@ -23,10 +23,10 @@ class AnswerRejected(ValueError):
 
 GROUP_ORDER = ["conflict", "gap", "unreachable", "assumption"]
 GROUP_TITLES = {
-    "conflict": "Things that cannot work as written",
-    "gap": "Things the document does not say",
-    "unreachable": "Branches nothing can reach",
-    "assumption": "Things we assumed",
+    "conflict": "To sort out before it can run",
+    "gap": "What your document does not say",
+    "unreachable": "Steps that can never happen",
+    "assumption": "Please check how I read it",
 }
 
 

@@ -90,7 +90,7 @@ def input_options(wf: Workflow, idx: int) -> list[Option]:
             label="Everything before it",
             consequence="The "
             + (" and ".join(names) or "inputs")
-            + " you type, and what every earlier step produced.",
+            + " you give it, and what every earlier step produced.",
         )
     ]
     if producing:
@@ -102,7 +102,7 @@ def input_options(wf: Workflow, idx: int) -> list[Option]:
                     prev.id: f"${{steps.{prev.id}.output}}",
                 },
                 label=f"The {' and '.join(names) or 'inputs'}, and “{prev.title or prev.id}”",
-                consequence="Only the step just before it, which keeps what it reads small.",
+                consequence="Only the step just before it, which keeps it focused.",
             )
         )
     return opts
@@ -224,7 +224,10 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
             )
 
         # a branch needs when; a fan-out needs a ceiling
-        if step.for_each is not None and step.effective_max_fanout is None:
+        # a follow-up step with no limits yet is asked for them, and the answer carries
+        # the ceiling, so it is not asked the same thing twice
+        asked_limits = step.kind == "subworkflow" and not _has(step, wf, "limits")
+        if step.for_each is not None and step.effective_max_fanout is None and not asked_limits:
             findings.append(
                 make_finding("gap", f"steps.{step.id}.max_fanout", step=step, unblocks=unblocks)
             )
@@ -266,7 +269,7 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
             make_finding(
                 "gap",
                 "spec.budget",
-                detail="This workflow can start more research, so it needs one spending limit for the whole tree.",
+                detail="It can start more research, so one limit covers everything it starts, in money and time.",
                 answer_kind="choice",
                 options=[
                     Option(
@@ -375,30 +378,35 @@ def _check_expressions(wf: Workflow, step: Step) -> list[Finding]:
                             detail = f"Reads from a step called “{ref}”, which does not exist."
                         else:
                             detail = (
-                                f"“{step.title or step.id}” needs “{later.title or later.id}”, "
-                                f"but that step runs later, so the value is not there yet."
+                                f"“{later.title or later.id}” comes after it, so what it "
+                                "produces is not there yet."
                             )
-                        findings.append(
-                            make_finding(
-                                "conflict",
-                                f"steps.{step.id}.{place}",
-                                step=step,
-                                detail=detail,
-                                answer_kind="choice",
-                                options=[
-                                    Option(
-                                        value={"op": "move_before", "step": ref},
-                                        label=f"Run “{later.title or ref}” before this step"
-                                        if later
-                                        else "Remove the reference",
-                                    ),
-                                    Option(
-                                        value={"op": "remove_ref", "ref": ref},
-                                        label="Do not use it here",
-                                    ),
-                                ],
-                            )
+                        f = make_finding(
+                            "conflict",
+                            f"steps.{step.id}.{place}",
+                            step=step,
+                            detail=detail,
+                            answer_kind="choice",
+                            options=[
+                                Option(
+                                    value={"op": "move_before", "step": ref},
+                                    label=f"Do “{later.title or ref}” first"
+                                    if later
+                                    else "Remove the reference",
+                                ),
+                                Option(
+                                    value={"op": "remove_ref", "ref": ref},
+                                    label=f"“{step.title or step.id}” can do without it",
+                                ),
+                            ],
                         )
+                        if later is not None:
+                            # the question is about order, whatever field it sits on
+                            f.question = (
+                                f"“{step.title or step.id}” uses what “{later.title or later.id}” "
+                                "produces. Which should come first?"
+                            )
+                        findings.append(f)
                 elif root == "inputs":
                     if len(p.segments) > 1 and str(p.segments[1]) not in wf.spec.inputs:
                         findings.append(

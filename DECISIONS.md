@@ -427,3 +427,15 @@ it was not.
 whose `with` lacks a required input of the workflow it starts is a gap, offering this
 workflow's inputs as the answers. Alternative: let the run find out. Why: the child
 run would stop at once, after the parent had paid for everything before it.
+
+**The draft's questions are about the person's work, in their words.** Each names its
+step by title, says outcomes as a person would ("more research", not `more_research`),
+and gives its reason as what goes wrong for them rather than the rule it comes from.
+What the draft read into the document is said in the first person ("I gave it the
+thorough model. Is that right?") instead of "We assumed ...". A question matches its
+answers: "Who signs this off?" offered yes and no, and a step reading a later step's
+result was asked "What does this step start from?" when the choice was which comes
+first. A follow-up step still to be given its limits is not also asked for its
+ceiling, which the limits carry. A test holds the sample draft's questions to this.
+Alternative: keep the wording and explain it in the chat. Why: at the demo the
+questions read as being about how the system works, and made people feel stupid.
