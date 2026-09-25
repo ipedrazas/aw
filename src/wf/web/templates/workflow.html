@@ -9,6 +9,7 @@
   <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}</div>
   <div class="actions">
     {{ tech_switch() }}
+    <a class="btn" href="/workflows/{{ name }}/settings">Settings</a>
     <button class="btn" data-toggle="yaml">Open YAML</button>
     {{ rename_button("/api/workflows/" ~ name ~ "/rename", s.name) }}
     {{ delete_button("/api/workflows/" ~ name,

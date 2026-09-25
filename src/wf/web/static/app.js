@@ -365,6 +365,40 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   });
 });
 
+/* Workflow settings: each form saves one setting, and the page shows the result. */
+(function () {
+  const root = document.querySelector("[data-settings]"); if (!root) return;
+  const url = "/api/workflows/" + encodeURIComponent(root.dataset.settings) + "/settings";
+  const msg = root.querySelector("[data-msg]");
+  const save = async (body) => {
+    say(msg, "Saving…");
+    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+  };
+  const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
+  const trust = root.querySelector("form[data-trust-default]");
+  trust.addEventListener("submit", e => {
+    e.preventDefault();
+    const c = trust.querySelector("input[name=policy]:checked");
+    if (!c) return say(msg, "Pick one first.", true);
+    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}});
+  });
+  root.querySelectorAll("select[data-step-trust]").forEach(sel => sel.addEventListener("change", () =>
+    save({step: sel.dataset.stepTrust, trust: sel.value ? {policy: sel.value} : null})));
+  const reset = root.querySelector("[data-reset-steps]");
+  if (reset) reset.addEventListener("click", () => save({reset_steps: true}));
+  const budget = root.querySelector("form[data-budget]");
+  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}); });
+  root.querySelectorAll("form[data-who-decides]").forEach(f => f.addEventListener("submit", e => {
+    e.preventDefault();
+    const c = f.querySelector("input[name=asks]:checked");
+    if (!c) return say(msg, "Pick one first.", true);
+    save({step: f.dataset.whoDecides, trust: {policy: c.value}});
+  }));
+  root.querySelectorAll("form[data-limits]").forEach(f => f.addEventListener("submit", e => {
+    e.preventDefault(); save({step: f.dataset.limits, limits: {max_fanout: num(f, "max_fanout"), max_depth: num(f, "max_depth")}});
+  }));
+})();
+
 /* Run page: say OK to the step a real run stopped after, or stop it there. */
 document.querySelectorAll("form[data-ok]").forEach(f => {
   f.addEventListener("submit", async e => {

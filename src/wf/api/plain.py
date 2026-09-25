@@ -23,18 +23,48 @@ ORIGIN_LABEL = {
 }
 
 
+# How often a step checks with you, in the words of every page that shows or sets it.
+TRUST_CHOICES = [
+    {
+        "policy": "earned",
+        "label": "Check until it has earned my trust",
+        "consequence": "A real run stops after it for your OK. Once you have said OK enough "
+        "times in a row, it carries on by itself; any change to it starts the count again.",
+    },
+    {
+        "policy": "always_ask",
+        "label": "Check every time",
+        "consequence": "A real run stops after it, every time, for your OK. You stay in the "
+        "loop, and runs take longer.",
+    },
+    {
+        "policy": "auto",
+        "label": "Don't check with me",
+        "consequence": "Runs go straight on. Everything it decided is still on the run, to "
+        "look at afterwards, but nothing waits for you.",
+    },
+]
+
+
 def trust_label(wf: Workflow, step: Step) -> tuple[str, str]:
     t = wf.trust_for(step)
-    if step.kind == "check" or (t and t.policy == "auto"):
-        return ("Automatic", "You see the result afterwards.")
+    if step.kind == "check":
+        return ("Doesn't stop", "A check: you see its result on the run.")
+    if step.kind == "wait":
+        return ("Doesn't stop", "It already waits for a person.")
     if t is None:
-        return ("Asks you", "Nothing runs unattended by default.")
+        return ("Not chosen yet", "Answer the question about it before a real run.")
+    if t.policy == "auto":
+        return ("Doesn't check with you", "Runs straight on. What it decided is on the run.")
+    when = (
+        "asks you before it starts more research"
+        if step.kind == "subworkflow"
+        else "stops after it for your OK"
+    )
     if t.policy == "always_ask":
-        return ("Always asks you", "Never promoted to running on its own.")
-    if t.policy == "earned":
-        n = t.promote_after or 3
-        return ("Asks you", f"Runs on its own after you accept it {n} times in a row.")
-    return ("Asks you", "")
+        return ("Checks every time", f"A real run {when}.")
+    n = t.promote_after or 3
+    return ("Checks until trusted", f"A real run {when}, until {n} OKs in a row.")
 
 
 def shows_label(step: Step) -> str:

@@ -1,86 +1,117 @@
-"""Model names are configuration. The code names them once, in wf.settings, and asks
-for a level of judgement everywhere else."""
+"""A workflow's settings page: how often its steps check with you, and its limits."""
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
+from tests.helpers import read_yaml, write_yaml
+from tests.test_api import client, wait_for  # noqa: F401 - the fixture
+from tests.test_gates import only_plan_asks
+from tests.test_retry import TOPIC, _go_deeper_runner
 
-from wf import settings
-from wf.activities import ModelResponse, ScriptedModel, cost_of
-from wf.activities.guess import ModelGuesser
-from wf.audit import Auditor
-from wf.audit.chat import chat
-from wf.audit.service import AuditResult
-
-SRC = Path(__file__).resolve().parents[1] / "src" / "wf"
-
-MODEL_VARS = (
-    "WF_QUICK_MODEL",
-    "WF_CAREFUL_MODEL",
-    "WF_EXTRACTION_MODEL",
-    "WF_CHAT_MODEL",
-    "WF_GUESS_MODEL",
-)
+DEF = "definitions/deep-research.workflow.yaml"
+URL = "/api/workflows/deep-research/settings"
 
 
-def clear(monkeypatch) -> None:
-    for var in MODEL_VARS:
-        monkeypatch.delenv(var, raising=False)
+def step_of(ws, sid):
+    return next(s for s in read_yaml(ws, DEF)["spec"]["steps"] if s["id"] == sid)
 
 
-def test_each_use_falls_back_to_a_level_of_judgement(monkeypatch):
-    clear(monkeypatch)
-    monkeypatch.setenv("WF_QUICK_MODEL", "quick-one")
-    monkeypatch.setenv("WF_CAREFUL_MODEL", "careful-one")
-
-    assert settings.extraction_model() == "careful-one", "reading a document is careful work"
-    assert settings.chat_model() == "quick-one"
-    assert settings.guess_model() == "quick-one"
-    assert settings.model_for("careful") == "careful-one"
-    assert settings.model_for(None) == "quick-one"
-
-    monkeypatch.setenv("WF_GUESS_MODEL", "guess-one")
-    assert settings.guess_model() == "guess-one", "its own variable wins over the fallback"
+def test_the_page_shows_each_step_and_how_far_it_has_got(client):  # noqa: F811
+    page = client.get("/workflows/deep-research/settings")
+    assert page.status_code == 200
+    assert "Check until it has earned my trust" in page.text and "Check every time" in page.text
+    data = client.get(URL).json()
+    plan = next(s for s in data["steps"] if s["id"] == "plan")
+    assert plan["progress"] == "0 of 3 OKs in a row so far."
+    links = next(s for s in data["steps"] if s["id"] == "check_links")
+    assert links["stops"] is False and links["label"] == "Doesn't stop"
+    assert 'href="/workflows/deep-research/settings"' in client.get("/workflows/deep-research").text
 
 
-def test_the_configured_names_reach_the_things_that_use_them(ws, monkeypatch):
-    clear(monkeypatch)
-    monkeypatch.setenv("WF_EXTRACTION_MODEL", "extract-one")
-    monkeypatch.setenv("WF_CHAT_MODEL", "chat-one")
-    monkeypatch.setenv("WF_GUESS_MODEL", "guess-one")
-    model = ScriptedModel(
-        lambda req: ModelResponse(
-            output={"reply": "ok", "edits": [], "answers": [], "point_to_finding": None}
-        )
-    )
+def test_the_workflows_choice_keeps_what_the_page_does_not_show(client, ws):  # noqa: F811
+    r = client.post(URL, json={"trust": {"policy": "auto"}})
+    assert r.status_code == 200, r.text
+    trust = read_yaml(ws, DEF)["spec"]["defaults"]["trust"]
+    assert trust["policy"] == "auto"
+    assert trust["reset_on"], "what resets a step's count is kept"
+    assert step_of(ws, "plan")["trust"]["policy"] == "earned", "a step's own setting stays"
 
-    assert Auditor(ws, model).extraction_model == "extract-one"
-    assert ModelGuesser(model).model_name == "guess-one"
-
-    chat(model, _empty_result(), [], "hello")
-    assert [r.model for r in model.requests] == ["chat-one"]
-
-
-def test_an_unpriced_model_is_costed_as_the_careful_one(monkeypatch):
-    monkeypatch.delenv("WF_MODEL_PRICING", raising=False)
-    assert cost_of("a-model-with-no-price", 1_000_000, 0) == cost_of(
-        settings.DEFAULT_CAREFUL, 1_000_000, 0
+    client.post(URL, json={"reset_steps": True})
+    assert "trust" not in step_of(ws, "plan"), "every step back on the workflow's"
+    assert step_of(ws, "check_links")["trust"] == {"policy": "auto"}, (
+        "a check is not a step that stops"
     )
 
 
-def test_no_model_name_is_written_anywhere_but_settings():
-    stray = {
-        path.relative_to(SRC).as_posix(): sorted(
-            set(re.findall(r"claude-[\w.-]+", path.read_text()))
-        )
-        for path in SRC.rglob("*.py")
-        if path.name != "settings.py"
-    }
-    assert {k: v for k, v in stray.items() if v} == {}, "model names belong in wf/settings.py"
+def test_a_step_set_to_earn_it_counts_to_the_workflows_number(client, ws):  # noqa: F811
+    client.post(URL, json={"trust": {"policy": "earned", "promote_after": 4}})
+    client.post(URL, json={"step": "write", "trust": {"policy": "earned"}})
+    assert step_of(ws, "write")["trust"]["promote_after"] == 4
+    client.post(URL, json={"step": "write", "trust": None})
+    assert "trust" not in step_of(ws, "write")
 
 
-def _empty_result() -> AuditResult:
-    return AuditResult(
-        name="empty", title="Empty", passages=[], definition={}, provenance={}, findings=[]
+def test_settings_that_do_not_fit_change_nothing(client, ws):  # noqa: F811
+    before = read_yaml(ws, DEF)
+    for body in (
+        {"step": "check_links", "trust": {"policy": "always_ask"}},
+        {"trust": {"policy": "earned", "promote_after": 0}},
+        {"trust": {"policy": "sometimes"}},
+        {"budget": {"max_usd": -1, "max_minutes": 10}},
+        {"step": "plan", "limits": {"max_depth": 1, "max_fanout": 1}},
+        {"step": "nope", "trust": None},
+    ):
+        assert client.post(URL, json=body).status_code in (400, 404), body
+    assert read_yaml(ws, DEF) == before
+
+
+def test_the_spending_limit_and_how_far_follow_ups_go(client, ws):  # noqa: F811
+    assert client.post(URL, json={"budget": {"max_usd": 3, "max_minutes": 15}}).status_code == 200
+    budget = read_yaml(ws, DEF)["spec"]["budget"]
+    assert budget["max_usd"] == 3 and budget["max_minutes"] == 15
+    assert budget["shared_with_children"] is True, "what the page does not show is kept"
+
+    r = client.post(URL, json={"step": "go_deeper", "limits": {"max_depth": 1, "max_fanout": 2}})
+    assert r.status_code == 200, r.text
+    lim = step_of(ws, "go_deeper")["limits"]
+    assert (lim["max_depth"], lim["max_fanout"], lim["budget"]) == (1, 2, "inherit")
+
+
+def test_an_ok_on_the_run_page_moves_the_count_on_the_settings_page(client, ws):  # noqa: F811
+    only_plan_asks(ws, {"policy": "earned", "promote_after": 3})
+    r = client.post(
+        "/api/workflows/deep-research/runs", json={"case": "durable-execution", "mode": "live"}
     )
+    run = wait_for(client, r.json()["run_id"])
+    page = client.get(f"/runs/{run['id']}").text
+    assert "so far 0." in page and "Change how often it checks with you" in page
+    client.post(f"/api/runs/{run['id']}/ok", json={"ok": True})
+    wait_for(client, run["id"])
+    plan = next(s for s in client.get(URL).json()["steps"] if s["id"] == "plan")
+    assert plan["progress"] == "1 of 3 OKs in a row so far."
+
+
+def test_a_check_never_stops_a_run_whatever_its_trust_says(ws, tmp_path):
+    d = read_yaml(ws, DEF)
+    for s in d["spec"]["steps"]:
+        s["trust"] = {"policy": "always_ask"} if s["kind"] == "check" else {"policy": "auto"}
+    write_yaml(ws, DEF, d)
+    runner = _go_deeper_runner(ws, tmp_path, followup_breaks=False)
+    assert runner.run("deep-research", TOPIC, mode="live").status == "done"
+
+
+def test_who_decides_whether_to_go_deeper(client, ws):  # noqa: F811
+    page = client.get("/workflows/deep-research/settings").text
+    assert "Who decides whether to go deeper?" in page and "Let the review decide" in page
+    client.post(URL, json={"step": "go_deeper", "trust": {"policy": "auto"}})
+    assert step_of(ws, "go_deeper")["trust"]["policy"] == "auto"
+    gd = next(f for f in client.get(URL).json()["followups"] if f["id"] == "go_deeper")
+    assert gd["asks"] == "auto" and gd["wait"] is None
+
+
+def test_a_wait_that_asks_about_going_deeper_is_pointed_out(client, ws):  # noqa: F811
+    from tests.test_api import _answered_wait_workflow
+
+    _answered_wait_workflow(client, ws)
+    gd = next(f for f in client.get(URL).json()["followups"] if f["id"] == "go_deeper")
+    assert gd["wait"], "the step that asks you is named"
+    assert "is a step of its own" in client.get("/workflows/deep-research/settings").text

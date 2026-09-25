@@ -421,6 +421,7 @@ class Interpreter:
             result=result,
             depth=depth,
             own_spend=resume.spent_usd if resume else 0.0,
+            approved=resume.approved if resume else None,
         )
         if resume is not None:
             self._decide(
@@ -517,6 +518,10 @@ class Interpreter:
                     sr = self.ledger.start_step(ctx.run, step, fanout_index=None, input=None)
                     self.ledger.finish_step(sr, status="skipped")
                     return "done"
+
+        # a step that starts follow-up research asks before it spends anything
+        if self._gate_before(ctx, step):
+            return "waiting"
 
         # for_each
         if step.for_each is not None:
@@ -1078,44 +1083,61 @@ class Interpreter:
     # -- gates -------------------------------------------------------------
 
     def fingerprint(self, wf: Workflow, step: Step) -> str:
-        """What drives the step, as far as its trust is concerned: a change to any of it
-        starts the count of OKs again. ``reset_on`` names the parts; by default all."""
-        trust = wf.trust_for(step)
-        parts = (trust.reset_on if trust and trust.reset_on else None) or [
-            "skill",
-            "model",
-            "tools",
-            "input_schema",
-            "output_schema",
-        ]
-        skill = self.ws.load_skill(step.skill) if step.skill else None
-        seen = {
-            "skill": [
-                step.skill,
-                hashlib.sha256((skill.body if skill else "").encode()).hexdigest(),
-            ],
-            "model": wf.model_for(step),
-            "tools": sorted(step.tools or {}),
-            "input_schema": step.input,
-            "output_schema": step.output.schema_ if step.output else None,
-        }
-        picked = {k: seen.get(k) for k in sorted(parts)}
-        return hashlib.sha256(json.dumps(picked, sort_keys=True, default=str).encode()).hexdigest()[
-            :32
-        ]
+        return fingerprint(self.ws, wf, step)
 
     def _gate(self, ctx: _Ctx, step: Step) -> bool:
         """Whether the run stops after ``step`` for someone's OK, saying why either way.
+        A step that starts follow-up research asks before it starts instead."""
+        if not stops_for_ok(step) or asks_before(step):
+            return False
+        if ctx.state["steps"].get(step.id, {}).get("status") != "done":
+            return False
+        return self._stop_for_ok(ctx, step, self._latest_record(ctx.run, step.id), before=None)
+
+    def _gate_before(self, ctx: _Ctx, step: Step) -> bool:
+        """Whether the run stops before ``step`` starts follow-up research, for someone's OK
+        on what it would start. Asked once: the OK carries the run on into the step."""
+        if not asks_before(step):
+            return False
+        if ctx.approved == step.id:
+            ctx.approved = None
+            return False
+        try:
+            items = render(step.for_each, ctx.state) if step.for_each else None
+        except (ExprError, EvalError):
+            items = None
+        names = [
+            str(i.get("topic") or i) if isinstance(i, dict) else str(i)
+            for i in (items if isinstance(items, list) else [])
+        ]
+        cap = step.effective_max_fanout
+        if cap is not None:
+            names = names[:cap]
+        what = (
+            f"It would start {len(names)} follow-up{'s' if len(names) != 1 else ''}: "
+            + "; ".join(f"“{n}”" for n in names)
+            + "."
+            if names
+            else "It would start more research."
+        )
+        return self._stop_for_ok(ctx, step, None, before=what)
+
+    def _stop_for_ok(
+        self, ctx: _Ctx, step: Step, sr: StepRun | None, *, before: str | None
+    ) -> bool:
+        """Whether this step's trust stops the run here, recording why either way.
 
         Only a real run stops, and only at the top: a follow-up was approved when
         someone chose to go deeper, and a dry run shows where it would have stopped."""
-        if step.kind == "wait" or ctx.state["steps"].get(step.id, {}).get("status") != "done":
-            return False
         trust = ctx.wf.trust_for(step)
         if trust is None or trust.policy == "auto":
             return False
-        sr = self._latest_record(ctx.run, step.id)
         name = step.title or step.id
+        went_on = (
+            f"Started “{name}” without asking."
+            if before
+            else f"Carried on after “{name}” without asking."
+        )
         fp = self.fingerprint(ctx.wf, step)
         if trust.policy == "earned":
             needed = trust.promote_after or 3
@@ -1126,7 +1148,7 @@ class Interpreter:
                     sr,
                     step.id,
                     kind="control",
-                    text=f"Carried on after “{name}” without asking.",
+                    text=went_on,
                     reason=f"You have said OK to it {oks} times in a row since it last changed.",
                 )
                 return False
@@ -1142,7 +1164,7 @@ class Interpreter:
                 sr,
                 step.id,
                 kind="control",
-                text=f"Carried on after “{name}” without asking.",
+                text=went_on,
                 reason="A follow-up does not stop for your OK: you approved going deeper in the run that started it.",
             )
             return False
@@ -1152,8 +1174,12 @@ class Interpreter:
                 sr,
                 step.id,
                 kind="control",
-                text=f"In a real run, this is where it would stop for your OK on “{name}”.",
-                reason=why,
+                text=(
+                    f"In a real run, this is where it would ask you before starting “{name}”."
+                    if before
+                    else f"In a real run, this is where it would stop for your OK on “{name}”."
+                ),
+                reason=f"{before} {why}" if before else why,
             )
             return False
         self.ledger.open_gate(ctx.run, step.id, sr, fp)
@@ -1162,8 +1188,12 @@ class Interpreter:
             sr,
             step.id,
             kind="control",
-            text=f"Waiting for your OK on “{name}” before carrying on.",
-            reason=why,
+            text=(
+                f"Waiting for your OK before starting “{name}”."
+                if before
+                else f"Waiting for your OK on “{name}” before carrying on."
+            ),
+            reason=f"{before} {why}" if before else why,
         )
         ctx.result.trace.append(TraceEvent(step.id, "gate"))
         return True
@@ -1189,9 +1219,12 @@ class Interpreter:
         self._continue_numbering(run, rows)
         step = wf.step(gate.step_id)
         name = (step.title if step else None) or gate.step_id
-        said = ("You said OK." if ok else "You stopped the run here.") + (
-            f" You added: “{note}”" if note else ""
-        )
+        first = step is not None and asks_before(step)
+        said = (
+            ("You said OK to starting it." if first else "You said OK.")
+            if ok
+            else "You stopped the run here."
+        ) + (f" You added: “{note}”" if note else "")
         note_on = next((r for r in reversed(rows) if r.id == gate.step_run_id), None)
         if not ok:
             self.ledger.decision(
@@ -1232,12 +1265,18 @@ class Interpreter:
                 depth=run.depth or 0,
                 resume=_Resume(
                     steps=steps,
-                    start_at=wf.step_index(gate.step_id) + 1,
+                    # asked before it started: the run carries on into it
+                    start_at=wf.step_index(gate.step_id) + (0 if first else 1),
                     spent_usd=run.spent_usd or 0.0,
                     note_on=note_on,
                     note_step_id=gate.step_id,
                     said=said,
-                    why=f"Your answer after “{name}”. The run carried on from here.",
+                    why=(
+                        f"Your answer before “{name}”. It started from here."
+                        if first
+                        else f"Your answer after “{name}”. The run carried on from here."
+                    ),
+                    approved=gate.step_id if first else None,
                 ),
             )
 
@@ -1329,6 +1368,41 @@ def _changed_steps(then: WorkflowVersion | None, wf: Workflow, ids: set[str]) ->
     return out
 
 
+def asks_before(step: Step) -> bool:
+    """A step that starts follow-up research is asked about before it starts, since what
+    it would start is what the OK is about, and afterwards the money is spent."""
+    return step.kind == "subworkflow"
+
+
+def stops_for_ok(step: Step) -> bool:
+    """Whether a step can stop a run for someone's OK at all. A wait already waits for a
+    person, and a check is a mechanical test whose result is shown, not approved."""
+    return step.kind not in ("wait", "check")
+
+
+def fingerprint(ws: Workspace, wf: Workflow, step: Step) -> str:
+    """What drives the step, as far as its trust is concerned: a change to any of it
+    starts the count of OKs again. ``reset_on`` names the parts; by default all."""
+    trust = wf.trust_for(step)
+    parts = (trust.reset_on if trust and trust.reset_on else None) or [
+        "skill",
+        "model",
+        "tools",
+        "input_schema",
+        "output_schema",
+    ]
+    skill = ws.load_skill(step.skill) if step.skill else None
+    seen = {
+        "skill": [step.skill, hashlib.sha256((skill.body if skill else "").encode()).hexdigest()],
+        "model": wf.model_for(step),
+        "tools": sorted(step.tools or {}),
+        "input_schema": step.input,
+        "output_schema": step.output.schema_ if step.output else None,
+    }
+    picked = {k: seen.get(k) for k in sorted(parts)}
+    return hashlib.sha256(json.dumps(picked, sort_keys=True, default=str).encode()).hexdigest()[:32]
+
+
 class _Resume:
     """Where a run picks up again: the results it already has, the step it starts at,
     what it had spent, and what happened, in words, for the run's record: the answer to
@@ -1345,9 +1419,12 @@ class _Resume:
         note_step_id: str,
         said: str,
         why: str,
+        approved: str | None = None,
     ):
         self.steps, self.start_at, self.spent_usd = steps, start_at, spent_usd
         self.note_on, self.note_step_id, self.said, self.why = note_on, note_step_id, said, why
+        # a step someone just said OK to starting: it starts without asking again
+        self.approved = approved
 
 
 @dataclass
@@ -1361,6 +1438,7 @@ class _Ctx:
     result: RunResult
     depth: int
     own_spend: float = 0.0
+    approved: str | None = None
 
     def spend(self, usd: float) -> None:
         self.own_spend += usd

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_macros.html" import trust_pill %}
+{% set s = data.summary %}
+{% block title %}Settings: {{ s.name }}{% endblock %}
+{% block bar_title %}<a href="/workflows/{{ name }}">{{ s.name }}</a> <span class="muted">settings</span>{% endblock %}
+{% block content %}
+<div data-settings="{{ name }}">
+<div class="card-head" style="margin-bottom:14px">
+  <div><h1>How “{{ s.name }}” runs</h1>
+  <p class="sub" style="margin:0">Each change is saved into the workflow, and the next run uses it. Past runs keep the settings they ran with.</p></div>
+  <span data-msg class="small"></span>
+</div>
+
+<div class="card">
+  <h2>Checking with you</h2>
+  <p class="sub">When a step finishes in a real run, it can stop for your OK before the run carries on. The more it checks with you, the more you see and the slower runs go; the less, the more you hand over. Dry runs never stop, and follow-up research does not stop either: you already said to go deeper.</p>
+  <form data-trust-default>
+    <div class="opts">
+      {% for c in data.choices %}
+      <label class="opt"><input type="radio" name="policy" value="{{ c.policy }}"{% if data.trust and data.trust.policy == c.policy %} checked{% endif %}>
+        <span>{{ c.label }}{% if c.policy == "earned" %}: after <input type="number" name="promote_after" min="1" max="20" style="width:4.5em" value="{{ (data.trust.promote_after if data.trust and data.trust.promote_after) or 3 }}" aria-label="OKs in a row"> OKs in a row{% endif %}
+        <div class="cons">{{ c.consequence }}</div></span></label>
+      {% endfor %}
+    </div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+
+  <h3 style="margin-top:18px">Step by step</h3>
+  <p class="small muted">A step can have a setting of its own. Steps marked “as the workflow” follow the choice above.
+  {% if data.own_count %}<button class="btn btn-sm" type="button" data-reset-steps>Put every step on the workflow's setting</button>{% endif %}</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Step</th><th>Checks with you</th><th>So far</th></tr></thead>
+    <tbody>
+    {% for st in data.steps %}
+    <tr>
+      <td><strong>{{ st.title }}</strong><div class="small muted">{{ st.kind_label }}</div></td>
+      <td>
+        {% if st.stops %}
+        <select data-step-trust="{{ st.id }}" aria-label="How often “{{ st.title }}” checks with you">
+          <option value=""{% if not st.own %} selected{% endif %}>As the workflow</option>
+          {% for c in data.choices %}<option value="{{ c.policy }}"{% if st.own == c.policy %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        </select>
+        <div class="small muted">{{ st.detail }}</div>
+        {% else %}{{ trust_pill(st.label) }}<div class="small muted">{{ st.detail }}</div>{% endif %}
+      </td>
+      <td class="small">{{ st.progress or "" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h2>Spending limit</h2>
+  <p class="sub">The most one run may spend, follow-up research included. A run that reaches it stops there.</p>
+  <form data-budget class="actions">
+    <label>$ <input type="number" name="max_usd" min="0.5" step="0.5" style="width:6em" value="{{ data.budget.max_usd if data.budget and data.budget.max_usd }}" aria-label="Money"></label>
+    <label>and <input type="number" name="max_minutes" min="1" step="1" style="width:6em" value="{{ data.budget.max_minutes if data.budget and data.budget.max_minutes }}" aria-label="Minutes"> minutes</label>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </form>
+</div>
+
+{% for f in data.followups %}
+<div class="card">
+  <h2>Going deeper: “{{ f.title }}”</h2>
+  <p class="sub">How much more research one run can start, and who decides. Each follow-up is a run of its own and costs money; they share the spending limit above.</p>
+  <form data-who-decides="{{ f.id }}">
+    <h3>Who decides whether to go deeper?</h3>
+    <div class="opts">
+      <label class="opt"><input type="radio" name="asks" value="always_ask"{% if f.asks == "always_ask" %} checked{% endif %}>
+        <span>Ask me first<div class="cons">A real run stops before starting any follow-up and shows you what it would research. Nothing is spent on it until you say yes.</div></span></label>
+      <label class="opt"><input type="radio" name="asks" value="auto"{% if f.asks == "auto" %} checked{% endif %}>
+        <span>Let the review decide, within the limits<div class="cons">Follow-ups start when the review asks for them, up to the limits below and the spending limit. You see them on the run afterwards, but nothing waits for you.</div></span></label>
+    </div>
+    {% if f.asks == "earned" %}<p class="small muted">Now: it asks until you have said yes enough times in a row, then decides by itself.</p>{% endif %}
+    {% if f.wait %}<p class="small muted">This workflow also asks you at “{{ f.wait }}” whether to go deeper and into what. That is a step of its own: to stop being asked there, ask the chat on its draft to remove that step.</p>{% endif %}
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+  <h3 style="margin-top:14px">How far it can go</h3>
+  <form data-limits="{{ f.id }}" class="actions">
+    <label>Up to <input type="number" name="max_fanout" min="1" max="10" style="width:4.5em" value="{{ f.max_fanout or '' }}" aria-label="Follow-ups"> follow-ups</label>
+    <label>, <input type="number" name="max_depth" min="1" max="5" style="width:4.5em" value="{{ f.max_depth or '' }}" aria-label="Levels"> level(s) deep</label>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </form>
+  <p class="small muted" style="margin:6px 0 0">One level: follow-ups cannot start follow-ups of their own. Two: each can start its own, within the same limits.</p>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

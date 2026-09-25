@@ -203,7 +203,7 @@ def test_workflow_view_is_in_plain_language(client):
     titles = " ".join(s["title"] + " " + s["description"] for s in steps)
     assert "claude" not in titles.lower() and ".md" not in titles and "exa" not in titles.lower()
     assert steps[0]["origin"] == "I suggested this"
-    assert steps[8]["trust"] == "Always asks you"
+    assert steps[8]["trust"] == "Checks every time"
     assert steps[3]["does_not_check"] == [
         "Whether the page supports the claim",
         "How reliable or recent the source is",
