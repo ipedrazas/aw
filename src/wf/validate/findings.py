@@ -49,86 +49,93 @@ class Finding(BaseModel):
 # -- question templates ------------------------------------------------------
 # Keyed by the last meaningful part of the field path. ``{step}`` is the step title.
 
+# Each question is about the person's work, in their words, and names the step it is
+# about; the reason says what goes wrong for them, not which rule the definition breaks.
+# A demo audience said the first version was about how the system works, and that it
+# made them feel stupid.
 QUESTIONS: dict[str, tuple[str, str]] = {
     "read_by": (
-        "Which step starts from the {input} you type?",
-        "No step reads it, so every step works without it.",
+        "Which step should use the {input}?",
+        "Nothing uses it yet, so it would be ignored.",
     ),
     "when": (
-        "What decides which way this goes?",
-        "“{step}” is a branch, but nothing says what makes it run.",
+        "When should “{step}” happen?",
+        "Your document says it only happens sometimes, but not when.",
     ),
     "does_not_check": (
-        "What does this check not tell you?",
-        "Every check states what it does not verify, so a pass is not read as more than it is.",
+        "What can “{step}” miss?",
+        "For example, a link can open and still point to the wrong page. Saying what it "
+        "misses stops a pass being read as more than it is.",
     ),
     "checks": (
-        "What exactly does this check look at?",
-        "The check needs a stated test, so a pass means one thing.",
+        "What should “{step}” look for?",
+        "Say what counts as a pass, so a pass always means the same thing.",
     ),
     "requires_approval": (
-        "Who signs this off before it leaves the system?",
-        "“{step}” does something outside the system and nobody is named to approve it.",
+        "Should someone approve “{step}” before it goes out?",
+        "It sends something outside the system.",
     ),
     "side_effects": (
-        "What does this action change or send outside the system?",
-        "Anything that leaves the system has to be declared before it can be gated.",
+        "Does “{step}” send or change anything outside the system?",
+        "Anything that goes out can be held for someone to approve, but only if it is listed.",
     ),
     "deadline": (
-        "How long do you wait, and then what?",
-        "“{step}” waits for someone. Without a deadline it can wait forever.",
+        "How long should the run wait at “{step}”?",
+        "Without a limit it could wait forever.",
     ),
     "on_timeout": (
-        "How long do you wait, and then what?",
-        "When the wait runs out, something has to happen.",
+        "If nobody answers “{step}” in time, what then?",
+        "",
     ),
     "hands_on": (
-        "What does this step hand on from what it found?",
-        "“{step}” searches, but what it hands on has no place for an address, so the steps after it cannot cite or check a single source.",
+        "What should “{step}” pass on from what it finds?",
+        "To cite a source or check its link later, the steps after it need its address.",
     ),
     "follows": (
-        "When does this go deeper, and into what?",
-        "“{step}” comes after a person reviews the work, but nothing connects the two: it would run every time, with no topic to go deeper into.",
+        "When should “{step}” go deeper, and into what?",
+        "It comes after someone reviews the work, but nothing links the two, so it would "
+        "run every time with nothing to look into.",
     ),
     "input": (
-        "What does this step start from?",
-        "“{step}” reads nothing, so it starts with nothing and makes up what it needs.",
+        "What does “{step}” work from?",
+        "It is not given anything, so it would have to make up what it needs.",
     ),
     "tools": (
-        "Can this step search the web?",
-        "“{step}” says it searches, but it has no search tool, so it can only answer from memory.",
+        "Should “{step}” search the web?",
+        "Your document says it searches. Without search it can only answer from what the "
+        "model already knows.",
     ),
     "limits": (
-        "How far can this go, and how much can it spend?",
-        "“{step}” can start more work. It needs a depth, a fan-out and a budget.",
+        "How much more research can “{step}” start?",
+        "Each follow-up is another run, and costs money. A limit stops it running away.",
     ),
     "max_fanout": (
-        "How many of these can run at once?",
-        "“{step}” runs once per item in a list. The list needs a ceiling.",
+        "At most how many times should “{step}” run, one per item?",
+        "It runs once for each item on a list, one after another. A limit keeps the cost known.",
     ),
     "budget": (
-        "How much may one run spend, in money and time?",
-        "This workflow can start more work, so it needs one budget for the whole tree.",
+        "How much should one run be allowed to spend?",
+        "It can start more research, so one limit covers everything it starts, in money and time.",
     ),
     "enum": (
-        "Which outcomes are possible here?",
-        "Later steps branch on this, so every outcome has to be listed.",
+        "What can “{step}” come back with?",
+        "Later steps depend on it, so each possible outcome needs naming.",
     ),
     "unhandled": (
-        "What happens when {field_name} is “{value}”?",
-        "The process can produce this outcome, but no step handles it.",
+        "When “{step}” comes back with “{value}”, what should happen?",
+        "Your document does not say.",
     ),
     "title": (
-        "What would you call this step?",
-        "Steps are shown in your words, not the system's.",
+        "What do you call this step?",
+        "",
     ),
     "shows_user": (
-        "What should you see when this step finishes?",
-        "Each step says what it shows you: its result, its decisions, or both.",
+        "What do you want to see when “{step}” finishes?",
+        "",
     ),
     "trust": (
-        "Should this step wait for you, run on its own, or earn that over time?",
-        "Nothing runs unattended by default.",
+        "Should “{step}” check with you before it carries on?",
+        "",
     ),
     "model": (
         "Which model should run “{step}”?",
@@ -137,23 +144,27 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "A default for every step can be set on the workflow page.",
     ),
     "skill": (
-        "What are the instructions for this step?",
-        "A judgement step runs from an instruction file you can read and change.",
+        "How should “{step}” be done?",
+        "Your answer becomes the instructions it follows. You can change them later.",
     ),
     "output.schema": (
-        "What does this step produce?",
-        "Later steps read fields from this output, so its shape has to be declared.",
+        "What does “{step}” produce?",
+        "Later steps use it, so it needs to be clear what it is.",
     ),
     "run": (
-        "Which routine does “{step}” run?",
-        "A check or a tool does not use a model. It runs one of the routines below, and "
-        "those are the only ones the system has.",
+        "What should “{step}” do?",
+        "It needs no judgement, so it uses one of these built-in actions.",
     ),
     "workflow": (
-        "Which workflow does this start?",
-        "A sub-workflow step names the workflow it runs.",
+        "Which of your workflows should “{step}” start?",
+        "",
     ),
 }
+
+
+def plain_value(v: Any) -> str:
+    """An outcome as a person would say it: “more research”, not “more_research”."""
+    return str(v).replace("_", " ")
 
 
 def question_for(field: str, step_title: str | None = None, **fmt: Any) -> tuple[str, str]:
@@ -164,13 +175,13 @@ def question_for(field: str, step_title: str | None = None, **fmt: Any) -> tuple
         key = "unhandled"
     if ".output.enum." in field:
         key = "enum"
-    q, d = QUESTIONS.get(key, (f"What should “{key}” be?", ""))
+    q, d = QUESTIONS.get(key, (f"What should “{key.replace('_', ' ')}” be for “{{step}}”?", ""))
     ctx = {
         "step": step_title or "this step",
         "field": field,
         "field_name": field,
         "value": "",
-        **fmt,
+        **{k: plain_value(v) if k == "value" else v for k, v in fmt.items()},
     }
     return q.format(**ctx), d.format(**ctx)
 
@@ -178,17 +189,17 @@ def question_for(field: str, step_title: str | None = None, **fmt: Any) -> tuple
 TRUST_OPTIONS = [
     Option(
         value={"policy": "always_ask"},
-        label="Always ask me",
-        consequence="Pauses every run at this step.",
+        label="Yes, every time",
+        consequence="The run waits here for your OK.",
     ),
     Option(
         value={"policy": "earned", "promote_after": 3},
-        label="Ask me until I have accepted it 3 times in a row",
-        consequence="Runs on its own once it has earned it. Any change to the step starts the count again.",
+        label="Until I have said OK 3 times in a row",
+        consequence="Then it carries on by itself. Any change to the step starts the count again.",
     ),
     Option(
         value={"policy": "auto"},
-        label="Run on its own",
+        label="No, it can carry on by itself",
         consequence="You see the result afterwards.",
     ),
 ]
@@ -237,18 +248,18 @@ DEADLINE_OPTIONS = [
 LIMITS_OPTIONS = [
     Option(
         value={"max_depth": 1, "max_fanout": 3, "budget": "inherit"},
-        label="One level deeper, up to 3 at a time",
-        consequence="Follow-ups cannot start follow-ups of their own. They share this run's budget.",
+        label="Up to 3 follow-ups",
+        consequence="A follow-up cannot start more of its own. They share this run's spending limit.",
     ),
     Option(
         value={"max_depth": 2, "max_fanout": 3, "budget": "inherit"},
-        label="Two levels deeper, up to 3 at a time",
-        consequence="A follow-up can go one level further. They share this run's budget.",
+        label="Up to 3 follow-ups, and each can start 3 more",
+        consequence="Goes further, and can cost several times as much. They share this run's spending limit.",
     ),
     Option(
         value={"max_depth": 1, "max_fanout": 1, "budget": "inherit"},
-        label="One follow-up, one level deeper",
-        consequence="The cheapest: at most one more piece of research per run.",
+        label="One follow-up at most",
+        consequence="The cheapest: one more piece of research per run.",
     ),
 ]
 
@@ -319,7 +330,7 @@ def default_options(field: str) -> tuple[AnswerKind, list[Option]]:
         ]
     if key == "side_effects":
         return "choice", [
-            Option(value="none", label="Nothing leaves the system"),
+            Option(value="none", label="No, nothing goes out"),
             Option(value=["send_email"], label="It sends an email"),
             Option(value=["write_external"], label="It writes to another system"),
         ]

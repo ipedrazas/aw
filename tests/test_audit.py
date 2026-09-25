@@ -92,17 +92,18 @@ def test_audit_finds_the_real_gaps_in_the_process_document(ws):
 
     # (e) the writer fills the link status column before the links are checked
     conflict = by[("conflict", "steps.write.input")]
-    assert "runs later" in conflict.detail
+    assert "comes after it" in conflict.detail
+    assert conflict.question.endswith("Which should come first?"), "asked about order"
     assert conflict.source_text and "writer" in conflict.source_text.lower()
 
     # (c) "make sure the links work" is unscoped
     dnc = by[("gap", "steps.check_links.does_not_check")]
-    assert dnc.question == "What does this check not tell you?"
+    assert dnc.question == "What can “Check the links” miss?"
     assert "makes sure the links work" in (dnc.source_text or "")
 
     # (d) "send the final report to the client" has no owner
     approval = by[("gap", "steps.send.requires_approval")]
-    assert approval.question == "Who signs this off before it leaves the system?"
+    assert approval.question.startswith("Should someone approve “")
     assert "send the final report" in (approval.source_text or "")
 
     # (b) rejection is mentioned but never handled
@@ -111,9 +112,9 @@ def test_audit_finds_the_real_gaps_in_the_process_document(ws):
 
     # (a) the reviewer decides, with no stated criteria
     when = by[("gap", "steps.more_research.when")]
-    assert when.question == "What decides which way this goes?"
+    assert when.question == "When should “Another research pass” happen?"
     assert "The reviewer decides whether more research is needed" in (when.source_text or "")
-    assert any("more_research" in o.label for o in when.options)
+    assert any("“more research”" in o.label for o in when.options)
 
     # recursion without limits or a budget
     assert ("gap", "steps.more_research.limits") in by
@@ -380,8 +381,8 @@ def test_a_document_with_no_stated_input_assumes_a_topic():
 
     assert draft.definition["spec"]["inputs"] == {"topic": {"type": "string", "required": True}}
     assumption = next(a for a in draft.assumptions if a.field == "spec.inputs.topic")
-    assert assumption.question == "We assumed the process starts from a topic. Is that right?"
-    assert assumption.detail == "The document does not say what the process starts from."
+    assert assumption.question == "I took it that this starts from a topic. Is that right?"
+    assert assumption.detail == "Your document does not say what it starts from."
     assert assumption.unblocks == 0
 
 
@@ -469,3 +470,21 @@ def test_saying_a_careful_step_does_not_need_it_puts_it_on_the_default(ws):
     assert wf.step("review").model is None
     assert wf.model_for(wf.step("review")) == wf.spec.defaults.model
     assert not any(x.field == "steps.review.model" for x in result.open_findings())
+
+
+def test_the_questions_are_about_their_work_in_their_words(ws):
+    """At the demo, the questions read as being about how the system works, and made
+    people feel stupid. Each one names the step it is about by its title, says
+    outcomes as a person would, and never tests them with "we assumed"."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    wf = result.workflow()
+    for f in result.open_findings():
+        words = " ".join([f.question, f.detail or "", *(o.label for o in f.options)])
+        assert "_" not in words, f"an id or a raw value in: {words}"
+        assert "We assumed" not in f.question
+        for system_word in ("verdict", "fan-out", "schema", "routine", "tree", "field"):
+            assert system_word not in words.lower(), f"“{system_word}” in: {words}"
+        step = wf.step(f.step_id) if f.step_id else None
+        if step is not None:
+            assert f"“{step.title}”" in f.question, f"which step? {f.question}"

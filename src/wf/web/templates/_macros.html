@@ -26,7 +26,7 @@
   <div class="q" id="q-{{ f.id }}">
     <div class="qtext">{{ f.question }}</div>
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
-    {% if f.source_text %}<div class="says">The document says: “{{ f.source_text }}”</div>{% endif %}
+    {% if f.source_text %}<div class="says">Your document says: “{{ f.source_text }}”</div>{% endif %}
     <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}" data-question="{{ f.question }}">
       {% if f.answer_kind in ("choice", "bool") %}
         <div class="opts">

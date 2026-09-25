@@ -11,7 +11,7 @@ from typing import Any
 from wf.expr import ExprError, Path, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace
 
-from .findings import Finding, Option, make_finding
+from .findings import Finding, Option, make_finding, plain_value
 from .schemas import SchemaResolver
 
 
@@ -117,7 +117,9 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                         step=step,
                         detail=f"“{step.title if step else step_id}” runs when {p} is “{lit}”, but the possible values are {_join(enum)}. Nothing can produce it.",
                         answer_kind="choice",
-                        options=[Option(value=v, label=f"It meant “{v}”") for v in enum]
+                        options=[
+                            Option(value=v, label=f"It meant “{plain_value(v)}”") for v in enum
+                        ]
                         + [
                             Option(
                                 value={"add_enum": lit}, label=f"Add “{lit}” as a possible outcome"
@@ -132,7 +134,7 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                         "gap",
                         f"steps.{producer.id if producer else p.segments[1]}.output.continue_on.{p.segments[-1]}.{v}",
                         step=producer,
-                        detail=f"“{producer.title if producer else p.segments[1]}” can decide “{v}”, but no step says what happens then.",
+                        detail="Your document does not say.",
                         answer_kind="choice",
                         options=_unhandled_options(wf, producer, v),
                         unblocks=_steps_after(wf, producer),
@@ -194,15 +196,15 @@ def _unhandled_options(wf: Workflow, producer: Step | None, value: Any) -> list[
     opts = [
         Option(
             value={"op": "continue"},
-            label="Nothing more runs. Carry on to the next step.",
-            consequence="The run continues as if the step had nothing to add.",
+            label="Carry on with the next step",
+            consequence="Nothing extra happens for this outcome.",
         )
     ]
     opts.append(
         Option(
             value={"op": "stop"},
-            label="Stop the run and show me.",
-            consequence="Adds a step that pauses here for you.",
+            label="Stop and show me",
+            consequence="The run waits here for you.",
         )
     )
     if producer is not None:
@@ -212,8 +214,8 @@ def _unhandled_options(wf: Workflow, producer: Step | None, value: Any) -> list[
                 opts.append(
                     Option(
                         value={"op": "branch_to", "step": later.id},
-                        label=f"Run “{later.title or later.id}” only in this case",
-                        consequence=f"Adds a condition to “{later.title or later.id}”.",
+                        label=f"Only then, do “{later.title or later.id}”",
+                        consequence=f"“{later.title or later.id}” is skipped for every other outcome.",
                     )
                 )
                 break

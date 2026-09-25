@@ -22,6 +22,7 @@ from wf.validate import (
     says_it_searches,
     with_sources,
 )
+from wf.validate.findings import plain_value
 
 from .ingest import Passage
 
@@ -146,20 +147,23 @@ def build_draft(
         unblocks: int = 0,
         options: list[Option] | None = None,
         source: str | None = None,
+        question: str | None = None,
     ) -> None:
+        """``what`` is how the draft read the document, said as a sentence in the first
+        person ("I gave ..."): the person is checking a reading, not being tested."""
         assumptions.append(
             Finding(
                 type="assumption",
                 step_id=step["id"] if step else None,
                 field=field,
-                question=f"We assumed {what}. Is that right?",
+                question=question or f"{what} Is that right?",
                 detail=why,
                 source_text=source,
                 answer_kind="choice",
                 options=options
                 or [
-                    Option(value={"keep": True}, label="Yes, keep it"),
-                    Option(value={"keep": False}, label="No, I will answer this"),
+                    Option(value={"keep": True}, label="Yes"),
+                    Option(value={"keep": False}, label="No, I will say what it should be"),
                 ],
                 unblocks=unblocks,
                 raised_by="auditor",
@@ -205,8 +209,8 @@ def build_draft(
         assume(
             "spec.inputs.topic",
             None,
-            "the process starts from a topic",
-            "The document does not say what the process starts from.",
+            "I took it that this starts from a topic.",
+            "Your document does not say what it starts from.",
         )
 
     steps_out: list[dict[str, Any]] = []
@@ -255,8 +259,8 @@ def build_draft(
             assume(
                 f"steps.{sid}.input",
                 s,
-                f"“{s['title']}” starts from everything before it",
-                "The document does not say what this step reads. It is given the inputs and what every earlier step produced.",
+                f"I gave “{s['title']}” everything before it to work from.",
+                "Your document does not say what it works from.",
             )
         if step_input:
             step["input"] = step_input
@@ -294,8 +298,8 @@ def build_draft(
                     assume(
                         f"steps.{sid}.output.schema",
                         s,
-                        f"“{s['title']}” produces a short summary only",
-                        "The document does not say what this step hands to the next one.",
+                        f"I took it that “{s['title']}” passes on a short summary.",
+                        "Your document does not say what it passes on to the next step.",
                         unblocks=_readers(sid, steps_in),
                     )
             if props is not None:
@@ -316,10 +320,10 @@ def build_draft(
                 assume(
                     f"steps.{sid}.model",
                     s,
-                    f"“{s['title']}” looks like it needs the thorough model",
-                    "The document asks for more care here than for the other steps. The thorough "
-                    "model is slower and costs more per run; every other step runs on the "
-                    "workflow's default.",
+                    f"“{s['title']}” sounded like it needs extra care, so I gave it the "
+                    "thorough model.",
+                    "Your document asks for more care here than elsewhere. The thorough model is "
+                    "slower and costs more per run; the other steps use the workflow's default.",
                     options=CAREFUL_OPTIONS,
                     source=passage_text(s.get("passage")),
                 )
@@ -335,9 +339,14 @@ def build_draft(
                 assume(
                     f"steps.{sid}.skill",
                     s,
-                    f"the instructions for “{s['title']}” follow from its name alone",
-                    "The document names this step but does not say how to do it. The generated instructions say only what the step is for.",
+                    "",
+                    "If it is, it follows instructions written from what the step is for.",
                     unblocks=_readers(sid, steps_in),
+                    question=f"Your document does not say how to do “{s['title']}”. Is its name enough to go on?",
+                    options=[
+                        Option(value={"keep": True}, label="Yes, the name says it"),
+                        Option(value={"keep": False}, label="No, I will explain"),
+                    ],
                 )
             if s.get("mentions") and s["mentions"].get("process"):
                 assumptions.append(
@@ -350,8 +359,8 @@ def build_draft(
                 assume(
                     f"steps.{sid}.tools",
                     s,
-                    f"“{s['title']}” searches the web and reads the pages it finds",
-                    "It says it searches, and without a search tool it could only answer from memory.",
+                    f"“{s['title']}” sounded like it searches the web, so I let it.",
+                    "Without search it can only answer from what the model already knows.",
                 )
             # what it found is what the next step cites and the link check opens
             rel = (step.get("output") or {}).get("schema")
@@ -423,8 +432,9 @@ def build_draft(
                 assume(
                     f"steps.{sid}.follows",
                     s,
-                    f"“{s['title']}” runs only when “{wait['title']}” asks for it, once per topic named",
-                    "The document puts a person's review before it, so the review decides.",
+                    f"I took it that “{s['title']}” only happens when “{wait['title']}” asks for "
+                    "it, once for each topic named.",
+                    "Your document puts someone's review before it, so the review decides.",
                 )
             # what it runs over: the first list produced by the step it reads from
             for ref in s.get("reads_from", []):
@@ -464,8 +474,8 @@ def build_draft(
                         type="gap",
                         step_id=sid,
                         field=f"steps.{sid}.when",
-                        question="What decides which way this goes?",
-                        detail=f"The document says “{s['title']}” happens when: {w.get('condition')}. It does not say what that depends on.",
+                        question=f"When should “{s['title']}” happen?",
+                        detail=f"Your document says: when {w.get('condition')}. Which of these is that?",
                         source_text=passage_text(w.get("passage")) or w.get("condition"),
                         answer_kind="choice",
                         options=_when_options(sid, steps_in),
@@ -546,14 +556,14 @@ def _when_options(sid: str, steps: list[dict[str, Any]]) -> list[Option]:
                 opts.append(
                     Option(
                         value={"step": s["id"], "field": p["name"], "equals": v},
-                        label=f"When “{s['title']}” says “{v}”",
+                        label=f"When “{s['title']}” comes back with “{plain_value(v)}”",
                     )
                 )
     opts.append(
         Option(
             value={"always": True},
-            label="It always happens",
-            consequence="No branch; the step runs every time.",
+            label="Every time",
+            consequence="It is not skipped for any outcome.",
         )
     )
     return opts
