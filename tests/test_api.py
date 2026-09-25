@@ -75,6 +75,17 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"] == "what did I write?":
+                # the chat is sent what the person first wrote, and can quote it
+                return ModelResponse(
+                    output={
+                        "reply": "You wrote: " + req.input.get("document", "(nothing)"),
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"].startswith("close "):
                 # the person says the question does not apply; nothing in the draft changes
                 return ModelResponse(
@@ -289,6 +300,8 @@ def test_audit_answer_chat_undo_and_dry_run(client):
     run2 = wait_for(client, d2.json()["run_id"])
     diff = client.get(f"/api/runs/{run['id']}/diff/{run2['id']}").json()
     assert diff["run_a"] == run["id"] and diff["steps"]
+    page = client.get("/runs")
+    assert page.status_code == 200 and run["id"] in page.text and run2["id"] in page.text
 
     # saving writes the definition into the workspace
     s = client.post(f"/api/audits/{aid}/save").json()
@@ -567,6 +580,21 @@ def test_chat_answer_that_does_not_fit_leaves_the_question_open(client):
     )
     assert bad.status_code == 400
     assert "so the draft is unchanged" in bad.json()["detail"]
+
+
+def test_the_chat_opens_with_what_the_person_wrote_and_is_sent_it(client):
+    """The draft page shows the document the draft came from, and the chat can refer to it."""
+    doc = DOC.read_text().strip()
+    audit = client.post("/api/audits", json={"document": doc, "name": "client-research"}).json()
+    assert audit["document"] == doc
+
+    page = client.get(f"/audits/{audit['id']}")
+    assert page.status_code == 200
+    assert "# How we do deep research reports" in page.text
+
+    c = client.post(f"/api/audits/{audit['id']}/chat", json={"message": "what did I write?"})
+    assert c.status_code == 200, c.text
+    assert c.json()["chat"][-1]["text"] == "You wrote: " + doc
 
 
 def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):

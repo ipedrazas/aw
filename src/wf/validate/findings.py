@@ -131,9 +131,9 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "Nothing runs unattended by default.",
     ),
     "model": (
-        "How much judgement does “{step}” need?",
-        "This picks the model that runs it. Quick judgement is faster and cheaper; careful "
-        "judgement is slower, costs more per run, and does better at writing and review. "
+        "Which model should run “{step}”?",
+        "Standard is faster and cheaper, and enough for planning and research. Thorough is "
+        "slower, costs more per run, and does better at writing and review. "
         "A default for every step can be set on the workflow page.",
     ),
     "skill": (
@@ -195,17 +195,21 @@ TRUST_OPTIONS = [
 
 
 def model_options() -> list[Option]:
-    """The two levels of judgement, named by whatever the deployment configured."""
+    """The two models the deployment configured, named for what they are good at.
+
+    "Standard" and "thorough" rather than "quick" and "careful": people read quick
+    judgement as careless judgement, and neither is.
+    """
     return [
         Option(
             value=quick_model(),
-            label="Quick judgement",
-            consequence="Faster and cheaper. Good for planning and research.",
+            label="Standard",
+            consequence="Faster and cheaper. Enough for planning and research.",
         ),
         Option(
             value=careful_model(),
-            label="Careful judgement",
-            consequence="Slower and costs more. Good for writing and review.",
+            label="Thorough",
+            consequence="Slower and costs more. Better at writing and review.",
         ),
     ]
 

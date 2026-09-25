@@ -125,7 +125,7 @@ def test_audit_finds_the_real_gaps_in_the_process_document(ws):
     # asked about; one it singles out is, with the words that singled it out
     assert not any(f.field == "steps.brief.model" for f in assumed)
     careful = next(f for f in assumed if f.field == "steps.review.model")
-    assert careful.source_text and "careful judgement" in careful.question
+    assert careful.source_text and "thorough model" in careful.question
     assert all(f.options and f.options[0].label.startswith("Yes") for f in assumed)
 
     # ordered by what they unblock: the branch and the budget come before the send approval
@@ -291,13 +291,13 @@ def test_a_step_s_judgement_only_takes_one_of_the_configured_models(ws):
 
     with pytest.raises(AnswerRejected) as e:
         auditor.answer(result, f.id, "the careful one, obviously")
-    assert "Careful judgement" in str(e.value)
+    assert "Thorough" in str(e.value)
     assert result.workflow().step("review").model is None
     assert f.status == "open"
     assert not any(c.path == "steps.review.model" for c in result.changes)
 
     # the words of one of the choices are taken as that choice
-    auditor.answer(result, f.id, "Careful judgement")
+    auditor.answer(result, f.id, "Thorough")
     assert result.workflow().step("review").model == result.workflow().step("write").model
 
 

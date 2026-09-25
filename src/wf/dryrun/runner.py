@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -388,13 +389,30 @@ class DryRunner:
         return diff_runs(self.snapshot(run_a), self.snapshot(run_b))
 
     def list_runs(self, workflow: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        """The latest runs, newest first, each followed by the follow-ups it started.
+
+        A follow-up sits under its parent however long after it started, with ``level``
+        saying how far down, and every run's ``total_cost`` is its own cost plus its
+        follow-ups', which is what starting it actually cost. ``cost`` stays its own, so
+        adding up ``cost`` over the list counts nothing twice.
+        """
         with self.db.session() as s:
             q = s.query(Run).order_by(Run.started_at.desc())
             if workflow:
                 q = q.filter_by(workflow_name=workflow)
             runs = q.limit(limit).all()
+            # follow-ups the limit or the filter left out still belong under their parent
+            have = {r.id for r in runs}
+            frontier = list(have)
+            while frontier:
+                more = s.query(Run).filter(Run.parent_run_id.in_(frontier)).all()
+                more = [r for r in more if r.id not in have]
+                have.update(r.id for r in more)
+                runs.extend(more)
+                frontier = [r.id for r in more]
+            runs = _as_tree(runs)
             out = []
-            for r in runs:
+            for r, level in runs:
                 steps = s.query(StepRun).filter_by(run_id=r.id).order_by(StepRun.seq).all()
                 statuses = [
                     {"step_id": st.step_id, "status": st.status} for st in _latest_attempts(steps)
@@ -409,12 +427,55 @@ class DryRunner:
                         "cost": r.spent_usd,
                         "depth": r.depth,
                         "parent_run_id": r.parent_run_id,
+                        "level": level,
                         "case_name": r.case_name,
                         "started_at": r.started_at.isoformat() if r.started_at else None,
                         "steps": statuses,
                     }
                 )
+            _add_totals(out)
             return out
+
+
+def _as_tree(runs: list[Run]) -> list[tuple[Run, int]]:
+    """Runs whose parent is not in the list first, newest first, each followed by its
+    follow-ups in the order they started, depth first."""
+    ids = {r.id for r in runs}
+    children: dict[str, list[Run]] = {}
+    roots: list[Run] = []
+    for r in runs:
+        if r.parent_run_id and r.parent_run_id in ids:
+            children.setdefault(r.parent_run_id, []).append(r)
+        else:
+            roots.append(r)
+    never = datetime.min
+
+    def started(r: Run) -> datetime:
+        return (r.started_at or never).replace(tzinfo=None)
+
+    out: list[tuple[Run, int]] = []
+
+    def walk(r: Run, level: int) -> None:
+        out.append((r, level))
+        for c in sorted(children.get(r.id, []), key=started):
+            walk(c, level + 1)
+
+    for r in sorted(roots, key=started, reverse=True):
+        walk(r, 0)
+    return out
+
+
+def _add_totals(rows: list[dict[str, Any]]) -> None:
+    """Each row's own cost plus everything below it, filled in from the bottom up."""
+    by_id = {r["id"]: r for r in rows}
+    for r in rows:
+        r["total_cost"] = r["cost"] or 0.0
+        r["followups"] = 0
+    for r in reversed(rows):
+        parent = by_id.get(r["parent_run_id"] or "")
+        if parent is not None:
+            parent["total_cost"] += r["total_cost"]
+            parent["followups"] += 1 + r["followups"]
 
 
 def _latest_attempts(steps: list[StepRun]) -> list[StepRun]:

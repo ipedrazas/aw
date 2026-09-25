@@ -97,6 +97,7 @@ You are helping a person turn how they work into an explicit workflow. The draft
 
 Rules:
 - Plain sentences. No jargon, no field names, no file names, no model or tool names. Say "recent web pages and news", not a provider.
+- What the person first wrote is under "document". The draft was built from it; quote their words when it helps, and when they ask what they said.
 - Answer questions about the draft honestly from what is in <data>. If the answer is one of the open questions on the right, say so and point to it.
 - Only propose an edit when the person asked for a change or clearly agreed to one. Never change limits, approvals or what leaves the system without them saying so.
 - When the person answers an open question in the chat, record it under answers rather than editing the draft directly.
@@ -144,14 +145,17 @@ def chat(
     model_name: str | None = None,
     audit_id: str | None = None,
     about: str | None = None,
+    document: str | None = None,
 ) -> ChatOutcome:
-    """One chat turn. ``about`` is the id of the question the person opened the chat from."""
+    """One chat turn. ``about`` is the id of the question the person opened the chat from;
+    ``document`` is what they first wrote, which the draft was built from."""
     focus = next((f for f in result.open_findings() if f.id == about), None) if about else None
     req = ModelRequest(
         tag="audit:chat",
         model=model_name or chat_model(),
         system=CHAT_INSTRUCTIONS,
         input={
+            **({"document": document} if document else {}),
             "draft": result.definition,
             "open_questions": [_finding_view(f) for f in result.open_findings()],
             "recent_changes": [c.model_dump() for c in result.changes[-10:]],

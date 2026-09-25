@@ -68,7 +68,7 @@ def when_label(wf: Workflow, step: Step) -> str | None:
 
 def model_choices(wf: Workflow) -> list[dict[str, str]]:
     """The models a step or the workflow's default can be set to: the ones this
-    deployment configured, named by how much judgement they bring, and any other
+    deployment configured, named for what they are good at, and any other
     model this workflow already names, so the current choice is always on the list."""
     out = [{"value": str(o.value), "label": o.label} for o in model_options()]
     seen = {o["value"] for o in out}

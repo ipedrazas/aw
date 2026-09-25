@@ -300,3 +300,35 @@ def test_a_follow_up_that_broke_says_where_and_why_and_can_be_skipped(ws, tmp_pa
     assert [s["status"] for s in done.steps if s["step_id"] == "assemble"] == ["done"], (
         "the report is put together without the follow-up"
     )
+
+
+def test_the_runs_list_puts_follow_ups_under_their_parent_with_the_cost_of_both(ws, tmp_path):
+    """Follow-ups start after their parent and before the next run, so newest-first alone
+    would put them above the run that started them, and the parent's cost would hide theirs."""
+    runner = _go_deeper_runner(ws, tmp_path, followup_breaks=False)
+    first = runner.run("deep-research", TOPIC)
+    second = runner.run("deep-research", TOPIC)
+    assert first.status == "done" and second.status == "done"
+
+    rows = runner.list_runs()
+    by_id = {r["id"]: r for r in rows}
+    parent_at = {r["id"]: i for i, r in enumerate(rows)}
+    followups = [r for r in rows if r["parent_run_id"]]
+    assert followups, "the reviewer asked for a follow-up in each run"
+    for r in followups:
+        assert parent_at[r["parent_run_id"]] < parent_at[r["id"]], (
+            "a follow-up sits under its parent"
+        )
+        assert r["level"] == by_id[r["parent_run_id"]]["level"] + 1
+    assert [r["id"] for r in rows if r["level"] == 0] == [second.run_id, first.run_id]
+
+    top = by_id[first.run_id]
+    below = [r for r in rows if r["parent_run_id"] == first.run_id]
+    assert all((r["cost"] or 0) > 0 for r in below), "the follow-ups cost something"
+    assert top["followups"] >= len(below) > 0
+    assert top["total_cost"] == pytest.approx(
+        (top["cost"] or 0) + sum(r["total_cost"] for r in below)
+    ), "a run's total is its own cost and everything it started"
+    assert sum(r["cost"] or 0 for r in rows) == pytest.approx(
+        sum(r["total_cost"] for r in rows if r["level"] == 0)
+    ), "adding up own costs counts nothing twice"
