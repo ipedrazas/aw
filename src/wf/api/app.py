@@ -24,6 +24,7 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
+from wf.audit.asking import asking, skip
 from wf.audit.catalog import known_workflows
 from wf.audit.chat import chat
 from wf.audit.question import _set, answer_definition
@@ -465,10 +466,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.post("/api/audits/{audit_id}/answer")
     def answer(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        result, _rec = _audit(st(), audit_id)
+        result, rec = _audit(st(), audit_id)
         fid = body.get("finding_id")
-        if not any(f.id == fid for f in result.findings):
+        finding = next((f for f in result.findings if f.id == fid), None)
+        if finding is None:
             raise HTTPException(404, "That question is not on this draft any more.")
+        # answered where the chat asked it: what they chose is their side of the conversation
+        said = _said(finding, body.get("answer")) if body.get("from_chat") else None
         try:
             changes = st().auditor.answer(result, fid, body.get("answer"))
         except AnswerRejected as e:
@@ -484,8 +488,18 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 changes += st().auditor.answer(result, other, body.get("answer"))
             except AnswerRejected as e:
                 not_taken.append(str(e))
-        st().audits.save(audit_id, result, changes, by="answer")
+        chat = [*(rec.chat or []), {"role": "user", "text": said}] if said else None
+        st().audits.save(audit_id, result, changes, by="answer", chat=chat)
         return {**_audit_view(st(), audit_id), "not_taken": not_taken}
+
+    @app.post("/api/audits/{audit_id}/skip")
+    def skip_question(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Put the question the chat asked aside for now; the chat asks the next one."""
+        result, rec = _audit(st(), audit_id)
+        st().audits.save(
+            audit_id, result, [], by="user", chat=skip(rec.chat or [], str(body.get("finding_id")))
+        )
+        return _audit_view(st(), audit_id)
 
     @app.post("/api/audits/{audit_id}/edit")
     def edit(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -997,6 +1011,42 @@ def _audit(state: AppState, audit_id: str) -> tuple[AuditResult, Any]:
         raise HTTPException(404, "No such draft.") from e
 
 
+def _said(finding: Any, answer: Any) -> str:
+    """An answer as the person would have said it: the choice's words, or theirs."""
+    for o in finding.options or []:
+        if o.value == answer:
+            return o.label
+    if isinstance(answer, list):
+        return "; ".join(str(a) for a in answer)
+    return str(answer)
+
+
+def _asked_view(result: Any, chat: list[dict[str, Any]], wf: Any) -> dict[str, Any]:
+    """The questions the chat asked, as they are now: still open (with the steps they
+    also answer for, still open), or how they were answered."""
+    titles = {s.id: s.title or s.id for s in wf.spec.steps}
+    by_id = {f.id: f for f in result.findings}
+    out: dict[str, Any] = {}
+    for m in chat:
+        a = m.get("asks")
+        if not a or a["finding_id"] not in by_id:
+            continue
+        f = by_id[a["finding_id"]]
+        similar = [
+            by_id[i] for i in a.get("similar", []) if i in by_id and by_id[i].status == "open"
+        ]
+        out[f.id] = {
+            **f.model_dump(mode="json"),
+            "step_title": titles.get(f.step_id, f.step_id),
+            "said": _said(f, f.answer) if f.status == "answered" else f.answer,
+            "similar": [
+                {"id": o.id, "step_id": o.step_id, "step_title": titles.get(o.step_id, o.step_id)}
+                for o in similar
+            ],
+        }
+    return out
+
+
 def _questions(findings, wf: Any = None) -> list[dict[str, Any]]:
     """The open questions by group. A question asked the same way of several steps is
     shown once, with the steps it can also answer for under ``similar``; ``count`` is
@@ -1053,6 +1103,9 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         # what the person first wrote; the chat opens with it, as they said it
         "document": rec.document,
         "chat": rec.chat or [],
+        "asked": _asked_view(result, rec.chat or [], wf),
+        # the question the chat is waiting on: what they type next is about it
+        "asking": (f.id if (f := asking(result.findings, rec.chat or [])) else None),
         "explanations": result.explanations,
         "cases": state.ws.list_cases(),
         "runs": state.runner.list_runs(result.name),

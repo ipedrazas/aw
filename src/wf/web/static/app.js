@@ -145,7 +145,7 @@ function wireAnswers(base, reload) {
       /* the same answer for the ticked steps that are asked the same question */
       const also = Array.from(f.querySelectorAll("input[data-also]:checked")).map(c => c.value);
       try {
-        const d = await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer, also: also});
+        const d = await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer, also: also, from_chat: "fromChat" in f.dataset});
         kept.drop(keyAnswer);
         if (d.not_taken && d.not_taken.length) alert("Some steps did not take this answer and are still open:\n\n" + d.not_taken.join("\n"));
         reload(msg);
@@ -215,8 +215,16 @@ function wireAnswers(base, reload) {
     toBottom();
     const keyChat = "chat:" + id;
     const keep = () => box.value.trim() ? kept.set(keyChat, {text: box.value, about: about, question: aboutText.textContent}) : kept.drop(keyChat);
+    /* what they type next is about the question the chat just asked, unless they say otherwise */
+    if (chat.dataset.asking) setAbout(chat.dataset.asking, chat.dataset.askingQuestion);
     const unsent = kept.get(keyChat);
     if (unsent && !box.value) { box.value = unsent.text || ""; if (unsent.about) setAbout(unsent.about, unsent.question); grow(); }
+
+    document.querySelectorAll("[data-skip]").forEach(b => b.addEventListener("click", async () => {
+      b.disabled = true;
+      try { await postJSON(base + "/skip", {finding_id: b.dataset.skip}); reload(msg); }
+      catch (err) { say(msg, err.message, true); b.disabled = false; }
+    }));
     box.closest(".chat-box").addEventListener("click", () => box.focus());
     box.addEventListener("input", () => { grow(); keep(); });
     box.addEventListener("keydown", e => {

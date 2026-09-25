@@ -439,3 +439,17 @@ first. A follow-up step still to be given its limits is not also asked for its
 ceiling, which the limits carry. A test holds the sample draft's questions to this.
 Alternative: keep the wording and explain it in the chat. Why: at the demo the
 questions read as being about how the system works, and made people feel stupid.
+
+**The chat asks the open questions, one at a time, and the list stays.** A draft's
+chat opens by asking the question at the top of the list, with its choices, and asks
+the next once that one is closed, however it was closed: from the chat, from the list,
+by a chat turn that answered or dismissed it, or by an edit that made it go away. It
+does not ask again while its question is still open, since the person may be talking
+about something else, and what they type is sent as being about that question until
+they say otherwise. "Skip for now" puts a question aside until nothing else is left.
+The asking is worked out on every save (`wf.audit.asking.move_on`) and each asked
+question is shown from the question as it is now, so the chat and the list cannot
+disagree. Alternative: the model decides what to ask next. Why: the order is already
+decided (what it unblocks, conflicts first), and a model choosing it would ask
+differently each time for no gain; the model's part is explaining a question in the
+person's terms when they ask what it means.

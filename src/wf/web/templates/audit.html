@@ -50,13 +50,33 @@
       <div class="chat" data-chat-log>
         {% if audit.document %}<div class="msg msg-user msg-doc" title="What you first wrote">{{ audit.document }}</div>{% endif %}
         {% for m in audit.chat %}
+          {% if m.asks %}
+            {% set q = audit.asked.get(m.asks.finding_id) %}
+            {% if q %}
+            <div class="msg msg-assistant msg-ask">
+              {% if q.status == "open" and not m.asks.skipped and audit.asking == q.id %}
+                {{ question(q, audit.id, chat=False, where="chat-") }}
+              {% else %}
+                <div class="qtext">{{ q.question }}</div>
+                <div class="small muted">
+                  {%- if q.status == "answered" %}Answered: {{ q.said if q.said is string else (q.said | tojson) }}
+                  {%- elif q.status == "dismissed" %}Doesn't apply: {{ q.answer }}
+                  {%- elif m.asks.skipped %}Skipped for now. It is still on the right.
+                  {%- else %}Still open, on the right.{% endif -%}
+                </div>
+              {% endif %}
+            </div>
+            {% endif %}
+          {% else %}
           <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
+          {% endif %}
           {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
           {% for c in m.closed or [] %}<div class="msg-change"><strong>Closed:</strong> {{ c.question }} <span class="muted">{{ c.reason }}</span></div>{% endfor %}
           {% if m.point_to_finding %}<a class="small" href="#q-{{ m.point_to_finding }}" data-goto="q-{{ m.point_to_finding }}">Take me to that question</a>{% endif %}
         {% endfor %}
       </div>
-      <form class="chat-form" data-chat>
+      {% set waiting = audit.asked.get(audit.asking) if audit.asking else none %}
+      <form class="chat-form" data-chat{% if waiting %} data-asking="{{ waiting.id }}" data-asking-question="{{ waiting.question }}"{% endif %}>
         <div class="chat-about hidden" data-about>
           <span class="small muted">About:</span> <span class="small" data-about-text></span>
           <button type="button" class="chat-about-x" data-about-clear aria-label="Not about this question">×</button>

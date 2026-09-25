@@ -6,6 +6,7 @@ import copy
 from typing import Any
 
 from wf.audit import AuditResult, Change, Passage
+from wf.audit.asking import move_on
 from wf.audit.chat import ChatTurn
 from wf.schema import rename_references
 from wf.store import Audit, Database, DraftChange, FindingRecord
@@ -36,6 +37,8 @@ class AuditStore:
                 ],
             )
             rec.chat[0]["explanations"] = result.explanations
+            # and the chat asks the first question
+            rec.chat = move_on(result.findings, rec.chat)
             s.add(rec)
             s.flush()
             return rec.id
@@ -87,8 +90,8 @@ class AuditStore:
             rec.findings = [f.model_dump(mode="json") for f in result.findings]
             rec.title = result.title
             rec.name = result.name
-            if chat is not None:
-                rec.chat = chat
+            # whatever closed the question the chat asked, it moves on to the next one
+            rec.chat = move_on(result.findings, chat if chat is not None else list(rec.chat or []))
             if status:
                 rec.status = status
             if commit:
@@ -166,10 +169,13 @@ class AuditStore:
             return True
 
     def chat_history(self, rec: Audit) -> list[ChatTurn]:
+        # a question the chat asked is in the conversation as the question it asked
+        questions = {f["id"]: f["question"] for f in rec.findings or []}
         return [
             ChatTurn(
                 role=t.get("role", "user"),
-                text=t.get("text", ""),
+                text=t.get("text")
+                or (questions.get(t["asks"]["finding_id"], "") if t.get("asks") else ""),
                 changes=t.get("changes", []),
                 point_to_finding=t.get("point_to_finding"),
             )
@@ -201,7 +207,12 @@ def _opening_line(result: AuditResult) -> str:
     if added:
         parts.append(" ".join(e.get("decision", "") for e in added[:2]))
     parts.append(
-        f"{open_n} question{'s' if open_n != 1 else ''} left for you."
+        (
+            "I have one question for you."
+            if open_n == 1
+            else f"I have {open_n} questions for you. I will ask them one at a time, the "
+            "ones that matter most first; you can also answer them on the right."
+        )
         if open_n
         else "No questions left; you can try it on a topic."
     )
