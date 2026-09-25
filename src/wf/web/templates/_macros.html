@@ -5,8 +5,8 @@
 {%- endmacro %}
 
 {% macro status_pill(status) -%}
-  {%- set words = {"running": "Running", "done": "Done: PDF ready", "failed": "Stopped: something broke", "paused_budget": "Paused: spending limit", "waiting": "Needs you", "skipped": "Skipped", "paused": "Paused"} -%}
-  {%- set cls = {"running": "pill-blue", "done": "pill-green", "failed": "pill-red", "paused_budget": "pill-red", "waiting": "pill-yellow", "skipped": "pill-grey", "paused": "pill-yellow"} -%}
+  {%- set words = {"running": "Running", "done": "Done: PDF ready", "failed": "Stopped: something broke", "paused_budget": "Paused: spending limit", "waiting": "Needs you", "skipped": "Skipped", "paused": "Paused", "stopped": "Stopped by you"} -%}
+  {%- set cls = {"running": "pill-blue", "done": "pill-green", "failed": "pill-red", "paused_budget": "pill-red", "waiting": "pill-yellow", "skipped": "pill-grey", "paused": "pill-yellow", "stopped": "pill-grey"} -%}
   <span class="pill {{ cls.get(status, 'pill-grey') }}">{{ words.get(status, status) }}</span>
 {%- endmacro %}
 

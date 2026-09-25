@@ -20,7 +20,7 @@ from wf.activities import (
 )
 from wf.interpret import Interpreter, RunConfig, RunResult
 from wf.schema import Mode, Workflow, Workspace
-from wf.store import Artifact, Database, Decision, Expectation, Run, StepRun
+from wf.store import Artifact, Database, Decision, Expectation, Gate, Run, StepRun
 from wf.store.ledger import Ledger
 from wf.validate import Finding, validate
 
@@ -188,6 +188,20 @@ class DryRunner:
             ledger.close()
         return self.report(run_id, result=result)
 
+    def carry_on(self, run_id: str, *, ok: bool, note: str = "") -> DryRunReport:
+        """Answer the gate a real run stopped at: carry on, or stop the run there."""
+        ledger = Ledger(self.db)
+        try:
+            run = ledger.session.get(Run, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            wf = self.ws.load_definition(run.workflow_name)
+            interp = Interpreter(self.ws, self.activities, ledger, self.config)
+            result = interp.carry_on(run, wf, ok=ok, note=note)
+        finally:
+            ledger.close()
+        return self.report(run_id, result=result)
+
     def rescore_expectations(self, ledger: Ledger, result: RunResult) -> None:
         """Score a run's expectations again, against where it ended this time."""
         rows = ledger.session.query(Expectation).filter_by(run_id=result.run_id).all()
@@ -225,6 +239,12 @@ class DryRunner:
             decisions = s.query(Decision).filter_by(run_id=run_id).order_by(Decision.seq).all()
             artifacts = s.query(Artifact).filter_by(run_id=run_id).all()
             expectations = s.query(Expectation).filter_by(run_id=run_id).all()
+            gate = (
+                s.query(Gate)
+                .filter_by(run_id=run_id, status="waiting")
+                .order_by(Gate.created_at.desc())
+                .first()
+            )
             by_step: dict[str, list[dict[str, Any]]] = {}
             for d in decisions:
                 by_step.setdefault(d.step_id, []).append(
@@ -300,6 +320,8 @@ class DryRunner:
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "finished_at": run.finished_at.isoformat() if run.finished_at else None,
                 "steps": step_rows,
+                # the step a real run stopped after, for someone's OK
+                "gate": {"step_id": gate.step_id} if gate and run.status == "waiting" else None,
                 "artifacts": [
                     {
                         "id": a.id,

@@ -365,6 +365,20 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   });
 });
 
+/* Run page: say OK to the step a real run stopped after, or stop it there. */
+document.querySelectorAll("form[data-ok]").forEach(f => {
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const ok = (e.submitter || {}).value !== "stop", msg = f.querySelector("[data-msg]");
+    f.querySelectorAll("button").forEach(b => b.disabled = true);
+    say(msg, ok ? "Carrying on…" : "Stopping…");
+    try {
+      await postJSON("/api/runs/" + f.dataset.ok + "/ok", {ok: ok, note: (f.querySelector("[name=note]") || {}).value || ""});
+      location.reload();
+    } catch (err) { f.querySelectorAll("button").forEach(b => b.disabled = false); say(msg, err.message, true); }
+  });
+});
+
 /* Run page: pick a run that broke up again, at the step that broke. */
 document.querySelectorAll("[data-retry]").forEach(box => {
   const btns = box.querySelectorAll("button[data-then]"), msg = box.querySelector("[data-msg]");

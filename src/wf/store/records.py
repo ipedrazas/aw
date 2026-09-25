@@ -118,6 +118,28 @@ class Decision(Base):
     value: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
+class Gate(Base):
+    """A run stopped after a step for someone's OK, and what they said.
+
+    ``fingerprint`` is what drove the step when it ran (its instructions, model, tools
+    and shapes), so a step's OKs in a row are counted only while it stays the same.
+    """
+
+    __tablename__ = "gate"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("run.id"), index=True)
+    step_run_id: Mapped[str | None] = mapped_column(ForeignKey("step_run.id"), nullable=True)
+    workflow_name: Mapped[str] = mapped_column(String(200), index=True)
+    step_id: Mapped[str] = mapped_column(String(100))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(
+        String(16), default="waiting"
+    )  # waiting | accepted | stopped
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class FindingRecord(Base):
     __tablename__ = "finding"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)

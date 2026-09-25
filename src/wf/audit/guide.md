@@ -77,6 +77,12 @@ each answer. The draft only asks about a step's model when your text singles it 
 - Every step records what it decided and why, what it was sent, and every search it made.
 - A run stops at a step that needs approval, at a wait, or when it reaches its spending
   limit. There is no pause button yet.
+- A step can check with you before the run carries on: every time, until you have said
+  OK a number of times in a row, or never. A real run stops after that step; you look
+  at what it produced, then say OK or stop the run there. Any change to the step (its
+  instructions, model, tools, or what it produces) starts the count of OKs again. A dry
+  run only says where it would have stopped, and follow-up research does not stop,
+  because you already said to go deeper.
 - A run that broke can be picked up from the step that broke, once the cause is fixed,
   without paying again for the steps that finished. A step that cannot be fixed can be
   skipped, and the run carries on without it.

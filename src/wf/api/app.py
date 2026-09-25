@@ -35,7 +35,7 @@ from wf.logs import get_logger, setup_logging
 from wf.schema import Workspace, WorkspaceError, dump_workflow, load_workflow_dict
 from wf.settings import chat_model, provider, search_mode
 from wf.startup import announce
-from wf.store import Artifact, Database, Run
+from wf.store import Artifact, Database, Gate, Run
 from wf.store import repo as gitrepo
 from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
@@ -698,6 +698,22 @@ def create_app(state: AppState | None = None) -> FastAPI:
         _resume_in_background(st(), run_id, wf, answer)
         return {"run_id": run_id, "status": "running"}
 
+    @app.post("/api/runs/{run_id}/ok")
+    def ok_gate(run_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Say OK to the step a real run stopped after, and carry it on; or stop it there."""
+        with st().db.session() as s:
+            run = s.get(Run, run_id)
+            if run is None:
+                raise HTTPException(404, "No such run.")
+            gate = s.query(Gate).filter_by(run_id=run_id, status="waiting").first()
+            if run.status != "waiting" or gate is None:
+                raise HTTPException(409, "This run is not waiting for your OK.")
+            name = run.workflow_name
+        wf = _load(st(), name)
+        ok = bool(body.get("ok"))
+        _carry_on_in_background(st(), run_id, wf, ok=ok, note=str(body.get("note") or "").strip())
+        return {"run_id": run_id, "status": "running" if ok else "stopped"}
+
     @app.post("/api/runs/{run_id}/retry")
     def retry_run(run_id: str) -> dict[str, Any]:
         """Pick up a run that broke, at the step that broke, once the cause is fixed.
@@ -1158,6 +1174,48 @@ def _resume_in_background(state: AppState, run_id: str, wf: Any, answer: dict[st
         extra={"fields": {"event": "run.resumed", "run": run_id, "go_deeper": answer["go_deeper"]}},
     )
     threading.Thread(target=work, daemon=True, name=f"resume-{run_id[:8]}").start()
+
+
+def _carry_on_in_background(state: AppState, run_id: str, wf: Any, *, ok: bool, note: str) -> None:
+    """Answer the gate a run stopped at, on a worker thread with its own ledger. Stopping
+    is quick, and done before the request returns, so the page shows it at once."""
+    from wf.interpret import Interpreter
+    from wf.store.ledger import Ledger
+
+    ledger = Ledger(state.db)
+    interp = Interpreter(state.ws, state.runner.activities, ledger, state.runner.config)
+    run = ledger.session.get(Run, run_id)
+    if not ok:
+        try:
+            interp.carry_on(run, wf, ok=False, note=note)
+        finally:
+            ledger.close()
+        return
+    run.status = "running"
+    ledger._commit()
+
+    def work() -> None:
+        try:
+            interp.carry_on(run, wf, ok=True, note=note)
+        except Exception as e:  # noqa: BLE001
+            ledger.finish_run(
+                run,
+                status="failed",
+                outputs=run.outputs,
+                spent_usd=run.spent_usd or 0.0,
+                spent_minutes=run.spent_minutes or 0.0,
+                error=str(e),
+            )
+        finally:
+            ledger.close()
+
+    logger.info(
+        "run %s of %s carries on after an OK",
+        run_id[:8],
+        wf.metadata.name,
+        extra={"fields": {"event": "run.ok", "run": run_id}},
+    )
+    threading.Thread(target=work, daemon=True, name=f"ok-{run_id[:8]}").start()
 
 
 def _retry_in_background(state: AppState, run_id: str, wf: Any, *, skip: bool = False) -> None:
