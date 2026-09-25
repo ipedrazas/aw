@@ -22,21 +22,23 @@
   <label class="switch"><input type="checkbox" data-tech-switch> Show technical details</label>
 {%- endmacro %}
 
-{% macro question(f, audit_id, chat=True) -%}
-  <div class="q" id="q-{{ f.id }}">
+{#- where="chat" is the copy the chat asks: its own element ids, no "Chat about this"
+    (it is the chat), and a way to put it aside -#}
+{% macro question(f, audit_id, chat=True, where="") -%}
+  <div class="q" id="q-{{ where }}{{ f.id }}">
     <div class="qtext">{{ f.question }}</div>
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
     {% if f.source_text %}<div class="says">Your document says: “{{ f.source_text }}”</div>{% endif %}
-    <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}" data-question="{{ f.question }}">
+    <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}" data-question="{{ f.question }}"{% if where %} data-from-chat{% endif %}>
       {% if f.answer_kind in ("choice", "bool") %}
         <div class="opts">
           {% for o in f.options %}
-            <label class="opt"><input type="radio" name="a-{{ f.id }}" value='{{ o.value | tojson }}'>
+            <label class="opt"><input type="radio" name="a-{{ where }}{{ f.id }}" value='{{ o.value | tojson }}'>
               <span>{{ o.label }}{% if o.consequence %}<div class="cons">{{ o.consequence }}</div>{% endif %}</span></label>
           {% endfor %}
           {% if f.answer_kind == "bool" and not f.options %}
-            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="true"> Yes</label>
-            <label class="opt"><input type="radio" name="a-{{ f.id }}" value="false"> No</label>
+            <label class="opt"><input type="radio" name="a-{{ where }}{{ f.id }}" value="true"> Yes</label>
+            <label class="opt"><input type="radio" name="a-{{ where }}{{ f.id }}" value="false"> No</label>
           {% endif %}
         </div>
         {% if f.type == "assumption" %}
@@ -65,6 +67,7 @@
       <div class="actions">
         <button class="btn btn-sm btn-primary" type="submit">Answer</button>
         {% if chat %}<button class="btn btn-sm" type="button" data-chat-about="{{ f.id }}" data-question="{{ f.question }}">Chat about this</button>{% endif %}
+        {% if where %}<button class="btn btn-sm" type="button" data-skip="{{ f.id }}">Skip for now</button>{% endif %}
         <span data-msg class="small muted"></span>
       </div>
     </form>

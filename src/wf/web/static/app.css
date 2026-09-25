@@ -70,6 +70,8 @@ body.show-tech .tech-col{display:table-cell}
 .chat > :first-child{margin-top:auto}
 .msg{max-width:88%;padding:10px 14px;border-radius:14px;font-size:14.5px;white-space:pre-wrap}
 .msg-user{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:4px}
+.msg-ask{max-width:100%;align-self:stretch;background:#fff;border:1px solid var(--line)}
+.msg-ask .q{border:none;padding:0;margin:0}
 .msg-doc{max-height:280px;overflow:auto;flex-shrink:0}
 .msg-assistant{align-self:flex-start;background:#f1f2ee;border-bottom-left-radius:4px}
 .msg-change{align-self:flex-start;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13.5px;background:#fff}

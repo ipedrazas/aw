@@ -75,6 +75,18 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"] == "what did you ask?":
+                # the chat sees the question it asked as its own last turn, and what it is about
+                said = [c["text"] for c in req.input["conversation"] if c["role"] == "assistant"]
+                return ModelResponse(
+                    output={
+                        "reply": said[-1] + " | " + req.input.get("about", {}).get("question", ""),
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"] == "what can I ask?":
                 # the chat is sent how the system works and the other workflows
                 guide = req.input["how_it_works"]
@@ -704,7 +716,9 @@ def test_chat_can_close_a_question_that_does_not_apply(client):
     assert fid not in [f["id"] for g in body["questions"] for f in g["findings"]]
     closed = next(f for f in body["answered"] if f["id"] == fid)
     assert closed["status"] == "dismissed" and "form" in closed["answer"]
-    assert body["chat"][-1]["closed"][0]["finding_id"] == fid
+    reply, asked = body["chat"][-2], body["chat"][-1]
+    assert reply["closed"][0]["finding_id"] == fid
+    assert asked["asks"]["finding_id"] != fid, "and the chat moves on to the next question"
     page = client.get(f"/audits/{aid}").text
     assert "Closed:" in page and "Doesn't apply: The topic comes from a form" in page
 
@@ -715,7 +729,7 @@ def test_chat_can_close_a_question_that_does_not_apply(client):
 
     # closing an unknown question does nothing
     body = client.post(f"/api/audits/{aid}/chat", json={"message": "close nope"}).json()
-    assert body["chat"][-1]["closed"] == []
+    assert [m for m in body["chat"] if "closed" in m][-1]["closed"] == []
 
 
 def test_an_answer_given_while_the_chat_thinks_is_kept(client):
