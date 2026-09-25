@@ -1,6 +1,6 @@
 {% macro trust_pill(label) -%}
-  {%- if label in ("Asks you", "Always asks you") -%}<span class="pill pill-yellow">{{ label }}</span>
-  {%- elif label == "Automatic" -%}<span class="pill pill-grey">{{ label }}</span>
+  {%- if label.startswith("Checks") -%}<span class="pill pill-yellow">{{ label }}</span>
+  {%- elif label.startswith("Doesn't") -%}<span class="pill pill-grey">{{ label }}</span>
   {%- else -%}<span class="pill pill-green">{{ label }}</span>{%- endif -%}
 {%- endmacro %}
 

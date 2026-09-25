@@ -467,3 +467,28 @@ should get what it says; this is milestone 6 of the plan. The consequence for th
 sample workflow: its brief, research, writing, review and revision steps each ask until
 3 OKs in a row (the brief was 5, which people at the demo found too many), so its
 first real runs stop several times.
+
+**A workflow has a settings page for how it runs.** How often its steps check with you
+(for the workflow, and step by step, with each step's OKs in a row so far), its
+spending limit, and how far follow-up research may go. Each change is one commit to
+the definition, carried to its drafts, like the model choice: a run records the
+settings it ran with, and nothing but the definition holds them. Choosing for the
+workflow leaves a step's own setting alone, and says so; one button puts every step
+back on the workflow's. A check and a wait never stop for an OK, and now say so rather
+than showing a trust that does nothing. A run stopped for an OK says how far the step
+has got and links here. Alternative: an app-wide setting. Why: at the demo some people
+wanted no questions at all and most accepted the trade-off, and that is a choice about
+a particular process, made by whoever owns it.
+
+**A step that starts follow-up research asks before it starts.** Its gate is taken
+once its condition is met and before anything starts, and says what it would start
+("It would start 2 follow-ups: ..."); a yes carries the run on into the step without
+asking again, and a no stops the run with nothing started. Every other step asks after
+it has finished. Alternative: ask after, like the rest. Why: after, the follow-ups
+have run and the money is spent, so the OK would be about nothing; and the sample's
+"Go deeper" step said "It asks you first, every time", which the gate after it made
+untrue. The settings page offers the choice as "Who decides whether to go deeper?":
+ask me first (`always_ask`), or let the review decide within the limits (`auto`). A
+wait that asks the same question is pointed out there, since it is a step of its own
+and is not changed by the setting.
+

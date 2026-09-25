@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import threading
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 from wf.activities import (
     ActivityPolicy,
@@ -27,12 +29,13 @@ from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar,
 from wf.audit.asking import asking, skip
 from wf.audit.catalog import known_workflows
 from wf.audit.chat import chat
-from wf.audit.question import _set, answer_definition
+from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
+from wf.interpret.interpreter import fingerprint, stops_for_ok
 from wf.logs import get_logger, setup_logging
-from wf.schema import Workspace, WorkspaceError, dump_workflow, load_workflow_dict
+from wf.schema import Workflow, Workspace, WorkspaceError, dump_workflow, load_workflow_dict
 from wf.settings import chat_model, provider, search_mode
 from wf.startup import announce
 from wf.store import Artifact, Database, Gate, Run
@@ -41,7 +44,7 @@ from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
 
 from .audits import AuditStore
-from .plain import model_choices, plain_steps, plain_summary
+from .plain import TRUST_CHOICES, model_choices, plain_steps, plain_summary, trust_label
 from .skills import SkillError, edit_step_skill, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -234,33 +237,33 @@ def create_app(state: AppState | None = None) -> FastAPI:
             path, before, what = "spec.defaults.model", wf.spec.defaults.model, "the default"
         if model == before:
             return {**get_workflow(name), "commit": None, "drafts": 0}
-        defn = wf.model_dump(by_alias=True, exclude_none=True)
-        _set(defn, path, model)
-        st().ws.save_definition(load_workflow_dict(defn))
-        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
         said = f"{what} runs on {model}" if model else f"{what} runs on the default"
-        commit = gitrepo.commit_paths(st().ws.root, [rel], f"{name}: {said}", *st().author)
-        change = Change(
-            path=path, before=before, after=model, reason="Chosen on the workflow page."
-        )
-        drafts = _carry_to_drafts(st(), name, [change])
-        logger.info(
-            "workflow %s: %s set to %s",
-            name,
-            path,
-            model,
-            extra={
-                "fields": {
-                    "event": "workflow.model_set",
-                    "workflow": name,
-                    "field": path,
-                    "model": model,
-                    "commit": commit,
-                    "drafts": drafts,
-                }
-            },
+        commit, drafts = _commit_settings(
+            st(), wf, [(path, model, "Chosen on the workflow page.")], said
         )
         return {**get_workflow(name), "commit": commit, "drafts": drafts}
+
+    @app.get("/api/workflows/{name}/settings")
+    def get_settings(name: str) -> dict[str, Any]:
+        return _settings_view(st(), _load(st(), name))
+
+    @app.post("/api/workflows/{name}/settings")
+    def set_settings(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Change how the workflow runs, one setting at a time, saved into the definition
+        and committed like any other change to it:
+
+        ``{"trust": {...}}`` how often its steps check with you, unless a step says;
+        ``{"step": id, "trust": {...} | null}`` one step's own, or back to the workflow's;
+        ``{"reset_steps": true}`` every step back to the workflow's;
+        ``{"budget": {"max_usd": n, "max_minutes": n}}`` the spending limit for a run;
+        ``{"step": id, "limits": {"max_depth": n, "max_fanout": n}}`` how far a
+        follow-up step may go."""
+        wf = _load(st(), name)
+        edits, said = _settings_edits(wf, body)
+        if not edits:
+            return {**_settings_view(st(), wf), "commit": None, "drafts": 0}
+        commit, drafts = _commit_settings(st(), wf, edits, said)
+        return {**_settings_view(st(), _load(st(), name)), "commit": commit, "drafts": drafts}
 
     @app.post("/api/workflows/{name}/runs")
     def start_run(name: str, body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
@@ -859,6 +862,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def workflow_page(request: Request, name: str) -> Any:
         return page(request, "workflow", data=get_workflow(name), name=name)
 
+    @app.get("/workflows/{name}/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, name: str) -> Any:
+        return page(request, "settings", data=get_settings(name), name=name)
+
     @app.get("/skill", response_class=HTMLResponse)
     def skill_page(
         request: Request,
@@ -932,6 +939,204 @@ def _load(state: AppState, name: str):
         return state.ws.load_definition(name)
     except WorkspaceError as e:
         raise HTTPException(404, str(e)) from e
+
+
+def _commit_settings(
+    state: AppState, wf: Workflow, edits: list[tuple[str, Any, str]], said: str
+) -> tuple[str | None, int]:
+    """Write ``edits`` (path, value, reason) into the definition, commit it, and make the
+    same edits to its drafts. Nothing is written if the result would not load."""
+    name = wf.metadata.name
+    defn = wf.model_dump(by_alias=True, exclude_none=True)
+    changes = []
+    for path, value, reason in edits:
+        before = copy.deepcopy(_get(defn, path))
+        _set(defn, path, value)
+        changes.append(Change(path=path, before=before, after=value, reason=reason))
+    try:
+        new = load_workflow_dict(defn)
+    except ValidationError as e:
+        raise HTTPException(400, f"That does not fit the workflow, so nothing changed: {e}") from e
+    state.ws.save_definition(new)
+    rel = str(state.ws.definition_path(name).relative_to(state.ws.root))
+    commit = gitrepo.commit_paths(state.ws.root, [rel], f"{name}: {said}", *state.author)
+    drafts = _carry_to_drafts(state, name, changes)
+    logger.info(
+        "workflow %s: %s",
+        name,
+        said,
+        extra={
+            "fields": {
+                "event": "workflow.settings_set",
+                "workflow": name,
+                "fields": [c.path for c in changes],
+                "commit": commit,
+                "drafts": drafts,
+            }
+        },
+    )
+    return commit, drafts
+
+
+def _trust_value(raw: Any, keep: Any = None) -> dict[str, Any]:
+    """A trust setting from the page, keeping what the page does not show (``reset_on``)."""
+    policy = (raw or {}).get("policy")
+    if policy not in ("earned", "always_ask", "auto"):
+        raise HTTPException(400, "Choose how often it checks with you.")
+    out: dict[str, Any] = {"policy": policy}
+    if policy == "earned":
+        n = (raw or {}).get("promote_after")
+        n = 3 if n is None else n
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Say how many OKs in a row, as a number.") from None
+        if not 1 <= n <= 20:
+            raise HTTPException(400, "Between 1 and 20 OKs in a row.")
+        out["promote_after"] = n
+    if keep is not None and getattr(keep, "reset_on", None):
+        out["reset_on"] = list(keep.reset_on)
+    return out
+
+
+def _positive(v: Any, what: str, whole: bool = False) -> float | int:
+    try:
+        n = int(v) if whole else float(v)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"{what} has to be a number.") from None
+    if n <= 0:
+        raise HTTPException(400, f"{what} has to be more than nothing.")
+    return n
+
+
+def _settings_edits(wf: Workflow, body: dict[str, Any]) -> tuple[list[tuple[str, Any, str]], str]:
+    sid = body.get("step")
+    step = wf.step(sid) if sid else None
+    if sid and step is None:
+        raise HTTPException(404, f"There is no step “{sid}” in this workflow.")
+    title = f"“{step.title or step.id}”" if step else ""
+    if body.get("reset_steps"):
+        own = [s for s in wf.spec.steps if s.trust is not None and stops_for_ok(s)]
+        return (
+            [(f"steps.{s.id}.trust", None, "Back to the workflow's setting.") for s in own],
+            "every step checks with you as the workflow says",
+        )
+    if "trust" in body and step is None:
+        value = _trust_value(body["trust"], wf.spec.defaults.trust)
+        if wf.spec.defaults.trust and wf.spec.defaults.trust.model_dump(exclude_none=True) == value:
+            return [], ""
+        return (
+            [("spec.defaults.trust", value, "Chosen in the workflow's settings.")],
+            f"steps check with you: {value['policy']}",
+        )
+    if "trust" in body:
+        if not stops_for_ok(step):
+            raise HTTPException(400, f"{title} never stops for your OK.")
+        raw = body["trust"]
+        d = wf.spec.defaults.trust
+        if raw and not raw.get("promote_after") and d and d.promote_after:
+            # a step set to earn it counts to the same number as the rest, unless told
+            raw = {**raw, "promote_after": d.promote_after}
+        value = _trust_value(raw, step.trust) if raw else None
+        return (
+            [(f"steps.{sid}.trust", value, "Chosen in the workflow's settings.")],
+            f"{title} checks with you: {value['policy'] if value else 'as the workflow says'}",
+        )
+    if "budget" in body:
+        b = body["budget"] or {}
+        was = wf.spec.budget.model_dump(exclude_none=True) if wf.spec.budget else {}
+        value = {
+            **was,
+            "max_usd": _positive(b.get("max_usd"), "The money limit"),
+            "max_minutes": _positive(b.get("max_minutes"), "The time limit"),
+        }
+        return (
+            [("spec.budget", value, "Set in the workflow's settings.")],
+            f"a run may spend ${value['max_usd']} and {value['max_minutes']} minutes",
+        )
+    if "limits" in body:
+        if step is None or step.kind != "subworkflow":
+            raise HTTPException(400, "Only a step that starts more research has these limits.")
+        lim = body["limits"] or {}
+        was = step.limits.model_dump(exclude_none=True) if step.limits else {"budget": "inherit"}
+        value = {
+            **was,
+            "max_depth": _positive(lim.get("max_depth"), "How many levels", whole=True),
+            "max_fanout": _positive(lim.get("max_fanout"), "How many follow-ups", whole=True),
+        }
+        return (
+            [(f"steps.{sid}.limits", value, "Set in the workflow's settings.")],
+            f"{title} goes {value['max_depth']} deep, {value['max_fanout']} at most",
+        )
+    raise HTTPException(400, "Nothing to change.")
+
+
+def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
+    """The workflow's settings as its page shows them, with how far each step that checks
+    with you has got towards carrying on by itself."""
+    from wf.store.ledger import Ledger
+
+    default = wf.spec.defaults.trust
+    rows = {r["id"]: r for r in plain_steps(wf)}
+    ledger = Ledger(state.db)
+    try:
+        steps = []
+        for s in wf.spec.steps:
+            t = wf.trust_for(s)
+            label, detail = trust_label(wf, s)
+            progress = None
+            if stops_for_ok(s) and t is not None and t.policy == "earned":
+                n = t.promote_after or 3
+                oks = ledger.oks_in_a_row(wf.metadata.name, s.id, fingerprint(state.ws, wf, s))
+                progress = (
+                    f"Carries on by itself now: {oks} OKs in a row."
+                    if oks >= n
+                    else f"{oks} of {n} OKs in a row so far."
+                )
+            steps.append(
+                {
+                    "id": s.id,
+                    "title": s.title or s.id,
+                    "kind_label": rows[s.id]["kind_label"],
+                    "stops": stops_for_ok(s),
+                    "own": s.trust.policy if s.trust else None,
+                    "own_promote_after": s.trust.promote_after if s.trust else None,
+                    "label": label,
+                    "detail": detail,
+                    "progress": progress,
+                }
+            )
+    finally:
+        ledger.close()
+    return {
+        "name": wf.metadata.name,
+        "summary": plain_summary(wf),
+        "trust": default.model_dump(exclude_none=True) if default else None,
+        "choices": TRUST_CHOICES,
+        "steps": steps,
+        "own_count": sum(1 for s in steps if s["own"] and s["stops"]),
+        "budget": wf.spec.budget.model_dump(exclude_none=True) if wf.spec.budget else None,
+        "followups": [
+            {
+                "id": s.id,
+                "title": s.title or s.id,
+                "max_depth": s.limits.max_depth if s.limits else None,
+                "max_fanout": s.effective_max_fanout,
+                # who decides whether it starts: you, or whatever it follows
+                "asks": (t := wf.trust_for(s)).policy if t else None,
+                "wait": next(
+                    (
+                        w.title or w.id
+                        for w in wf.spec.steps
+                        if w.kind == "wait" and f"steps.{w.id}." in f"{s.when} {s.for_each}"
+                    ),
+                    None,
+                ),
+            }
+            for s in wf.spec.steps
+            if s.kind == "subworkflow"
+        ],
+    }
 
 
 def _carry_to_drafts(state: AppState, name: str, changes: list[Change]) -> int:

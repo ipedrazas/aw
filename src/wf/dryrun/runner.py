@@ -321,7 +321,9 @@ class DryRunner:
                 "finished_at": run.finished_at.isoformat() if run.finished_at else None,
                 "steps": step_rows,
                 # the step a real run stopped after, for someone's OK
-                "gate": {"step_id": gate.step_id} if gate and run.status == "waiting" else None,
+                "gate": _gate_view(gate, steps, by_step)
+                if gate and run.status == "waiting"
+                else None,
                 "artifacts": [
                     {
                         "id": a.id,
@@ -498,6 +500,22 @@ def _add_totals(rows: list[dict[str, Any]]) -> None:
         if parent is not None:
             parent["total_cost"] += r["total_cost"]
             parent["followups"] += 1 + r["followups"]
+
+
+def _gate_view(
+    gate: Gate, steps: list[StepRun], by_step: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    """The OK a run is waiting for. ``before`` when the step has not started: it asks
+    before starting follow-up research, and says what it would start."""
+    asked = [
+        d for d in by_step.get(gate.step_id, []) if d["text"].startswith("Waiting for your OK")
+    ]
+    return {
+        "step_id": gate.step_id,
+        "before": not any(s.step_id == gate.step_id for s in steps),
+        "text": asked[-1]["text"] if asked else "",
+        "reason": asked[-1]["reason"] if asked else "",
+    }
 
 
 def _latest_attempts(steps: list[StepRun]) -> list[StepRun]:

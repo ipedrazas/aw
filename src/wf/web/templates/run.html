@@ -35,6 +35,14 @@
       </div>
     {% elif run.status == "paused_budget" %}
       <div class="banner banner-red"><span>Paused at the spending limit. Nothing more runs until you say so.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% elif run.status == "waiting" and run.gate and run.gate.before %}
+      <div class="banner"><span>{{ run.gate.text }} {{ run.gate.reason }}</span><span>{{ status_pill(run.status) }}</span></div>
+      <form class="card waitform" data-ok="{{ run.id }}">
+        <p style="margin:0 0 8px"><strong>Start it?</strong> <span class="muted">Each follow-up is a run of its own, within the limits and the spending limit.</span></p>
+        <p><input type="text" name="note" placeholder="Anything to add? Optional." aria-label="A note with your answer"></p>
+        <div class="actions"><button class="btn btn-primary" type="submit" value="ok">Yes, start it</button><button class="btn" type="submit" value="stop">No, stop the run here</button><span data-msg class="small muted"></span></div>
+        <p class="small muted" style="margin:8px 0 0"><a href="/workflows/{{ run.workflow }}/settings">Change who decides whether to go deeper</a>.</p>
+      </form>
     {% elif run.status == "waiting" and run.gate %}
       {% set gated = run.steps | selectattr("step_id", "equalto", run.gate.step_id) | first %}
       <div class="banner"><span>Waiting for your OK on “{{ gated.title if gated else run.gate.step_id }}”. Look at what it produced below, then carry on or stop the run there.</span><span>{{ status_pill(run.status) }}</span></div>
@@ -101,11 +109,12 @@
       {% for d in s.decisions if d.kind == "guess" %}<div class="dec-guess" style="margin-top:8px"><strong>Guessed: {{ d.text }}</strong><div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
-      {% if run.gate and run.gate.step_id == s.step_id and run.status == "waiting" %}
+      {% if run.gate and not run.gate.before and run.gate.step_id == s.step_id and run.status == "waiting" %}
       <form class="waitform" data-ok="{{ run.id }}">
         <p style="margin:0 0 8px"><strong>Is this OK?</strong> <span class="muted">Look at what it produced below.</span></p>
         <p><input type="text" name="note" placeholder="Anything to add? Optional." aria-label="A note with your answer"></p>
         <div class="actions"><button class="btn btn-primary" type="submit" value="ok">OK, carry on</button><button class="btn" type="submit" value="stop">Stop the run here</button><span data-msg class="small muted"></span></div>
+        <p class="small muted" style="margin:8px 0 0">{% for d in s.decisions if d.text.startswith("Waiting for your OK") %}{% if loop.last %}{{ d.reason }} {% endif %}{% endfor %}<a href="/workflows/{{ run.workflow }}/settings">Change how often it checks with you</a>.</p>
       </form>
       {% endif %}
       {% if s.kind == "wait" and s.status == "waiting" and run.status == "waiting" %}

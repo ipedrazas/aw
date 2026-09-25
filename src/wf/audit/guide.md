@@ -83,6 +83,15 @@ each answer. The draft only asks about a step's model when your text singles it 
   instructions, model, tools, or what it produces) starts the count of OKs again. A dry
   run only says where it would have stopped, and follow-up research does not stop,
   because you already said to go deeper.
+- How often steps check with you is set on the workflow's Settings page: for the whole
+  workflow (until a step has earned your trust, every time, or never), and step by step.
+  The page shows how many OKs in a row each step has so far. The spending limit and how
+  far follow-up research may go are set there too. A real run that stops for your OK
+  links to it.
+- A step that starts follow-up research asks before it starts, not after: the run stops,
+  says what it would research, and nothing is spent on it until you say yes. On the
+  Settings page you can instead let the review decide, within the limits and the
+  spending limit; the follow-ups then start by themselves and show on the run.
 - A run that broke can be picked up from the step that broke, once the cause is fixed,
   without paying again for the steps that finished. A step that cannot be fixed can be
   skipped, and the run carries on without it.
