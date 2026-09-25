@@ -57,7 +57,7 @@ spec:
       decision_log: required
       trust:
         policy: earned
-        promote_after: 5             # a bad brief poisons everything after it
+        promote_after: 3
       origin:
         by: system
         kind: suggested

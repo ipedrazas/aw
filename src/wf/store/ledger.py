@@ -18,6 +18,7 @@ from .records import (
     Decision,
     Expectation,
     FindingRecord,
+    Gate,
     Run,
     StepRun,
     WorkflowVersion,
@@ -269,3 +270,47 @@ class Ledger:
         e.matched = matched
         e.actual = {"value": actual}
         self._commit()
+
+    # -- gates ---------------------------------------------------------------------
+
+    def open_gate(self, run: Run, step_id: str, step_run: StepRun | None, fingerprint: str) -> Gate:
+        g = Gate(
+            run_id=run.id,
+            step_run_id=step_run.id if step_run else None,
+            workflow_name=run.workflow_name,
+            step_id=step_id,
+            fingerprint=fingerprint,
+        )
+        self.session.add(g)
+        self._commit()
+        return g
+
+    def pending_gate(self, run_id: str) -> Gate | None:
+        return (
+            self.session.query(Gate)
+            .filter_by(run_id=run_id, status="waiting")
+            .order_by(Gate.created_at.desc())
+            .first()
+        )
+
+    def decide_gate(self, gate: Gate, *, accepted: bool, note: str = "") -> None:
+        gate.status = "accepted" if accepted else "stopped"
+        gate.note = note
+        gate.decided_at = now()
+        self._commit()
+
+    def oks_in_a_row(self, workflow_name: str, step_id: str, fingerprint: str) -> int:
+        """How many times in a row, newest first, someone said OK to this step as it is
+        now. A stop, or a change to what drives the step, ends the count."""
+        n = 0
+        rows = (
+            self.session.query(Gate)
+            .filter(Gate.workflow_name == workflow_name, Gate.step_id == step_id)
+            .filter(Gate.status != "waiting")
+            .order_by(Gate.decided_at.desc())
+        )
+        for g in rows:
+            if g.status != "accepted" or g.fingerprint != fingerprint:
+                break
+            n += 1
+        return n

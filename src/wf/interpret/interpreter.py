@@ -10,6 +10,7 @@ asks the guesser, records a ``guess`` decision linked to the finding, and contin
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -451,6 +452,9 @@ class Interpreter:
                 outcome = self._run_step(ctx, step)
                 if outcome in ("waiting", "paused", "failed"):
                     status = outcome
+                    break
+                if self._gate(ctx, step):
+                    status = "waiting"
                     break
             if status == "done":
                 result.outputs = self._workflow_outputs(wf, state)
@@ -1070,6 +1074,172 @@ class Interpreter:
             actual = out.get(field_name) if isinstance(out, dict) else None
             if actual is not None and str(actual) == value:
                 self._guess(ctx, step, f)
+
+    # -- gates -------------------------------------------------------------
+
+    def fingerprint(self, wf: Workflow, step: Step) -> str:
+        """What drives the step, as far as its trust is concerned: a change to any of it
+        starts the count of OKs again. ``reset_on`` names the parts; by default all."""
+        trust = wf.trust_for(step)
+        parts = (trust.reset_on if trust and trust.reset_on else None) or [
+            "skill",
+            "model",
+            "tools",
+            "input_schema",
+            "output_schema",
+        ]
+        skill = self.ws.load_skill(step.skill) if step.skill else None
+        seen = {
+            "skill": [
+                step.skill,
+                hashlib.sha256((skill.body if skill else "").encode()).hexdigest(),
+            ],
+            "model": wf.model_for(step),
+            "tools": sorted(step.tools or {}),
+            "input_schema": step.input,
+            "output_schema": step.output.schema_ if step.output else None,
+        }
+        picked = {k: seen.get(k) for k in sorted(parts)}
+        return hashlib.sha256(json.dumps(picked, sort_keys=True, default=str).encode()).hexdigest()[
+            :32
+        ]
+
+    def _gate(self, ctx: _Ctx, step: Step) -> bool:
+        """Whether the run stops after ``step`` for someone's OK, saying why either way.
+
+        Only a real run stops, and only at the top: a follow-up was approved when
+        someone chose to go deeper, and a dry run shows where it would have stopped."""
+        if step.kind == "wait" or ctx.state["steps"].get(step.id, {}).get("status") != "done":
+            return False
+        trust = ctx.wf.trust_for(step)
+        if trust is None or trust.policy == "auto":
+            return False
+        sr = self._latest_record(ctx.run, step.id)
+        name = step.title or step.id
+        fp = self.fingerprint(ctx.wf, step)
+        if trust.policy == "earned":
+            needed = trust.promote_after or 3
+            oks = self.ledger.oks_in_a_row(ctx.wf.metadata.name, step.id, fp)
+            if oks >= needed:
+                self._decide(
+                    ctx,
+                    sr,
+                    step.id,
+                    kind="control",
+                    text=f"Carried on after “{name}” without asking.",
+                    reason=f"You have said OK to it {oks} times in a row since it last changed.",
+                )
+                return False
+            why = (
+                f"It checks with you until you have said OK {needed} times in a row; "
+                f"so far {oks}. Any change to the step starts the count again."
+            )
+        else:
+            why = "It checks with you every time."
+        if ctx.depth > 0:
+            self._decide(
+                ctx,
+                sr,
+                step.id,
+                kind="control",
+                text=f"Carried on after “{name}” without asking.",
+                reason="A follow-up does not stop for your OK: you approved going deeper in the run that started it.",
+            )
+            return False
+        if ctx.mode != "live":
+            self._decide(
+                ctx,
+                sr,
+                step.id,
+                kind="control",
+                text=f"In a real run, this is where it would stop for your OK on “{name}”.",
+                reason=why,
+            )
+            return False
+        self.ledger.open_gate(ctx.run, step.id, sr, fp)
+        self._decide(
+            ctx,
+            sr,
+            step.id,
+            kind="control",
+            text=f"Waiting for your OK on “{name}” before carrying on.",
+            reason=why,
+        )
+        ctx.result.trace.append(TraceEvent(step.id, "gate"))
+        return True
+
+    def _latest_record(self, run: Run, step_id: str) -> StepRun | None:
+        return (
+            self.ledger.session.query(StepRun)
+            .filter_by(run_id=run.id, step_id=step_id, fanout_index=None)
+            .order_by(StepRun.seq.desc())
+            .first()
+        )
+
+    def carry_on(self, run: Run, wf: Workflow, *, ok: bool, note: str = "") -> RunResult:
+        """Someone answered the gate a run stopped at: carry on from the next step, or
+        stop the run there. The steps before it keep their results either way."""
+        gate = self.ledger.pending_gate(run.id)
+        if gate is None:
+            raise ValueError("This run is not waiting for your OK.")
+        self.ledger.decide_gate(gate, accepted=ok, note=note)
+        rows = (
+            self.ledger.session.query(StepRun).filter_by(run_id=run.id).order_by(StepRun.seq).all()
+        )
+        self._continue_numbering(run, rows)
+        step = wf.step(gate.step_id)
+        name = (step.title if step else None) or gate.step_id
+        said = ("You said OK." if ok else "You stopped the run here.") + (
+            f" You added: “{note}”" if note else ""
+        )
+        note_on = next((r for r in reversed(rows) if r.id == gate.step_run_id), None)
+        if not ok:
+            self.ledger.decision(
+                run, note_on, gate.step_id, kind="control", text=said, reason=f"After “{name}”."
+            )
+            self.ledger.finish_run(
+                run,
+                status="stopped",
+                outputs=run.outputs,
+                spent_usd=run.spent_usd or 0.0,
+                spent_minutes=run.spent_minutes or 0.0,
+            )
+            return RunResult(
+                run_id=run.id,
+                status="stopped",
+                state={"steps": self._read_back(wf, rows)},
+                outputs=run.outputs,
+                trace=[],
+                decisions=[],
+                spent_usd=run.spent_usd or 0.0,
+                spent_minutes=run.spent_minutes or 0.0,
+            )
+        steps = self._read_back(wf, rows)
+        run.status, run.finished_at, run.error = "running", None, None
+        self.ledger._commit()
+        b = wf.spec.budget
+        budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
+        budget.spent_usd = run.spent_usd or 0.0
+        with session_span(
+            "run", name=wf.metadata.name, title=run.title, run_id=run.id, mode=run.mode
+        ):
+            return self._walk(
+                run,
+                wf,
+                dict(run.inputs or {}),
+                run.mode,
+                budget=budget,
+                depth=run.depth or 0,
+                resume=_Resume(
+                    steps=steps,
+                    start_at=wf.step_index(gate.step_id) + 1,
+                    spent_usd=run.spent_usd or 0.0,
+                    note_on=note_on,
+                    note_step_id=gate.step_id,
+                    said=said,
+                    why=f"Your answer after “{name}”. The run carried on from here.",
+                ),
+            )
 
     def _decide(self, ctx: _Ctx, sr: StepRun | None, step_id: str, **kw: Any) -> None:
         d = self.ledger.decision(ctx.run, sr, step_id, **kw)

@@ -283,11 +283,6 @@ the customer records a handful of real responses once, or we write them from the
 past case by hand and label them as constructed. Either way the fixture file is
 committed beside the definition and shown as such.
 
-**Trust promotion per workflow or per workflow version?** Not built in this phase. The
-`step_run` row records the instruction commit and model, so either can be computed
-later. Proposal: per step, reset by any change to what drives the step, which is what
-the example YAML's `reset_on` says.
-
 **Two people editing one instruction file.** Not built. The workspace is a git
 repository, so the proposal is last-writer-on-a-branch with the diff shown before
 "keep", which is the same screen as a change tested against baselines.
@@ -453,3 +448,22 @@ disagree. Alternative: the model decides what to ask next. Why: the order is alr
 decided (what it unblocks, conflicts first), and a model choosing it would ask
 differently each time for no gain; the model's part is explaining a question in the
 person's terms when they ask what it means.
+
+**A step that checks with you stops a real run after it, and earns its way out.** A
+step whose trust is `always_ask`, or `earned` and not yet earned, stops a live
+top-level run once it has finished: the run is `waiting` with a `gate` row, the run page
+shows what the step produced with "OK, carry on" and "Stop the run here", and `POST
+/api/runs/{id}/ok` answers it. OK carries the run on from the next step without running
+anything again; stop ends it as `stopped`, keeping what finished. `earned` counts OKs
+in a row per workflow and step, newest first, while the step's fingerprint (its
+`reset_on` parts: instructions and their text, model, tools, input, output shape) stays
+the same; a stop or a change ends the count, so trust is per step and reset by any
+change to what drives it, which answers the brief's open question. A dry run records
+where it would have stopped and carries on. A follow-up run does not stop: going
+deeper was approved in the run that started it, and a stopped child would fail its
+parent. Alternative: reword the question to say the setting is not enforced. Why:
+the question promised "the run waits here for your OK", and a person answering it
+should get what it says; this is milestone 6 of the plan. The consequence for the
+sample workflow: its brief, research, writing, review and revision steps each ask until
+3 OKs in a row (the brief was 5, which people at the demo found too many), so its
+first real runs stop several times.

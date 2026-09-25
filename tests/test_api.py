@@ -894,6 +894,10 @@ def _answered_wait_workflow(client, ws) -> None:
     # the reviewer's "go deeper" is now the person's call, so the verdict carries on
     review = next(s for s in d["spec"]["steps"] if s["id"] == "review")
     review["output"]["continue_on"]["verdict"].append("go_deeper")
+    # these tests are about the wait: no step stops for an OK on the way to it
+    d["spec"]["defaults"]["trust"] = {"policy": "auto"}
+    for s in d["spec"]["steps"]:
+        s["trust"] = {"policy": "auto"}
     write_yaml(ws, rel, d)
 
 
