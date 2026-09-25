@@ -501,7 +501,8 @@ def _check_references(wf: Workflow, step: Step, ws: Workspace) -> list[Finding]:
             )
         )
     if step.kind == "subworkflow" and step.workflow:
-        if ws.resolve_workflow_ref(step.workflow, current=wf) is None:
+        child = ws.resolve_workflow_ref(step.workflow, current=wf)
+        if child is None:
             findings.append(
                 make_finding(
                     "conflict",
@@ -511,4 +512,40 @@ def _check_references(wf: Workflow, step: Step, ws: Workspace) -> list[Finding]:
                     answer_kind="text",
                 )
             )
+        else:
+            findings.extend(_missing_child_inputs(wf, step, child))
     return findings
+
+
+def _missing_child_inputs(wf: Workflow, step: Step, child: Workflow) -> list[Finding]:
+    """What the started workflow cannot run without, and this step does not give it.
+
+    The run would stop at once in the other workflow, asking for it; here it is a
+    question, with this workflow's own inputs as the likely answers."""
+    given = step.with_ or {}
+    out = []
+    for name, spec in child.spec.inputs.items():
+        if not spec.required or spec.internal or spec.default is not None or name in given:
+            continue
+        options = [
+            Option(value=f"${{inputs.{mine}}}", label=f"This workflow's “{mine}”")
+            for mine, s in wf.spec.inputs.items()
+            if not s.internal
+        ]
+        f = make_finding(
+            "gap",
+            f"steps.{step.id}.with.{name}",
+            step=step,
+            detail=(
+                f"“{child.metadata.name}” needs its “{name}” to start"
+                + (f" ({spec.description})" if spec.description else "")
+                + ". Pick what this workflow passes it, or say in the chat."
+            ),
+            options=options or None,
+            answer_kind="choice" if options else "text",
+        )
+        f.question = (
+            f"What should “{step.title or step.id}” give “{child.metadata.name}” as its “{name}”?"
+        )
+        out.append(f)
+    return out
