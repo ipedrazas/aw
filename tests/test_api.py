@@ -75,6 +75,23 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"] == "what can I ask?":
+                # the chat is sent how the system works and the other workflows
+                guide = req.input["how_it_works"]
+                return ModelResponse(
+                    output={
+                        "reply": " ".join(
+                            [
+                                *(w["name"] for w in req.input["your_workflows"]),
+                                "guide" if "What you can ask the chat" in guide else "no guide",
+                            ]
+                        ),
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"] == "what did I write?":
                 # the chat is sent what the person first wrote, and can quote it
                 return ModelResponse(
@@ -595,6 +612,16 @@ def test_the_chat_opens_with_what_the_person_wrote_and_is_sent_it(client):
     c = client.post(f"/api/audits/{audit['id']}/chat", json={"message": "what did I write?"})
     assert c.status_code == 200, c.text
     assert c.json()["chat"][-1]["text"] == "You wrote: " + doc
+
+
+def test_the_chat_knows_how_the_system_works_and_the_other_workflows(client):
+    """Not the draft it is on, which it has already."""
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    c = client.post(f"/api/audits/{audit['id']}/chat", json={"message": "what can I ask?"})
+    assert c.status_code == 200, c.text
+    assert c.json()["chat"][-1]["text"] == "deep-research guide"
 
 
 def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):

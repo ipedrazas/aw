@@ -25,6 +25,54 @@ from wf.validate import (
 
 from .ingest import Passage
 
+
+def mentions_finding(
+    s: dict[str, Any],
+    mention: dict[str, Any],
+    workflows: list[str],
+    passage_text: Any,
+) -> Finding:
+    """A step that relies on a process the document names and does not describe.
+
+    Breaking it into steps would pretend to know what that process is. So it is asked:
+    one of their workflows (the one the extraction recognised first), or their document
+    already says enough. What it involves, if neither, is said in the chat."""
+    process = mention["process"]
+    match = mention.get("workflow") if mention.get("workflow") in workflows else None
+    names = ([match] if match else []) + [w for w in workflows if w != match][: 3 - bool(match)]
+    options = [
+        Option(
+            value={"op": "use_workflow", "workflow": w},
+            label=f"It is my “{w}” workflow",
+            consequence="This step starts that workflow and uses what it produces.",
+        )
+        for w in names
+    ]
+    options.append(
+        Option(
+            value={"keep": True},
+            label="My document says enough",
+            consequence="The step does the work itself, from the instructions written for it.",
+        )
+    )
+    return Finding(
+        type="assumption",
+        step_id=s["id"],
+        field=f"steps.{s['id']}.workflow",
+        question=f"Your document mentions “{process}”. What is it?",
+        detail=(
+            "It is named but not described, so I do not know what it involves."
+            + (f" It looks like your “{match}” workflow." if match else "")
+            + " If it is none of these, tell the chat what it involves."
+        ),
+        source_text=passage_text(mention.get("passage") or s.get("passage")),
+        answer_kind="choice",
+        options=options,
+        unblocks=1,
+        raised_by="auditor",
+    )
+
+
 # The one model question the draft asks, of a step the document singles out. Saying no
 # takes the step's own model away, so it runs on the workflow's default.
 CAREFUL_OPTIONS = [
@@ -70,7 +118,11 @@ class Draft(BaseModel):
         return load_workflow_dict(self.definition)
 
 
-def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
+def build_draft(
+    extracted: dict[str, Any], passages: list[Passage], workflows: list[str] | None = None
+) -> Draft:
+    """``workflows`` are the names of the workflows the workspace already has, which a
+    step that relies on another process can be handed to."""
     by_id = {p.id: p for p in passages}
     name = extracted["name"]
     steps_in = extracted.get("steps", [])
@@ -286,6 +338,10 @@ def build_draft(extracted: dict[str, Any], passages: list[Passage]) -> Draft:
                     f"the instructions for “{s['title']}” follow from its name alone",
                     "The document names this step but does not say how to do it. The generated instructions say only what the step is for.",
                     unblocks=_readers(sid, steps_in),
+                )
+            if s.get("mentions") and s["mentions"].get("process"):
+                assumptions.append(
+                    mentions_finding(s, s["mentions"], workflows or [], passage_text)
                 )
             if s.get("tools"):
                 step["tools"] = {t: {"max_calls": 25 if t == "search" else 40} for t in s["tools"]}

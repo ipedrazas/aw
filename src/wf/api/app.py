@@ -24,6 +24,7 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
+from wf.audit.catalog import known_workflows
 from wf.audit.chat import chat
 from wf.audit.question import _set, answer_definition
 from wf.audit.restore import restore_missing_files
@@ -536,6 +537,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 model_name=st().chat_model,
                 audit_id=audit_id,
                 document=rec.document,
+                workflows=known_workflows(st().ws, exclude=result.name),
                 about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001

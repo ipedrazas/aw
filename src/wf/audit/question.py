@@ -106,6 +106,55 @@ def remove_step(defn: dict[str, Any], sid: str) -> list[dict[str, Any]]:
     return steps
 
 
+# What a step keeps when it hands its work to another workflow: where it sits and when it
+# runs. How it did the work itself (model, instructions, tools, its own output) goes.
+_KEPT_WHEN_HANDED_OVER = ("id", "title", "description", "when", "for_each", "max_fanout", "origin")
+
+
+def hand_to_workflow(
+    defn: dict[str, Any], sid: str, workflow: str, ws: Workspace
+) -> list[dict[str, Any]]:
+    """The steps with ``sid`` starting the workflow ``workflow`` instead of doing the work.
+
+    What the other workflow needs is passed from this one's inputs of the same name, or
+    from what the step was already given under that name; anything else is left for the
+    validator to ask. Returned as the whole step list, like ``remove_step``, so the
+    change is one entry that undo can put back.
+    """
+    child = ws.resolve_workflow_ref(workflow)
+    if child is None:
+        raise AnswerRejected(
+            f"There is no workflow called “{workflow}”, so the draft is unchanged."
+        )
+    if child.metadata.name == defn["metadata"]["name"]:
+        raise AnswerRejected("A step cannot hand its work to the workflow it is in this way.")
+    steps = [copy.deepcopy(s) for s in _steps(defn)]
+    old = next((s for s in steps if s["id"] == sid), None)
+    if old is None:
+        raise AnswerRejected(f"There is no step “{sid}”, so the draft is unchanged.")
+    given = old.get("input") if isinstance(old.get("input"), dict) else {}
+    ours = defn["spec"].get("inputs") or {}
+    passed: dict[str, Any] = {}
+    for name, spec in child.spec.inputs.items():
+        if spec.internal:
+            continue
+        if name in given:
+            passed[name] = given[name]
+        elif name in ours:
+            passed[name] = f"${{inputs.{name}}}"
+    new = {k: old[k] for k in _KEPT_WHEN_HANDED_OVER if k in old}
+    new.update(
+        kind="subworkflow",
+        workflow=f"{child.metadata.name}@{child.metadata.version}",
+        # one level down: it runs the other workflow, which does not start this one again
+        limits={"max_depth": 1},
+        trust=old.get("trust") or {"policy": "always_ask"},
+    )
+    if passed:
+        new["with"] = passed
+    return [new if s["id"] == sid else s for s in steps]
+
+
 def _get(defn: dict[str, Any], path: str) -> Any:
     cur: Any = defn
     try:
@@ -166,7 +215,14 @@ def apply_answer(
         changes.append(Change(path=path, before=before, after=after, reason=reason))
 
     if finding.type == "assumption":
-        if isinstance(answer, dict) and answer.get("keep") is False:
+        if isinstance(answer, dict) and answer.get("op") == "use_workflow" and sid and ws:
+            steps = hand_to_workflow(d, sid, str(answer.get("workflow")), ws)
+            change(
+                "spec.steps",
+                steps,
+                f"“{_step(d, sid).get('title', sid)}” now starts your “{answer.get('workflow')}” workflow.",
+            )
+        elif isinstance(answer, dict) and answer.get("keep") is False:
             # reopen as a gap: clear the assumed value so the validator asks
             if key in ("model", "skill") or field.endswith("output.schema"):
                 change(

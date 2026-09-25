@@ -21,6 +21,7 @@ from wf.store.db import Database
 from wf.store.sessions import session_span
 from wf.validate import Finding, validate
 
+from .catalog import known_workflows
 from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
@@ -129,11 +130,18 @@ class Auditor:
 
     def audit(self, document: str, name: str | None = None) -> AuditResult:
         passages = ingest(document)
-        req = extraction_request(passages, self.extraction_model, name_hint=name)
+        workflows = known_workflows(self.ws, exclude=name)
+        req = extraction_request(
+            passages, self.extraction_model, name_hint=name, workflows=workflows
+        )
         with session_span("audit", name=name or "", title=_first_line(document)) as span:
             resp = run_with_policy(self.policy, lambda: self.model.complete(req))
             extracted = normalise(resp, name)
-            draft = build_draft(extracted, passages)
+            draft = build_draft(
+                extracted,
+                passages,
+                workflows=[w["name"] for w in workflows if w["name"] != extracted["name"]],
+            )
             if self.writes_skills:
                 # one step at a time: the calls land in this session in the order of the steps
                 write_skills(
@@ -251,6 +259,8 @@ class Auditor:
             and f.status == "open"
             and (f.step_id is None or f.step_id in step_ids)
             and not (f.field.endswith(".when") and _get(result.definition, f.field) is not None)
+            # "is this one of your workflows?" goes once the step starts one
+            and not (f.field.endswith(".workflow") and _get(result.definition, f.field) is not None)
         ]
         fresh = self.validate(wf, result.provenance, result.passages, extra=still_relevant)
         kept: list[Finding] = []
@@ -297,15 +307,26 @@ class Auditor:
 
         Removing a whole step (``steps.<id>`` set to null) is recorded against the step
         list, so undoing it puts the step back where it was and rewires what read it.
+        Naming a workflow for a step that does the work itself (``steps.<id>.workflow``)
+        hands the step's work to that workflow, recorded the same way.
         """
-        from .question import _get, _set, remove_step
+        from .question import _get, _set, hand_to_workflow, remove_step
 
         path = self._step_path(result, path)
         bits = path.split(".")
+        steps = result.definition["spec"]["steps"]
         if value is None and len(bits) == 2 and bits[0] == "steps":
-            if not any(s["id"] == bits[1] for s in result.definition["spec"]["steps"]):
+            if not any(s["id"] == bits[1] for s in steps):
                 raise AnswerRejected(f"There is no step “{bits[1]}”, so the draft is unchanged.")
             path, value = "spec.steps", remove_step(result.definition, bits[1])
+        elif (
+            isinstance(value, str)
+            and len(bits) == 3
+            and bits[0] == "steps"
+            and bits[2] == "workflow"
+            and any(s["id"] == bits[1] and s["kind"] != "subworkflow" for s in steps)
+        ):
+            path, value = "spec.steps", hand_to_workflow(result.definition, bits[1], value, self.ws)
         before = _get(result.definition, path)
         new_def = copy.deepcopy(result.definition)
         _set(new_def, path, value)

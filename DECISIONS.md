@@ -399,3 +399,31 @@ list counts nothing twice; the parent's figure is its own plus everything below 
 Alternative: order by start time, as before. Why: follow-ups start after their parent,
 so newest-first put them above it, and a parent's own cost hid most of what starting
 it cost.
+
+**The chat answers "how does this work?" from a guide kept beside it.** `wf/audit/guide.md`
+says, in the people's words, what the system does and what it does not do yet (loops,
+parallel steps, pause, limiting search, connecting to their systems), and the chat is
+sent it every turn with the workflows the workspace already has. It says it does not
+know rather than guess, and asks one question, with no edits, when a message mentions
+something it cannot find. Alternative: user documentation, or a help page. Why: at the
+demo people said they do not read documentation but want it there, and asked the chat
+instead; a guide in the repository changes in the same commit as the behaviour it
+describes.
+
+**A process the document names but does not describe is a question, not steps.** The
+extractor fills `mentions` for a step that relies on one ("follow our onboarding
+checklist"), and recognises it among the workspace's workflows when it clearly is one.
+The draft asks "Your document mentions X. What is it?", offering the recognised
+workflow first, and "my document says enough". Choosing a workflow hands the step to
+it: the step becomes a `subworkflow` step that starts it and passes it this workflow's
+inputs of the same names, recorded as one change to the step list so undo puts the
+step back. The chat does the same by setting `steps.<id>.workflow`. A `subworkflow`
+step is now only a workflow starting itself, as far as the extractor is concerned.
+Alternative: break the named process into steps from its name. Why: that is what the
+extractor did, and a person at the demo took it for understanding their process, which
+it was not.
+
+**What a started workflow needs and is not given is a question.** A `subworkflow` step
+whose `with` lacks a required input of the workflow it starts is a gap, offering this
+workflow's inputs as the answers. Alternative: let the run find out. Why: the child
+run would stop at once, after the parent had paid for everything before it.
