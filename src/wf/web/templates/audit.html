@@ -99,7 +99,11 @@
     <div class="card">
       <div class="card-head">
         <div><h2>What will happen</h2><p class="sub" style="margin:0">{{ audit.summary.step_count }} steps, in your words.{% if audit.summary.system_step_count %} {{ audit.summary.system_step_count }} of them {{ 'is' if audit.summary.system_step_count == 1 else 'are' }} mine, marked.{% endif %}</p></div>
-        {{ tech_switch() }}
+        <div class="actions"><button class="btn btn-sm" type="button" data-toggle="flowpic">Picture</button>{{ tech_switch() }}</div>
+      </div>
+      <div id="flowpic" class="hidden" style="margin-bottom:12px">
+        {{ audit.diagram | safe }}
+        <details class="flow-desc small"><summary>The same, in words</summary><p>{{ audit.diagram_text }}</p></details>
       </div>
       <ol class="steps">
         {% for st in audit.steps %}

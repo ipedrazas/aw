@@ -28,6 +28,13 @@ Questions can be answered by picking a choice, or in the chat. If a question doe
 make sense, say so: it may rest on a wrong reading of your text, and the chat can fix
 the step instead. Every change has a reason next to it and can be undone.
 
+The draft and every workflow can also be seen as a picture ("Picture" beside the steps
+on a draft; "How it flows" on a workflow's page). It shows the steps in order and, just
+as clearly, what happens when things do not go to plan: a step that only happens
+sometimes and the way round it, each outcome of a decision and where it leads, where a
+run stops for a person, and anything not decided yet, drawn in red as a dead end. The
+same is written out in words under it.
+
 A draft can be tried in a dry run while questions are still open: where it meets one, it
 guesses and says so. A real run needs every question answered.
 

@@ -41,6 +41,12 @@
   <span data-msg class="small"></span>
 </div>
 
+<div class="card">
+  <div class="card-head"><h2>How it flows</h2><span class="small muted">Including what happens when things do not go as planned</span></div>
+  {{ data.diagram | safe }}
+  <details class="flow-desc small" style="margin-top:8px"><summary>The same, in words</summary><p>{{ data.diagram_text }}</p></details>
+</div>
+
 <div class="tbl">
 <table>
   <thead><tr><th>Step</th><th>Model</th><th class="tech-col">Instructions</th><th>What you see</th><th>How it runs</th></tr></thead>

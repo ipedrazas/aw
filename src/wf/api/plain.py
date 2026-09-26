@@ -194,13 +194,14 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
             if b
             else None
         ),
-        "budget_on_exceeded": (
-            "If either would be exceeded, the run pauses and asks."
-            if b and b.on_exceeded == "pause_and_ask"
-            else ("If either would be exceeded, the run stops." if b else None)
-        ),
+        "budget_on_exceeded": "If either would be exceeded, the run stops." if b else None,
         "recursion": (
-            f"Yes, through “{sub.title}” only. Up to {sub.limits.max_depth if sub.limits else '?'} levels deep and {sub.effective_max_fanout or '?'} follow-ups at a time, and never without your approval."
+            f"Yes, through “{sub.title}” only. Up to {sub.limits.max_depth if sub.limits else '?'} levels deep and {sub.effective_max_fanout or '?'} follow-ups at most, "
+            + (
+                "and it asks you before it starts."
+                if (t := wf.trust_for(sub)) and t.policy != "auto"
+                else "and it starts them by itself when the review asks for them."
+            )
             if sub
             else "No. It never starts more work than the steps listed."
         ),

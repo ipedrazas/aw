@@ -492,3 +492,18 @@ ask me first (`always_ask`), or let the review decide within the limits (`auto`)
 wait that asks the same question is pointed out there, since it is a step of its own
 and is not changed by the setting.
 
+**The workflow is drawn from its definition, around what happens when things go wrong.**
+`wf.api.diagram` works out what to show (`flow`) and draws it as inline SVG on the
+server (`render_svg`): the main line down the middle; a step that only happens
+sometimes with its condition on the arrow and a dashed way round it; each outcome of a
+decision beside it and where it leads (a later step, carries on, stops and shows you,
+or "not decided yet" in red); where a person comes in, highlighted; a workflow that
+starts itself, as a loop back to the start; and what happens when any step breaks or
+the spending limit is reached. It is on a workflow's page and, behind "Picture", on a
+draft, with the same content in words for screen readers and people who read better
+than they look. Alternative: a diagram library in the browser, or a drag-and-drop
+editor. Why: someone at the demo asked for a picture because "a list of steps is hard
+to follow when things don't go as planned", so the other paths are the point; drawn
+from the definition, it cannot show something a run does not do, and needs no script
+or network. It is read-only: the chat stays the way to change the workflow.
+
