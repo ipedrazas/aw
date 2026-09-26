@@ -44,6 +44,7 @@ from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
 
 from .audits import AuditStore
+from .diagram import describe, flow, render_svg
 from .plain import TRUST_CHOICES, model_choices, plain_steps, plain_summary, trust_label
 from .skills import SkillError, edit_step_skill, skill_url, skill_view
 
@@ -145,6 +146,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return {
             "summary": plain_summary(wf),
             "steps": plain_steps(wf),
+            **_picture(wf, result.findings, st().ws),
             "models": model_choices(wf),
             "yaml": dump_workflow(wf),
             "findings": [f.model_dump(mode="json") for f in result.ordered()],
@@ -1232,6 +1234,13 @@ def _audit(state: AppState, audit_id: str) -> tuple[AuditResult, Any]:
         raise HTTPException(404, "No such draft.") from e
 
 
+def _picture(wf: Workflow, findings: list[Any], ws: Workspace) -> dict[str, Any]:
+    """The workflow drawn, with the same thing in words beside it."""
+    model = flow(wf, findings, ws)
+    label = f"How “{wf.metadata.description or wf.metadata.name}” flows"
+    return {"diagram": render_svg(model, label), "diagram_text": describe(model)}
+
+
 def _said(finding: Any, answer: Any) -> str:
     """An answer as the person would have said it: the choice's words, or theirs."""
     for o in finding.options or []:
@@ -1311,6 +1320,7 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         "saved_commit": rec.saved_commit,
         "summary": plain_summary(wf),
         "steps": plain_steps(wf),
+        **_picture(wf, result.findings, state.ws),
         "yaml": dump_workflow(wf),
         "questions": _questions(result.findings, wf),
         "answered": [f.model_dump(mode="json") for f in answered],
