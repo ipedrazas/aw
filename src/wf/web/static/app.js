@@ -79,7 +79,7 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   const ta = f.querySelector("textarea[name=document]"), msg = f.querySelector("[data-msg]");
   const submit = f.querySelector("button[type=submit]"), spinner = f.querySelector("[data-spinner]");
   f.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
-    const src = document.getElementById(b.dataset.sample); if (src) ta.value = src.textContent;
+    const src = document.getElementById(b.dataset.sample); if (src) ta.value = src.value;
     const nm = f.querySelector("[name=name]"); if (nm && !nm.value) nm.value = "deep-research-process";
   }));
   f.addEventListener("submit", async e => {
