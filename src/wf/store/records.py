@@ -49,6 +49,8 @@ class Run(Base):
     inputs: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     outputs: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="running")
+    # someone asked a running run to pause; it stops after the step it is on finishes
+    pause_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     depth: Mapped[int] = mapped_column(Integer, default=0)
     parent_run_id: Mapped[str | None] = mapped_column(ForeignKey("run.id"), nullable=True)
     parent_step_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

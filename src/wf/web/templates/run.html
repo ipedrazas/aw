@@ -26,6 +26,11 @@
   <section>
     {% if run.status == "running" %}
       <div class="banner"><span>Still running. This page refreshes on its own.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% if run.mode != "dry" %}
+      <div class="card" data-pause="{{ run.id }}">
+        <div class="actions"><button class="btn" type="button" data-then="pause">Pause</button><span data-msg class="small muted"></span></div>
+      </div>
+      {% endif %}
     {% elif run.status == "failed" %}
       <div class="banner banner-red"><span>The run stopped: {{ run.error or "a step could not finish. See the step below." }}</span><span>{{ status_pill(run.status) }}</span></div>
       <div class="card" data-retry="{{ run.id }}">
@@ -33,8 +38,12 @@
         <p class="small muted" style="margin:0 0 8px">Or, if the rest can do without it, skip the step that broke and carry on. It stays in the run, marked skipped, with its error; a step after it that reads its result gets nothing from it.</p>
         <div class="actions"><button class="btn btn-primary" type="button" data-then="retry">Pick up from where it broke</button><button class="btn" type="button" data-then="skip">Skip it and carry on</button><span data-msg class="small muted"></span></div>
       </div>
-    {% elif run.status == "paused_budget" %}
-      <div class="banner banner-red"><span>Paused at the spending limit. Nothing more runs until you say so.</span><span>{{ status_pill(run.status) }}</span></div>
+    {% elif run.status in ("paused", "paused_budget") %}
+      <div class="banner banner-red"><span>{{ "Paused at the spending limit." if run.status == "paused_budget" else "You paused this run." }} Nothing more runs until you carry it on.</span><span>{{ status_pill(run.status) }}</span></div>
+      <div class="card" data-pause="{{ run.id }}">
+        <p style="margin:0 0 8px">The steps that finished keep their results and are not run again.</p>
+        <div class="actions"><button class="btn btn-primary" type="button" data-then="carry-on">Carry on</button><span data-msg class="small muted"></span></div>
+      </div>
     {% elif run.status == "waiting" and run.gate and run.gate.before %}
       <div class="banner"><span>{{ run.gate.text }} {{ run.gate.reason }}</span><span>{{ status_pill(run.status) }}</span></div>
       <form class="card waitform" data-ok="{{ run.id }}">

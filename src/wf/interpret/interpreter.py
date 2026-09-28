@@ -440,6 +440,21 @@ class Interpreter:
             i = resume.start_at if resume else 0
             while i < len(wf.spec.steps):
                 step = wf.spec.steps[i]
+                # someone else's session may have asked this run to pause; only a fresh
+                # read sees it, since this session's copy does not expire on commit
+                self.ledger.session.refresh(run, attribute_names=["pause_requested"])
+                if run.pause_requested:
+                    self._decide(
+                        ctx,
+                        None,
+                        step.id,
+                        kind="control",
+                        text=f"Paused before “{step.title or step.id}”.",
+                        reason="You asked it to pause. The step before it keeps its result.",
+                    )
+                    ctx.result.trace.append(TraceEvent(step.id, "paused", "requested"))
+                    status = "paused"
+                    break
                 over = budget.exceeded()
                 if over:
                     self._decide(
@@ -1327,6 +1342,71 @@ class Interpreter:
                         else f"Your answer after “{name}”. The run carried on from here."
                     ),
                     approved=gate.step_id if first else None,
+                ),
+            )
+
+    def carry_on_paused(self, run: Run, wf: Workflow, *, claimed: bool = False) -> RunResult:
+        """Carry a paused run on, from the step it paused before: the steps that
+        finished are not run again, as after a gate. A run pauses because someone
+        asked it to, or because it hit its spending limit; either carries on the same
+        way, on the definition as it is now.
+
+        ``claimed`` says the caller has already marked the run as running, so two
+        requests cannot both carry it on.
+        """
+        if run.status not in ("paused", "paused_budget") and not claimed:
+            raise ValueError("This run is not paused, so there is nothing to carry on.")
+        rows = (
+            self.ledger.session.query(StepRun).filter_by(run_id=run.id).order_by(StepRun.seq).all()
+        )
+        latest: dict[str, StepRun] = {}
+        for r in rows:
+            if r.fanout_index is None:
+                latest[r.step_id] = r
+        start_at = next(
+            (
+                i
+                for i, s in enumerate(wf.spec.steps)
+                if s.id not in latest or latest[s.id].status not in ("done", "skipped")
+            ),
+            len(wf.spec.steps),
+        )
+        if start_at == len(wf.spec.steps):
+            raise ValueError("Every step of this run finished, so there is nothing to carry on.")
+        self._continue_numbering(run, rows)
+        earlier = {s.id for s in wf.spec.steps[:start_at]}
+        steps = self._read_back(wf, [r for r in rows if r.step_id in earlier])
+        step = wf.spec.steps[start_at]
+        said = f"Carried on from “{step.title or step.id}”."
+        why = (
+            "It paused there at the spending limit."
+            if run.status == "paused_budget"
+            else "You paused it there."
+        ) + " The steps before it were not run again."
+
+        run.status, run.finished_at, run.error, run.pause_requested = "running", None, None, False
+        self.ledger._commit()
+        b = wf.spec.budget
+        budget = BudgetTracker(b.max_usd if b else None, b.max_minutes if b else None)
+        budget.spent_usd = run.spent_usd or 0.0
+        with session_span(
+            "run", name=wf.metadata.name, title=run.title, run_id=run.id, mode=run.mode
+        ):
+            return self._walk(
+                run,
+                wf,
+                dict(run.inputs or {}),
+                run.mode,
+                budget=budget,
+                depth=run.depth or 0,
+                resume=_Resume(
+                    steps=steps,
+                    start_at=start_at,
+                    spent_usd=run.spent_usd or 0.0,
+                    note_on=None,
+                    note_step_id=step.id,
+                    said=said,
+                    why=why,
                 ),
             )
 

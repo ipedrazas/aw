@@ -425,6 +425,18 @@ document.querySelectorAll("[data-retry]").forEach(box => {
   }));
 });
 
+/* Run page: pause a running real run, or carry a paused one on. */
+document.querySelectorAll("[data-pause]").forEach(box => {
+  const btns = box.querySelectorAll("button[data-then]"), msg = box.querySelector("[data-msg]");
+  btns.forEach(btn => btn.addEventListener("click", async () => {
+    const then = btn.dataset.then;
+    btns.forEach(b => b.disabled = true);
+    say(msg, then === "carry-on" ? "Carrying on…" : "Pausing…");
+    try { await postJSON("/api/runs/" + box.dataset.pause + "/" + then, {}); location.reload(); }
+    catch (err) { btns.forEach(b => b.disabled = false); say(msg, err.message, true); }
+  }));
+});
+
 /* Runs list: filter tabs and compare. */
 (function () {
   const tabs = document.querySelectorAll("[data-filter]"); if (!tabs.length) return;
