@@ -10,7 +10,13 @@ from wf.activities import ModelRequest, ModelResponse, ToolCallRecord, Usage
 from wf.activities.safety import find_instructions
 
 
-def deep_research_script(verdict: str = "accept", followups: int = 2):
+def deep_research_script(verdict: str | list[str] = "accept", followups: int = 2):
+    """``verdict`` may be a single outcome, or a list to hand out one per review call
+    in turn (the last one repeats once the list runs out), so a test can script a
+    review that rejects the report before it eventually accepts it."""
+    verdicts = [verdict] if isinstance(verdict, str) else list(verdict)
+    review_calls = {"n": 0}
+
     def script(req: ModelRequest) -> ModelResponse:
         usage = Usage(input_tokens=1200, output_tokens=400, cost_usd=0.01)
         if req.tag.startswith("plan"):
@@ -138,23 +144,25 @@ def deep_research_script(verdict: str = "accept", followups: int = 2):
                 usage=usage,
             )
         if req.tag.startswith("review"):
+            v = verdicts[min(review_calls["n"], len(verdicts) - 1)]
+            review_calls["n"] += 1
             fu = [
                 {"topic": f"Follow-up {i + 1}", "fills_gap": 0, "estimated_usd": 1.5}
                 for i in range(followups)
             ]
             return ModelResponse(
                 output={
-                    "verdict": verdict,
+                    "verdict": v,
                     "reason": "Scripted verdict.",
                     "gaps": [{"description": "Adoption evidence rests on one source.", "line": 21}],
-                    "followup_topics": fu if verdict == "go_deeper" else [],
+                    "followup_topics": fu if v == "go_deeper" else [],
                     "edits": [{"line": 9, "change": "Cite the primary source."}]
-                    if verdict == "revise"
+                    if v == "revise"
                     else [],
                 },
                 decisions=[
                     {
-                        "decision": f"Verdict: {verdict}.",
+                        "decision": f"Verdict: {v}.",
                         "reason": "Scripted.",
                         "alternatives": ["accept", "revise", "go_deeper"],
                     }

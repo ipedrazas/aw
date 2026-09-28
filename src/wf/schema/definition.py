@@ -72,6 +72,17 @@ class ToolPermission(Strict):
     max_calls: int = 10
 
 
+class MayRepeat(Strict):
+    """Sends the run back to an earlier step once this step has finished, when
+    ``when`` reads true against its output. ``limit`` is how many times this step may
+    send the run back before it carries on instead, so a condition that never clears
+    cannot loop forever."""
+
+    when: str
+    to: str
+    limit: int = 3
+
+
 class Origin(Strict):
     """Who put this step here. Drives the "I suggested this" markers in the UI."""
 
@@ -93,6 +104,7 @@ class Step(Strict):
     for_each: str | None = None
     max_fanout: int | None = None
     with_: dict[str, Any] | None = Field(default=None, alias="with")
+    may_repeat: MayRepeat | None = None
 
     input: dict[str, Any] | None = None
     output: Output | None = None

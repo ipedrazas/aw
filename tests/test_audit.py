@@ -190,6 +190,40 @@ def test_answers_write_back_and_close_findings(ws):
     assert len(result.changes) >= 8
 
 
+def test_a_rejection_can_be_answered_by_sending_it_back_to_an_earlier_step(ws):
+    """The document's own unstated branch: "The reviewer can also reject the report if
+    it's not salvageable." Answering it can now say where it goes back to, instead of
+    only "stop and show me"."""
+    auditor = scripted_auditor(ws)
+    result = auditor.audit(DOC.read_text(), name="client-research")
+    reject = next(
+        f
+        for f in result.open_findings()
+        if f.field == "steps.review.output.continue_on.verdict.reject"
+    )
+    back_to_write = next(
+        o
+        for o in reject.options
+        if o.value.get("op") == "repeat" and o.value.get("step") == "write"
+    )
+    assert "Write the report" in back_to_write.label
+
+    auditor.answer(result, reject.id, back_to_write.value)
+
+    wf = result.workflow()
+    mr = wf.step("review").may_repeat
+    assert mr is not None
+    assert mr.to == "write" and mr.limit >= 1
+    assert mr.when == '${steps.review.output.verdict == "reject"}'
+
+    open_fields = {f.field for f in result.open_findings() if f.type != "assumption"}
+    assert "steps.review.output.continue_on.verdict.reject" not in open_fields
+
+    # the saved definition on disk validates the same way: no gap left for "reject"
+    fresh = validate(ws.load_definition("client-research"), ws)
+    assert not any(f.field.endswith("verdict.reject") for f in fresh.findings)
+
+
 def test_document_diff_shows_stated_assumed_and_open(ws):
     auditor = scripted_auditor(ws)
     result = auditor.audit(DOC.read_text(), name="client-research")

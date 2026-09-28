@@ -256,6 +256,8 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
                     answer_kind="number",
                 )
             )
+        if step.may_repeat is not None:
+            findings.extend(_check_may_repeat(wf, step))
 
         # expressions parse, and reference only earlier steps
         findings.extend(_check_expressions(wf, step))
@@ -329,6 +331,54 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
     return findings
 
 
+def _check_may_repeat(wf: Workflow, step: Step) -> list[Finding]:
+    mr = step.may_repeat
+    idx = wf.step_index(step.id)
+    findings: list[Finding] = []
+    target = wf.step(mr.to)
+    if target is None:
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.may_repeat.to",
+                step=step,
+                detail=f"Goes back to a step called “{mr.to}”, which does not exist.",
+                answer_kind="text",
+            )
+        )
+    elif wf.step_index(mr.to) >= idx:
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.may_repeat.to",
+                step=step,
+                detail=f"“{target.title or target.id}” does not come before “{step.title or step.id}”, so there is nothing to go back to.",
+                answer_kind="text",
+            )
+        )
+    if mr.limit < 1:
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.may_repeat.limit",
+                step=step,
+                detail="A limit below 1 means it could never go back, so the field would do nothing.",
+                answer_kind="number",
+            )
+        )
+    if step.for_each is not None:
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.may_repeat",
+                step=step,
+                detail="A step that runs once per item has no single output to test, so it cannot send the run back by itself.",
+                answer_kind="text",
+            )
+        )
+    return findings
+
+
 def _check_expressions(wf: Workflow, step: Step) -> list[Finding]:
     findings: list[Finding] = []
     idx = wf.step_index(step.id)
@@ -338,6 +388,8 @@ def _check_expressions(wf: Workflow, step: Step) -> list[Finding]:
         "for_each": step.for_each,
         "with": step.with_,
         "input": step.input,
+        # evaluated once the step has finished, so its own output already exists
+        "may_repeat.when": step.may_repeat.when if step.may_repeat else None,
     }
     for place, value in places.items():
         if value is None:
@@ -363,15 +415,16 @@ def _check_expressions(wf: Workflow, step: Step) -> list[Finding]:
                         continue
                     ref = str(p.segments[1])
                     if ref == step.id:
-                        findings.append(
-                            make_finding(
-                                "conflict",
-                                f"steps.{step.id}.{place}",
-                                step=step,
-                                detail=f"“{step.title or step.id}” reads its own output before it exists.",
-                                answer_kind="text",
+                        if place != "may_repeat.when":
+                            findings.append(
+                                make_finding(
+                                    "conflict",
+                                    f"steps.{step.id}.{place}",
+                                    step=step,
+                                    detail=f"“{step.title or step.id}” reads its own output before it exists.",
+                                    answer_kind="text",
+                                )
                             )
-                        )
                     elif ref not in earlier:
                         later = wf.step(ref)
                         if later is None:

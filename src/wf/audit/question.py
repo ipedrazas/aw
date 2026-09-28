@@ -277,6 +277,18 @@ def apply_answer(
                 f'${{steps.{sid}.output.{fname} == "{value}"}}',
                 f"“{_step(d, target).get('title', target)}” now runs only when the {fname} is “{value}”.",
             )
+        elif op == "repeat" and isinstance(answer, dict):
+            target = answer["step"]
+            change(
+                f"steps.{sid}.may_repeat",
+                {
+                    "when": f'${{steps.{sid}.output.{fname} == "{value}"}}',
+                    "to": target,
+                    "limit": 3,
+                },
+                f"“{_step(d, sid).get('title', sid)}” now sends the run back to "
+                f"“{_step(d, target).get('title', target)}” when the {fname} is “{value}”, up to 3 times.",
+            )
     elif key == "when":
         if finding.type == "unreachable":
             if isinstance(answer, dict) and "add_enum" in answer and ws is not None:
