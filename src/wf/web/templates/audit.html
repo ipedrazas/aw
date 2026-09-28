@@ -43,7 +43,7 @@
         </div>
         {% for d in docs %}
           {% if loop.first and d.constructed %}<p class="small muted">The sample is a constructed example for the demo, not a customer document.</p>{% endif %}
-          <script type="text/plain" id="doc-{{ loop.index }}">{{ d.text }}</script>
+          <textarea class="hidden" id="doc-{{ loop.index }}">{{ d.text }}</textarea>
         {% endfor %}
       </form>
     {% else %}

@@ -585,6 +585,18 @@ def test_pages_render_or_say_they_are_missing(client):
         assert r.status_code == 200, path
 
 
+def test_the_sample_document_sits_in_a_textarea_not_a_script_tag(client):
+    """A browser never decodes character references inside <script>, so an apostrophe
+    in the sample document would show up as the literal text "&#39;" once "Use the
+    sample document" copies it into the textarea that starts a draft. A <textarea>
+    decodes them, the way the document itself reads."""
+    r = client.get("/audits/new")
+    assert r.status_code == 200
+    assert '<script type="text/plain"' not in r.text
+    assert '<textarea class="hidden" id="doc-1">' in r.text
+    assert "don&#39;t" in r.text
+
+
 def test_chat_answer_that_does_not_fit_leaves_the_question_open(client):
     """The chat writing prose into a question with fixed choices is told so, not a 500."""
     audit = client.post(
