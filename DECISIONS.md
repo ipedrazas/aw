@@ -292,9 +292,6 @@ repository, so the proposal is last-writer-on-a-branch with the diff shown befor
 - Sessions have no page of their own yet. The run page shows steps, decisions and
   tool calls; the prompts behind them are in `wf sessions` and `/api/sessions`. A
   "what it was asked" panel on the run page is the obvious next thing.
-- `may_repeat` is accepted by the brief as a control-flow location but no milestone
-  needs it, so it is not in the schema yet. Adding it later is a schema change, not an
-  architecture change.
 - The sample workspace lives inside this repository rather than as its own git
   repository, so that a checkout is self-contained. `wf.store.repo` uses the enclosing
   repository for commits and history.
@@ -491,6 +488,32 @@ untrue. The settings page offers the choice as "Who decides whether to go deeper
 ask me first (`always_ask`), or let the review decide within the limits (`auto`). A
 wait that asks the same question is pointed out there, since it is a step of its own
 and is not changed by the setting.
+
+**`may_repeat` is a step field, and the same answer-writing mechanism that closes every
+other unhandled outcome is how it gets there.** A step's `may_repeat: {when, to, limit}`
+is evaluated once the step itself has finished: `when` may read the step's own output
+(the one place self-reference is allowed), and if it reads true the run resumes at the
+earlier step named in `to`, up to `limit` times before it carries on instead — answering
+"if the reviewer rejects it, it goes back to the writer" without the workaround of a
+fix-it step followed by another check. `to` must name a step that comes before it
+(a structural conflict otherwise, same as a limit below 1 or pairing it with `for_each`,
+which has no single output to test), and a value `may_repeat.when` tests counts as
+handling that outcome, so it does not also show up as an unstated branch. The auditor's
+existing "when it comes back with X, what should happen?" question — until now answered
+with "carry on", "stop and show me" or "only then, do this later step" — gains a fourth
+choice, "send it back to `<earlier step it reads from>`", which writes exactly this
+field; the offered targets are the earlier steps the finding's step already reads from,
+since what it judges is what its own work came from. Alternative: hold the repeat as
+something the auditor remembers about an answer, separately from the definition, or add
+a distinct step kind for it. Why: the brief already named the third control-flow
+location `may_repeat`, alongside `when` and `for_each`, in a working note that said only
+that no milestone needed it yet and adding it would be a schema change, not an
+architecture change; every other gap in this schema closes by writing a field on a
+step, and a second, definition-external place for control flow to live would contradict
+"control flow lives only in `when`, `for_each` and `may_repeat`, never inferred from
+model output text." The loop count is per run, kept in memory while the run walks the
+definition; a run that stops mid-loop for a gate or an error and is then retried starts
+that count again, which is a known gap, not a promise this closes.
 
 **The workflow is drawn from its definition, around what happens when things go wrong.**
 `wf.api.diagram` works out what to show (`flow`) and draws it as inline SVG on the

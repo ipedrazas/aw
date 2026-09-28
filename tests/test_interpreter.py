@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
-from tests.helpers import make_db, read_yaml, step, write_yaml
+from tests.helpers import make_db, read_json, read_yaml, step, write_json, write_yaml
 from tests.scripted import deep_research_script
 from wf.activities import (
     Activities,
@@ -122,6 +122,85 @@ def test_branches_follow_the_verdict(ws, tmp_path):
     assert sum(1 for t in r.trace if t.event == "stub") == 2, (
         "dry runs show follow-ups, they do not start them"
     )
+
+
+def _reject_until(ws, limit: int = 2) -> None:
+    """Lets the review step send the run back to “write” when it rejects the report,
+    up to ``limit`` times, matching "if the reviewer rejects it, it goes back to the
+    writer" from the demo."""
+    schema = read_json(ws, "schemas/review.json")
+    schema["properties"]["verdict"]["enum"].append("reject")
+    write_json(ws, "schemas/review.json", schema)
+    data = read_yaml(ws, DEF)
+    step(data, "review")["may_repeat"] = {
+        "when": '${steps.review.output.verdict == "reject"}',
+        "to": "write",
+        "limit": limit,
+    }
+    write_yaml(ws, DEF, data)
+
+
+def test_a_rejected_report_goes_back_to_the_writer_and_then_carries_on(ws, tmp_path):
+    _reject_until(ws, limit=2)
+    wf = ws.load_definition("deep-research")
+    interp, db = make(
+        ws, tmp_path, ScriptedModel(deep_research_script(["reject", "reject", "accept"]))
+    )
+    r = interp.run(wf, TOPIC, "dry")
+    assert r.status == "done", r.error
+    events = [t.as_tuple()[:2] for t in r.trace]
+    loop = [
+        ("write", "run"),
+        ("check_links", "run"),
+        ("fetch_pages", "run"),
+        ("check_support", "fanout"),
+        ("review", "run"),
+    ]
+    assert events == [
+        ("plan", "run"),
+        ("research", "run"),
+        *loop,
+        ("review", "repeat"),
+        *loop,
+        ("review", "repeat"),
+        *loop,
+        ("revise", "skip"),
+        ("go_deeper", "skip"),
+        ("assemble", "run"),
+    ]
+    assert r.outputs["verdict"] == "accept"
+    # each pass wrote its own step run, and the last one is what later steps read
+    with db.session() as s:
+        writes = [st for st in s.query(StepRun).all() if st.step_id == "write"]
+    assert len(writes) == 3
+
+
+def test_a_rejected_report_stops_looping_once_it_hits_its_limit(ws, tmp_path):
+    _reject_until(ws, limit=2)
+    wf = ws.load_definition("deep-research")
+    interp, _ = make(
+        ws, tmp_path, ScriptedModel(deep_research_script(["reject", "reject", "reject"]))
+    )
+    r = interp.run(wf, TOPIC, "dry")
+    assert r.status == "done", r.error
+    events = [t.as_tuple()[:2] for t in r.trace]
+    assert events.count(("review", "repeat")) == 2
+    assert ("review", "repeat_limit") in events
+    assert events[-3:] == [("revise", "skip"), ("go_deeper", "skip"), ("assemble", "run")]
+    assert r.outputs["verdict"] == "reject", "the limit was reached, so the run carries on with it"
+    assert any("without going back" in d["text"] for d in r.decisions if d["step_id"] == "review")
+
+
+def test_may_repeat_is_deterministic_over_recorded_outputs(ws, tmp_path):
+    _reject_until(ws, limit=2)
+    wf = ws.load_definition("deep-research")
+    recorder = RecordingModel(ScriptedModel(deep_research_script(["reject", "accept"])))
+    first, _ = make(ws, tmp_path / "a", recorder)
+    r1 = first.run(wf, TOPIC, "dry")
+    second, _ = make(ws, tmp_path / "b", ReplayModel(recorder.records))
+    r2 = second.run(wf, TOPIC, "dry")
+    assert r1.status == r2.status == "done"
+    assert r1.control_trace == r2.control_trace
 
 
 def test_the_output_schema_is_enforced_not_trusted(sample_ws, tmp_path):

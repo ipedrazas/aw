@@ -57,6 +57,82 @@ def test_an_outcome_no_branch_handles_is_a_gap(ws):
     assert "reject" in f.question
     labels = [o.label for o in f.options]
     assert any("Carry on" in lbl for lbl in labels)
+    # an earlier step it reads from directly is offered as somewhere to send it back to
+    repeat = next(
+        o for o in f.options if o.value.get("op") == "repeat" and o.value["step"] == "write"
+    )
+    assert "Write the report" in repeat.label
+
+
+def test_a_step_may_send_the_run_back_and_closes_the_unhandled_outcome(ws):
+    schema = read_json(ws, "schemas/review.json")
+    schema["properties"]["verdict"]["enum"].append("reject")
+    write_json(ws, "schemas/review.json", schema)
+    data = read_yaml(ws, DEF)
+    step(data, "review")["may_repeat"] = {
+        "when": '${steps.review.output.verdict == "reject"}',
+        "to": "write",
+        "limit": 2,
+    }
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert result.ok, [(f.type, f.field, f.detail) for f in result.findings]
+
+
+def test_may_repeat_to_a_step_that_does_not_exist_is_a_conflict(ws):
+    data = read_yaml(ws, DEF)
+    step(data, "review")["may_repeat"] = {
+        "when": '${steps.review.output.verdict == "accept"}',
+        "to": "nope",
+        "limit": 2,
+    }
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert ("conflict", "steps.review.may_repeat.to") in {
+        (f.type, f.field) for f in result.findings
+    }
+
+
+def test_may_repeat_to_a_later_step_is_a_conflict(ws):
+    data = read_yaml(ws, DEF)
+    step(data, "review")["may_repeat"] = {
+        "when": '${steps.review.output.verdict == "accept"}',
+        "to": "assemble",
+        "limit": 2,
+    }
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert ("conflict", "steps.review.may_repeat.to") in {
+        (f.type, f.field) for f in result.findings
+    }
+
+
+def test_may_repeat_with_a_limit_below_one_is_a_conflict(ws):
+    data = read_yaml(ws, DEF)
+    step(data, "review")["may_repeat"] = {
+        "when": '${steps.review.output.verdict == "accept"}',
+        "to": "write",
+        "limit": 0,
+    }
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert ("conflict", "steps.review.may_repeat.limit") in {
+        (f.type, f.field) for f in result.findings
+    }
+
+
+def test_may_repeat_on_a_fan_out_step_is_a_conflict(ws):
+    data = read_yaml(ws, DEF)
+    step(data, "check_support")["may_repeat"] = {
+        "when": '${steps.check_support.output.verdict == "supports"}',
+        "to": "write",
+        "limit": 2,
+    }
+    write_yaml(ws, DEF, data)
+    result = run(ws)
+    assert ("conflict", "steps.check_support.may_repeat") in {
+        (f.type, f.field) for f in result.findings
+    }
 
 
 def test_an_unbounded_fan_out_is_a_gap(ws):

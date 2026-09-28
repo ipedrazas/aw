@@ -435,8 +435,11 @@ class Interpreter:
 
         status = "done"
         error: str | None = None
+        repeats: dict[str, int] = {}
         try:
-            for step in wf.spec.steps[resume.start_at if resume else 0 :]:
+            i = resume.start_at if resume else 0
+            while i < len(wf.spec.steps):
+                step = wf.spec.steps[i]
                 over = budget.exceeded()
                 if over:
                     self._decide(
@@ -457,6 +460,11 @@ class Interpreter:
                 if self._gate(ctx, step):
                     status = "waiting"
                     break
+                back_to = self._may_repeat(ctx, step, repeats)
+                if back_to is not None:
+                    i = back_to
+                    continue
+                i += 1
             if status == "done":
                 result.outputs = self._workflow_outputs(wf, state)
         except ActivityError as e:
@@ -1079,6 +1087,48 @@ class Interpreter:
             actual = out.get(field_name) if isinstance(out, dict) else None
             if actual is not None and str(actual) == value:
                 self._guess(ctx, step, f)
+
+    def _may_repeat(self, ctx: _Ctx, step: Step, repeats: dict[str, int]) -> int | None:
+        """Where the run goes back to, if ``step`` just finished with its condition to
+        repeat met and has not already sent the run back there as many times as its
+        limit allows. Returns the index to resume from, or ``None`` to carry on in order."""
+        mr = step.may_repeat
+        if mr is None or ctx.state["steps"].get(step.id, {}).get("status") != "done":
+            return None
+        try:
+            due = bool(render(mr.when, ctx.state))
+        except (ExprError, EvalError):
+            due = False
+        if not due:
+            return None
+        target = ctx.wf.step(mr.to)
+        target_idx = ctx.wf.step_index(mr.to)
+        if target is None or target_idx >= ctx.wf.step_index(step.id):
+            return None  # a conflict finding already says so; nowhere sensible to go
+        name = target.title or mr.to
+        count = repeats.get(step.id, 0)
+        if count >= mr.limit:
+            self._decide(
+                ctx,
+                None,
+                step.id,
+                kind="control",
+                text=f"Carried on past “{step.title or step.id}” without going back to “{name}” again.",
+                reason=f"It already went back {count} time{'s' if count != 1 else ''}, the limit for this step.",
+            )
+            ctx.result.trace.append(TraceEvent(step.id, "repeat_limit", mr.to))
+            return None
+        repeats[step.id] = count + 1
+        self._decide(
+            ctx,
+            None,
+            step.id,
+            kind="control",
+            text=f"Went back to “{name}” from “{step.title or step.id}”.",
+            reason=f"Its condition to go back was met, {count + 1} of {mr.limit} times allowed.",
+        )
+        ctx.result.trace.append(TraceEvent(step.id, "repeat", mr.to))
+        return target_idx
 
     # -- gates -------------------------------------------------------------
 

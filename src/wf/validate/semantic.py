@@ -13,14 +13,15 @@ from wf.schema import Step, Workflow, Workspace
 
 from .findings import Finding, Option, make_finding, plain_value
 from .schemas import SchemaResolver
+from .templates import PRODUCES
 
 
 def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
     findings: list[Finding] = []
     resolver = SchemaResolver(wf, ws)
 
-    # branching fields: path -> {step_id: [(op, value)]}
-    branch_tests: dict[str, list[tuple[str, str, Any]]] = defaultdict(list)
+    # branching fields: path -> [(step_id, op, value, place)]
+    branch_tests: dict[str, list[tuple[str, str, Any, str]]] = defaultdict(list)
     branch_paths: dict[str, Path] = {}
 
     for step in wf.spec.steps:
@@ -29,6 +30,8 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
             ("for_each", step.for_each),
             ("with", step.with_),
             ("input", step.input),
+            # evaluated once the step has finished, so it may read its own output
+            ("may_repeat.when", step.may_repeat.when if step.may_repeat else None),
         ):
             if value is None:
                 continue
@@ -69,10 +72,10 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                                     answer_kind="text",
                                 )
                             )
-                if place == "when":
+                if place in ("when", "may_repeat.when"):
                     for p, op, lit in info.comparisons:
                         if op in ("==", "!="):
-                            branch_tests[str(p)].append((step.id, op, lit))
+                            branch_tests[str(p)].append((step.id, op, lit, place))
                             branch_paths[str(p)] = p
 
     # every value tested for must be possible; every possible value must be handled
@@ -98,8 +101,8 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                     )
                 )
             continue
-        tested = {lit for _, op, lit in tests if op == "=="}
-        excluded = {lit for _, op, lit in tests if op == "!="}
+        tested = {lit for _, op, lit, _ in tests if op == "=="}
+        excluded = {lit for _, op, lit, _ in tests if op == "!="}
         handled = set(tested)
         for ex in excluded:
             handled |= {v for v in enum if v != ex}
@@ -107,13 +110,13 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
             field_name = str(p.segments[-1])
             handled |= set(producer.output.continue_on.get(field_name, []))
 
-        for step_id, _op, lit in tests:
+        for step_id, _op, lit, place in tests:
             if lit not in enum:
                 step = wf.step(step_id)
                 findings.append(
                     make_finding(
                         "unreachable",
-                        f"steps.{step_id}.when",
+                        f"steps.{step_id}.{place}",
                         step=step,
                         detail=f"“{step.title if step else step_id}” runs when {p} is “{lit}”, but the possible values are {_join(enum)}. Nothing can produce it.",
                         answer_kind="choice",
@@ -219,7 +222,40 @@ def _unhandled_options(wf: Workflow, producer: Step | None, value: Any) -> list[
                     )
                 )
                 break
+        for earlier in _repeat_candidates(wf, producer):
+            opts.append(
+                Option(
+                    value={"op": "repeat", "step": earlier.id},
+                    label=f"Send it back to “{earlier.title or earlier.id}”",
+                    consequence=f"“{earlier.title or earlier.id}” and everything after it runs again, "
+                    "up to 3 times, then it carries on instead.",
+                )
+            )
     return opts
+
+
+def _repeat_candidates(wf: Workflow, producer: Step) -> list[Step]:
+    """Earlier steps ``producer`` reads from directly, in the order it reads them: what
+    it judges is what its own work came from, and there is nowhere else a "send it
+    back" answer could plausibly point without asking someone to name a step."""
+    idx = wf.step_index(producer.id)
+    seen: list[str] = []
+    for src in expressions_in([producer.input, producer.with_]):
+        try:
+            info = walk(parse(src))
+        except ExprError:
+            continue
+        for p in info.paths:
+            if p.root == "steps" and len(p.segments) > 1:
+                sid = str(p.segments[1])
+                if sid not in seen:
+                    seen.append(sid)
+    out = []
+    for sid in seen:
+        s = wf.step(sid)
+        if s is not None and s.kind in PRODUCES and wf.step_index(sid) < idx:
+            out.append(s)
+    return out
 
 
 def _steps_after(wf: Workflow, step: Step | None) -> int:
