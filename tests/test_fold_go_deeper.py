@@ -109,3 +109,11 @@ def test_nothing_is_offered_where_nothing_goes_deeper_on_its_own(sample_ws):
     definition = wf.model_dump(by_alias=True, exclude_none=True)
     assert candidates(definition) == [], "its go_deeper starts follow-up runs; not this shape"
     assert suggestions(definition) == []
+
+
+def test_what_it_hands_back_follows_the_step_it_was_folded_into(drafted):
+    auditor, result = drafted
+    result.definition["spec"]["outputs"] = {"result": "${steps.go_deeper.output}"}
+    f = offer(result)
+    auditor.answer(result, f.id, f.options[0].value)
+    assert result.definition["spec"]["outputs"] == {"result": "${steps.research.output}"}

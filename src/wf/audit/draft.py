@@ -573,10 +573,10 @@ def build_draft(
                 "shared_with_children": True,
                 "on_exceeded": "pause_and_ask",
             }
-    # workflow outputs: the last agent step's output
-    last_agent = next((s for s in reversed(steps_out) if s["kind"] == "agent"), None)
-    if last_agent:
-        definition["spec"]["outputs"] = {"result": f"${{steps.{last_agent['id']}.output}}"}
+    # what it hands back: the step the document says it delivers, or else a question
+    result = _hands_back(extracted, steps_out, prov, assume, passage_text)
+    if result:
+        definition["spec"]["outputs"] = {"result": result}
 
     return Draft(
         name=name,
@@ -590,6 +590,60 @@ def build_draft(
         schemas=schemas,
         notes=notes,
     )
+
+
+def _sends(step: dict[str, Any]) -> bool:
+    """Whether a step's work is to send something out: its result is that it went."""
+    se = step.get("side_effects")
+    return isinstance(se, list) and bool(se) or bool(step.get("requires_approval"))
+
+
+def _hands_back(
+    extracted: dict[str, Any],
+    steps: list[dict[str, Any]],
+    prov: dict[str, str],
+    assume: Any,
+    passage_text: Any,
+) -> str | None:
+    """What the workflow hands back: the result of the step the document says it
+    delivers; when it does not say, the last step that produces something (not one
+    that sends it out), asked about with the others as the choices."""
+    producing = [s for s in steps if s["kind"] in PRODUCES and not _sends(s)]
+    if not producing:
+        return None
+
+    def ref(s: dict[str, Any]) -> str:
+        return f"${{steps.{s['id']}.output}}"
+
+    said = extracted.get("delivers") or {}
+    named = next((s for s in producing if s["id"] == said.get("step")), None)
+    if named is not None:
+        if said.get("passage"):
+            prov["spec.outputs.result"] = said["passage"]
+        return ref(named)
+    picked = producing[-1]
+    # the other choices: what a model wrote before what a routine gave back, latest first
+    rest = list(reversed(producing[:-1]))
+    others = [
+        *(s for s in rest if s["kind"] == "agent"),
+        *(s for s in rest if s["kind"] != "agent"),
+    ][:3]
+    assume(
+        "spec.outputs.result",
+        None,
+        "",
+        f"Your document does not say what it delivers, so I made it what “{picked['title']}” "
+        "gives back.",
+        options=[
+            Option(value={"set": ref(picked)}, label=f"Yes, what “{picked['title']}” gives back"),
+            *(
+                Option(value={"set": ref(s)}, label=f"No, what “{s['title']}” gives back")
+                for s in others
+            ),
+        ],
+        question="What should this workflow hand back?",
+    )
+    return ref(picked)
 
 
 def further_options() -> list[Option]:

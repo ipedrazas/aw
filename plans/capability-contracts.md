@@ -12,7 +12,9 @@ not:
   contained a full research pipeline rather than one isolated claim"): every step read
   everything before it;
 - the link check opened every address in its input (115), not the report's citations,
-  because the report gave back no citations for it to take.
+  because the report gave back no citations for it to take. In piece 3, a step that sends something out is never offered as the result (its
+result is only that it went), and a model's results come before a routine's among the
+choices.
 
 ## What was decided
 
@@ -51,7 +53,7 @@ Settled without asking, open to change:
 
 ## Pieces, each a PR
 
-Done: 1 is #64, 2 is the PR after it. In piece 2 the PDF routine's contract became
+Done: 1 is #64, 2 is #65, 3 is the PR after it. In piece 2 the PDF routine's contract became
 "the report" with no required field: it prints any report, using its longest text when
 the title and Markdown are named otherwise, so demanding `body_md` refused reports it
 prints. A routine that is wired keeps the rest of what it was given (the PDF also
