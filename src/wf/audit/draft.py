@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
-from wf.schema import Workflow, Workspace, load_workflow_dict
+from wf.schema import AppSettings, Workflow, Workspace, load_workflow_dict
 from wf.settings import careful_model, quick_model
 from wf.validate import (
     FURTHER_DEFAULT,
@@ -128,11 +128,15 @@ def build_draft(
     passages: list[Passage],
     workflows: list[str] | None = None,
     instructions: list[dict[str, Any]] | None = None,
+    app_settings: AppSettings | None = None,
 ) -> Draft:
     """``workflows`` are the names of the workflows the workspace already has, which a
     step that relies on another process can be handed to. ``instructions`` are the
     system's own (``wf.audit.catalog.known_instructions``): a step the document does
-    not explain, but that one of them does, is written from it rather than asked about."""
+    not explain, but that one of them does, is written from it rather than asked about.
+    ``app_settings`` is what a new draft starts from — how much it checks with you, its
+    model, its budget — absent the owner's own choice, the built-in defaults."""
+    app_settings = app_settings or AppSettings()
     own = {i["name"]: i for i in instructions or []}
     by_id = {p.id: p for p in passages}
     name = extracted["name"]
@@ -548,14 +552,10 @@ def build_draft(
             "inputs": inputs,
             "outputs": {},
             "defaults": {
-                "trust": {
-                    "policy": "earned",
-                    "promote_after": 3,
-                    "reset_on": ["skill", "model", "tools", "input_schema", "output_schema"],
-                },
+                "trust": app_settings.trust.model_dump(exclude_none=True),
                 "decision_log": "optional",
                 "on_error": "pause_and_explain",
-                "model": quick_model(),
+                "model": app_settings.model or quick_model(),
             },
             "steps": steps_out,
         },
@@ -573,6 +573,8 @@ def build_draft(
                 "shared_with_children": True,
                 "on_exceeded": "pause_and_ask",
             }
+    if "budget" not in definition["spec"] and app_settings.budget is not None:
+        definition["spec"]["budget"] = app_settings.budget.model_dump(exclude_none=True)
     # what it hands back: the step the document says it delivers, or else a question
     result = _hands_back(extracted, steps_out, prov, assume, passage_text)
     if result:

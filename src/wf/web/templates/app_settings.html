@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block bar_title %}<span class="muted">settings</span>{% endblock %}
+{% block content %}
+<div data-app-settings>
+<div class="card-head" style="margin-bottom:14px">
+  <div><h1>What a new workflow starts from</h1>
+  <p class="sub" style="margin:0">Read a document and this is where its draft begins. A workflow you have already saved keeps its own settings: changing this does not touch it.</p></div>
+  <span data-msg class="small"></span>
+</div>
+
+<div class="card">
+  <h2>Checking with you</h2>
+  <p class="sub">When a new workflow's step finishes in a real run, it can stop for your OK before the run carries on. The more it checks with you, the more you see and the slower runs go; the less, the more you hand over from the start.</p>
+  <form data-trust-default>
+    <div class="opts">
+      {% for c in data.choices %}
+      <label class="opt"><input type="radio" name="policy" value="{{ c.policy }}"{% if data.trust and data.trust.policy == c.policy %} checked{% endif %}>
+        <span>{{ c.label }}{% if c.policy == "earned" %}: after <input type="number" name="promote_after" min="1" max="20" style="width:4.5em" value="{{ (data.trust.promote_after if data.trust and data.trust.promote_after) or 3 }}" aria-label="OKs in a row"> OKs in a row{% endif %}
+        <div class="cons">{{ c.consequence }}</div></span></label>
+      {% endfor %}
+    </div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Default model</h2>
+  <p class="sub">What a new workflow's steps run on, unless the document asks for something else.</p>
+  <form data-model-default class="actions">
+    <select name="model" aria-label="Default model">
+      <option value=""{% if not data.model %} selected{% endif %}>The deployment's own default</option>
+      {% for m in data.models %}<option value="{{ m.value }}"{% if m.value == data.model %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Spending limit</h2>
+  <p class="sub">The most one run of a new workflow may spend, follow-up research included, unless its own settings say otherwise.</p>
+  <form data-budget class="actions">
+    <label>$ <input type="number" name="max_usd" min="0.5" step="0.5" style="width:6em" value="{{ data.budget.max_usd if data.budget and data.budget.max_usd }}" aria-label="Money"></label>
+    <label>and <input type="number" name="max_minutes" min="1" step="1" style="width:6em" value="{{ data.budget.max_minutes if data.budget and data.budget.max_minutes }}" aria-label="Minutes"> minutes</label>
+    <button class="btn btn-primary" type="submit">Save</button>
+  </form>
+</div>
+</div>
+{% endblock %}
