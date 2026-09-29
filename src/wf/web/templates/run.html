@@ -12,7 +12,7 @@
       {% for s in run.steps %}
       <li class="{{ 'active' if s.status in ('running', 'waiting') }}">
         <span class="dot dot-{{ s.status }}">{{ '✓' if s.status == 'done' else loop.index }}</span>
-        <span><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></span>
+        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
       </li>
       {% endfor %}
     </ol>
@@ -54,9 +54,10 @@
       </form>
     {% elif run.status == "waiting" and run.gate %}
       {% set gated = run.steps | selectattr("step_id", "equalto", run.gate.step_id) | first %}
-      <div class="banner"><span>Waiting for your OK on “{{ gated.title if gated else run.gate.step_id }}”. Look at what it produced below, then carry on or stop the run there.</span><span>{{ status_pill(run.status) }}</span></div>
+      <div class="banner"><span>Waiting for your OK on “{{ gated.title if gated else run.gate.step_id }}”. Look at what it produced, then carry on or stop the run there. <a href="#ok-{{ run.gate.step_id }}">Go to it</a></span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "waiting" %}
-      <div class="banner"><span>Waiting for you. Answer the step marked “Needs you” below and the run carries on from there.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% set waiting_step = run.steps | selectattr("status", "equalto", "waiting") | first %}
+      <div class="banner"><span>Waiting for you. Answer the step marked “Needs you” and the run carries on from there.{% if waiting_step %} <a href="#step-{{ waiting_step.step_id }}">Go to it</a>{% endif %}</span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "stopped" %}
       <div class="banner banner-grey"><span>You stopped this run. The steps that finished keep their results.</span><span>{{ status_pill(run.status) }}</span></div>
     {% else %}
@@ -102,7 +103,7 @@
     {% endif %}
 
     {% for s in run.steps %}
-    <div class="card">
+    <div class="card" id="step-{{ s.step_id }}">
       <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
       {% if s.error %}<div class="dec-ignored">{{ s.error }}</div>{% endif %}
       {% if s.follow_ups %}
@@ -119,7 +120,7 @@
       {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
       {% if run.gate and not run.gate.before and run.gate.step_id == s.step_id and run.status == "waiting" %}
-      <form class="waitform" data-ok="{{ run.id }}">
+      <form class="waitform" id="ok-{{ s.step_id }}" data-ok="{{ run.id }}">
         <p style="margin:0 0 8px"><strong>Is this OK?</strong> <span class="muted">Look at what it produced below.</span></p>
         <p><input type="text" name="note" placeholder="Anything to add? Optional." aria-label="A note with your answer"></p>
         <div class="actions"><button class="btn btn-primary" type="submit" value="ok">OK, carry on</button><button class="btn" type="submit" value="stop">Stop the run here</button><span data-msg class="small muted"></span></div>

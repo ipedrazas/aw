@@ -120,6 +120,7 @@ textarea{min-height:110px;resize:vertical}
 .dec-guess{border-left:4px solid #e0a52b;background:#fff9ea;padding:8px 10px;border-radius:6px}
 .railsteps{list-style:none;margin:0;padding:0}
 .railsteps li{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:10px 12px;border:1px solid transparent;border-radius:8px;margin-bottom:6px}
+.railstep-link{color:inherit;text-decoration:none;display:block}.railstep-link:hover strong{text-decoration:underline}
 .railsteps li.active{border-color:#e0a52b;background:#fff}
 .dot{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;border:1px solid var(--line);background:#fff}
 .dot-done{background:var(--green-ink);color:#fff;border-color:var(--green-ink)}
@@ -150,6 +151,7 @@ details summary{cursor:pointer;color:var(--muted)}
 .toollog>li{margin:0 0 8px}
 .toollog ul{margin:4px 0 0;padding-left:18px}
 .toollog .mono{word-break:break-all}
+.card[id^="step-"],.waitform{scroll-margin-top:16px}
 .waitform{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 /* Two versions of an instruction file, line by line. */
 .textdiff span{display:block}
