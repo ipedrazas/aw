@@ -22,7 +22,11 @@ are on the Runs page; a draft is tried with "Save and try it on a topic" on the 
 You describe how you work, in your own words or by pasting a document. The draft on
 the right is built from what you wrote: each step says where in your text it came from.
 Whatever your text does not say becomes a question, rather than a guess. Some things
-the system had to assume are asked as "We assumed ... Is that right?".
+the system had to assume are asked as "We assumed ... Is that right?". What the system
+already knows how to do is not asked: a step that searches the web gets the search, a
+link check uses the system's own check, and a step your text names without explaining
+(research, write the report, review it) starts from the system's own instructions for
+that kind of step, which the draft says under what it changed.
 
 Questions can be answered by picking a choice, or in the chat. If a question does not
 make sense, say so: it may rest on a wrong reading of your text, and the chat can fix
@@ -109,8 +113,11 @@ each answer. The draft only asks about a step's model when your text singles it 
 
 Each judgement step has written instructions: what the step is for, what good looks
 like, and what to record. They are written from your text when the draft is made, and
-can be edited from the workflow page; every earlier version is kept. There is no
-shared catalogue of instructions yet, beyond the ones that come with the sample.
+can be edited from the workflow page; every earlier version is kept. The system has
+its own instructions for some kinds of step (research, writing a report, reviewing and
+revising it, checking a page says what a report says); a step your text does not
+explain, but that one of these does, is written from it. Each workflow still gets its
+own copy, so changing it changes nothing else.
 
 ## Search
 

@@ -103,6 +103,7 @@ Rules:
 - Answer questions about the draft honestly from what is in <data>. If the answer is one of the open questions on the right, say so and point to it.
 - Questions about how the system works, what it can do and what they can ask you are answered from "how_it_works". When it says something is not possible yet, say so plainly, and say what people do instead if it says. When it does not cover the question, say you do not know rather than guess.
 - Their other workflows are under "your_workflows". When they ask about them, or a step does what one of them does, say so. To hand a step's work to one of them, when they ask or agree, edit steps.<id>.workflow to its name.
+- What the system already knows how to do is under "what_the_system_can_do": the tools a step can be given, the fixed routines a check or tool can run, and the system's own instructions for kinds of step it does well. When a question asks how a step is done and one of these already does it, say so in plain words ("the system already knows how to search recent web pages and news for this") and, if they agree, answer the question with the option that keeps the step as it is. Do not ask them to explain what the system already knows. When none of these does it, say plainly what it cannot do yet.
 - When their message or their document mentions something you cannot find in the draft, the document or their workflows, such as another process or a system of theirs, do not pretend to know what it is. Ask them what it involves, in one question, and propose no edits in that turn. Ask the same when a request could mean two different changes.
 - Only propose an edit when the person asked for a change or clearly agreed to one. Never change limits, approvals or what leaves the system without them saying so.
 - When the person answers an open question in the chat, record it under answers rather than editing the draft directly.
@@ -159,10 +160,13 @@ def chat(
     about: str | None = None,
     document: str | None = None,
     workflows: list[dict[str, Any]] | None = None,
+    capabilities: dict[str, Any] | None = None,
 ) -> ChatOutcome:
     """One chat turn. ``about`` is the id of the question the person opened the chat from;
     ``document`` is what they first wrote, which the draft was built from; ``workflows``
-    are the other workflows they have (``wf.audit.catalog.known_workflows``)."""
+    are the other workflows they have (``wf.audit.catalog.known_workflows``), and
+    ``capabilities`` the rest of what the system can do (``wf.audit.catalog.capabilities``)."""
+    caps = capabilities or {}
     focus = next((f for f in result.open_findings() if f.id == about), None) if about else None
     req = ModelRequest(
         tag="audit:chat",
@@ -173,6 +177,13 @@ def chat(
             "draft": result.definition,
             "your_workflows": workflows or [],
             "how_it_works": guide(),
+            "what_the_system_can_do": {
+                "tools": caps.get("tools") or [],
+                "routines": caps.get("routines") or [],
+                "instructions": [
+                    {k: i[k] for k in ("title", "what")} for i in caps.get("instructions") or []
+                ],
+            },
             "open_questions": [_finding_view(f) for f in result.open_findings()],
             "recent_changes": [c.model_dump() for c in result.changes[-10:]],
             "conversation": [{"role": t.role, "text": t.text} for t in history[-12:]],

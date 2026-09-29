@@ -276,6 +276,7 @@ def _step(**kw: Any) -> dict[str, Any]:
         "deadline": None,
         "limits": None,
         "judgement": None,
+        "uses": None,
     }
     base.update(kw)
     return base
