@@ -96,3 +96,9 @@
   {%- else %}.{% endif %}
   A real run needs them all answered; a dry run guesses the rest and says where.</p>
 {%- endmacro %}
+
+{#- a moment, as "12 min ago" with the full local time on hover (app.js); the UTC time
+    stands until the script runs -#}
+{% macro when(iso) -%}
+  {%- if iso %}<time datetime="{{ iso }}" data-ago>{{ iso[:16] | replace('T', ' ') }} UTC</time>{% endif -%}
+{%- endmacro %}

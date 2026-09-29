@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_pill, step_word, tech_switch %}
+{% from "_macros.html" import status_pill, step_word, tech_switch, when %}
 {% set rep = run.report %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
-{% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
+{% block bar_right %}<span class="muted">{% if run.started_at %}Started {{ when(run.started_at) }} · {% endif %}Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
 {% block content %}
 {% if run.status == "running" %}<div data-run-refresh="{{ run.id }}"></div>{% endif %}
 <div class="rail">
