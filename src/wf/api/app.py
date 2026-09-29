@@ -46,7 +46,14 @@ from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.interpret.interpreter import fingerprint, stops_for_ok
 from wf.logs import get_logger, setup_logging
-from wf.schema import Workflow, Workspace, WorkspaceError, dump_workflow, load_workflow_dict
+from wf.schema import (
+    AppSettings,
+    Workflow,
+    Workspace,
+    WorkspaceError,
+    dump_workflow,
+    load_workflow_dict,
+)
 from wf.settings import chat_model, provider, search_mode
 from wf.startup import announce
 from wf.store import Artifact, Database, Gate, Run
@@ -57,6 +64,7 @@ from wf.validate.models import (
     default_model_problem,
     labels_of_choices,
     model_choices,
+    model_label,
     model_problem,
     models_steps_cannot_use,
     resolve_model,
@@ -349,6 +357,25 @@ def create_app(state: AppState | None = None) -> FastAPI:
             return {**_settings_view(st(), wf), "commit": None, "drafts": 0}
         commit, drafts = _commit_settings(st(), wf, edits, said)
         return {**_settings_view(st(), _load(st(), name)), "commit": commit, "drafts": drafts}
+
+    @app.get("/api/settings")
+    def get_app_settings() -> dict[str, Any]:
+        return _app_settings_view(st())
+
+    @app.post("/api/settings")
+    def set_app_settings(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """What a new draft starts from — not any workflow already saved, whose own
+        settings keep winning over this:
+
+        ``{"trust": {...}}`` how much a new workflow checks with you;
+        ``{"model": name | null}`` its default model, or the deployment's own;
+        ``{"budget": {"max_usd": n, "max_minutes": n}}`` its starting spending limit."""
+        settings = st().ws.load_app_settings()
+        edits, said = _app_settings_edits(settings, body)
+        if not edits:
+            return {**_app_settings_view(st()), "commit": None}
+        commit = _commit_app_settings(st(), settings, edits, said)
+        return {**_app_settings_view(st()), "commit": commit}
 
     @app.post("/api/workflows/{name}/runs")
     def start_run(name: str, body: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
@@ -1025,6 +1052,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def settings_page(request: Request, name: str) -> Any:
         return page(request, "settings", data=get_settings(name), name=name)
 
+    @app.get("/settings", response_class=HTMLResponse)
+    def app_settings_page(request: Request) -> Any:
+        return page(request, "app_settings", data=get_app_settings())
+
     @app.get("/skills", response_class=HTMLResponse)
     def skills_page(request: Request) -> Any:
         return page(request, "skills", skills=list_skills())
@@ -1371,6 +1402,78 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
             if (s.tools or {}).get("search")
         ],
     }
+
+
+def _app_settings_view(state: AppState) -> dict[str, Any]:
+    """What a new draft starts from, as the settings page shows it. Nothing here says
+    anything about a workflow already saved: its own settings keep winning over this."""
+    settings = state.ws.load_app_settings()
+    return {
+        "trust": settings.trust.model_dump(exclude_none=True),
+        "choices": TRUST_CHOICES,
+        "models": model_choices(),
+        "model": settings.model,
+        "model_label": model_label(settings.model),
+        "budget": settings.budget.model_dump(exclude_none=True) if settings.budget else None,
+    }
+
+
+def _app_settings_edits(settings: AppSettings, body: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    if "trust" in body:
+        value = _trust_value(body["trust"], settings.trust)
+        if settings.trust.model_dump(exclude_none=True) == value:
+            return {}, ""
+        return ({"trust": value}, f"a new workflow checks with you: {value['policy']}")
+    if "model" in body:
+        asked = body.get("model") or None
+        model = resolve_model(str(asked)) if asked else None
+        if asked and model is None:
+            raise HTTPException(
+                400,
+                f"“{asked}” is not one of the models this deployment runs "
+                f"({labels_of_choices()}), so nothing changed.",
+            )
+        if model == settings.model:
+            return {}, ""
+        said = (
+            f"a new workflow runs on {model_label(model) or model}"
+            if model
+            else "a new workflow runs on the deployment's default"
+        )
+        return {"model": model}, said
+    if "budget" in body:
+        b = body["budget"] or {}
+        was = settings.budget.model_dump(exclude_none=True) if settings.budget else {}
+        value = {
+            **was,
+            "max_usd": _positive(b.get("max_usd"), "The money limit"),
+            "max_minutes": _positive(b.get("max_minutes"), "The time limit"),
+        }
+        return (
+            {"budget": value},
+            f"a new workflow may spend ${value['max_usd']} and {value['max_minutes']} minutes",
+        )
+    raise HTTPException(400, "Nothing to change.")
+
+
+def _commit_app_settings(
+    state: AppState, settings: AppSettings, edits: dict[str, Any], said: str
+) -> str | None:
+    data = settings.model_dump(by_alias=True, exclude_none=True)
+    data.update(edits)
+    try:
+        new = AppSettings.model_validate(data)
+    except ValidationError as e:
+        raise HTTPException(400, f"That does not fit, so nothing changed: {e}") from e
+    state.ws.save_app_settings(new)
+    rel = str(state.ws.app_settings_path().relative_to(state.ws.root))
+    commit = gitrepo.commit_paths(state.ws.root, [rel], said, *state.author)
+    logger.info(
+        "app settings: %s",
+        said,
+        extra={"fields": {"event": "app_settings.set", "fields": list(edits), "commit": commit}},
+    )
+    return commit
 
 
 def _carry_to_drafts(state: AppState, name: str, changes: list[Change]) -> int:

@@ -54,6 +54,29 @@ class Defaults(Strict):
     model: str | None = None
 
 
+# What resets a step's count of OKs in a row: a change to any of these starts it
+# again, because what it earned the trust for is no longer what it would be doing.
+DEFAULT_TRUST_RESET_ON = ["skill", "model", "tools", "input_schema", "output_schema"]
+
+
+class AppSettings(Strict):
+    """What a new draft starts from, before anything of its own says otherwise.
+
+    Kept apart from a workflow's own settings (``Defaults``, above): once a draft is
+    saved, its own settings are what runs it, and changing this afterwards changes
+    nothing about it. This is only ever read when a document is turned into a draft.
+    """
+
+    trust: Trust = Field(
+        default_factory=lambda: Trust(
+            policy="earned", promote_after=3, reset_on=list(DEFAULT_TRUST_RESET_ON)
+        )
+    )
+    # None means the deployment's own default (``wf.settings.quick_model``).
+    model: str | None = None
+    budget: Budget | None = None
+
+
 class Output(Strict):
     schema_: str | None = Field(default=None, alias="schema")
     artifact: str | None = None

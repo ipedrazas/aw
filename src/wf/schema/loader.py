@@ -8,6 +8,7 @@ A workspace is a directory (normally its own git repository) with this shape::
     fixtures/      recorded tool responses for dry runs
     process-docs/  the customer's own process documents
     cases/         past cases with known outcomes, for dry runs to diverge from
+    settings.yaml  what a new draft starts from, absent otherwise
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from .definition import Workflow
+from .definition import AppSettings, Workflow
 from .refs import PinnedRef, parse_pin, rename_references
 
 _FRONT_MATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
@@ -189,6 +190,25 @@ class Workspace:
         if version is not None and wf.metadata.version != version:
             return None
         return wf
+
+    # -- app-wide settings ---------------------------------------------------
+
+    def app_settings_path(self) -> Path:
+        return self.root / "settings.yaml"
+
+    def load_app_settings(self) -> AppSettings:
+        """What a new draft starts from. The owner's choice if they have made one,
+        otherwise the built-in defaults (the same values ``AppSettings`` itself has)."""
+        p = self.app_settings_path()
+        if not p.exists():
+            return AppSettings()
+        return load_app_settings_text(p.read_text())
+
+    def save_app_settings(self, settings: AppSettings) -> Path:
+        p = self.app_settings_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(dump_app_settings(settings))
+        return p
 
     # -- skills ------------------------------------------------------------
 
@@ -396,6 +416,16 @@ def load_workflow_dict(data: dict[str, Any]) -> Workflow:
     return Workflow.model_validate(data)
 
 
+def load_app_settings_text(text: str) -> AppSettings:
+    data = yaml.safe_load(text) or {}
+    if not isinstance(data, dict):
+        raise WorkspaceError("settings is not a mapping")
+    try:
+        return AppSettings.model_validate(data)
+    except ValidationError as e:
+        raise WorkspaceError(f"settings does not match the schema:\n{e}") from e
+
+
 class _Dumper(yaml.SafeDumper):
     pass
 
@@ -413,6 +443,11 @@ def dump_workflow(wf: Workflow) -> str:
     data = wf.model_dump(by_alias=True, exclude_none=True, exclude_defaults=False)
     # drop empty containers so the YAML stays readable
     data = _prune(data)
+    return yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=100)
+
+
+def dump_app_settings(settings: AppSettings) -> str:
+    data = _prune(settings.model_dump(by_alias=True, exclude_none=True))
     return yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=100)
 
 
@@ -435,7 +470,9 @@ __all__ = [
     "Skill",
     "Workspace",
     "WorkspaceError",
+    "dump_app_settings",
     "dump_workflow",
+    "load_app_settings_text",
     "load_workflow_dict",
     "load_workflow_text",
     "parse_pin",

@@ -147,6 +147,7 @@ class Auditor:
                 passages,
                 workflows=[w["name"] for w in workflows if w["name"] != extracted["name"]],
                 instructions=caps["instructions"],
+                app_settings=self.ws.load_app_settings(),
             )
             if self.writes_skills:
                 # one step at a time: the calls land in this session in the order of the steps

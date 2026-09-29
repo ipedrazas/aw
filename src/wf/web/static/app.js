@@ -420,6 +420,29 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   }));
 })();
 
+/* App-wide settings: what a new draft starts from. */
+(function () {
+  const root = document.querySelector("[data-app-settings]"); if (!root) return;
+  const url = "/api/settings";
+  const msg = root.querySelector("[data-msg]");
+  const save = async (body) => {
+    say(msg, "Saving…");
+    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+  };
+  const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
+  const trust = root.querySelector("form[data-trust-default]");
+  trust.addEventListener("submit", e => {
+    e.preventDefault();
+    const c = trust.querySelector("input[name=policy]:checked");
+    if (!c) return say(msg, "Pick one first.", true);
+    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}});
+  });
+  const model = root.querySelector("form[data-model-default]");
+  model.addEventListener("submit", e => { e.preventDefault(); save({model: model.querySelector("[name=model]").value || null}); });
+  const budget = root.querySelector("form[data-budget]");
+  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}); });
+})();
+
 /* Run page: say OK to the step a real run stopped after, or stop it there. */
 document.querySelectorAll("form[data-ok]").forEach(f => {
   f.addEventListener("submit", async e => {
