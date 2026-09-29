@@ -140,7 +140,7 @@ class Interpreter:
             parent=parent,
             parent_step_run=parent_step_run,
             budget_usd=budget.max_usd,
-            title=title or str(inputs.get("topic") or wf.metadata.name),
+            title=title or run_title(wf, inputs),
             case_name=case_name,
         )
         return self.run_existing(
@@ -1793,3 +1793,13 @@ def state_summary(state: dict[str, Any]) -> str:
             for k, v in state.get("steps", {}).items()
         }
     )
+
+
+def run_title(wf: Workflow, inputs: dict[str, Any]) -> str:
+    """What a run is called when nothing names it: the first text a person gave it, in
+    the order the workflow declares its inputs, else the workflow's name."""
+    for name, spec in wf.spec.inputs.items():
+        v = inputs.get(name)
+        if not spec.internal and isinstance(v, str) and v.strip():
+            return v.strip()
+    return str(inputs.get("topic") or wf.metadata.name)

@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from wf.activities import ModelActivity, ModelRequest
+from wf.activities import ModelActivity, ModelRequest, ToolSpec
 from wf.settings import chat_model
 from wf.store.sessions import session_span
 from wf.validate import Finding
@@ -149,6 +149,7 @@ Rules:
 - Answer questions about the draft honestly from what is in <data>. If the answer is one of the open questions on the right, say so and point to it.
 - Questions about how the system works, what it can do and what they can ask you are answered from "how_it_works". When it says something is not possible yet, say so plainly, and say what people do instead if it says. When it does not cover the question, say you do not know rather than guess.
 - Their other workflows are under "your_workflows". When they ask about them, or a step does what one of them does, say so. To hand a step's work to one of them, when they ask or agree, edit steps.<id>.workflow to its name.
+- Questions about their runs — a run's status, where it stopped and why, what a step decided — are answered by calling recent_runs and, once you have a run id, run_details, rather than guessed. Call them only when the question needs them, not on every turn. When there is no run that matches, say so plainly rather than inventing one.
 - What the system already knows how to do is under "what_the_system_can_do": the tools a step can be given, the fixed routines a check or tool can run, and the system's own instructions for kinds of step it does well. When a question asks how a step is done and one of these already does it, say so in plain words ("the system already knows how to search recent web pages and news for this") and, if they agree, answer the question with the option that keeps the step as it is. Do not ask them to explain what the system already knows. When none of these does it, say plainly what it cannot do yet.
 - A step can be told to follow one of the system's own instructions, or put on another model. Both are listed under "what_the_system_can_do", and the person may name one by its title, its name or its reference (such as skills/claim-support.md@1 or typesafe/jev-1.13): match what they said against every one of those before deciding it is unknown. When they ask for it, edit steps.<id>.skill to the instructions' "ref", and steps.<id>.model to the model's "value" (spec.defaults.model for every step that names no model of its own). A step keeps the other one unless they asked to change it too.
 - Some instructions come with a result of their own ("result"): what they are written to give back. When a step is moved onto them and gives back something else, say so and ask whether it should give back theirs too, naming what "switching_result_would_take" lists for that step and those instructions (the later steps that would lose what they read). When they agree, edit steps.<id>.output.schema to that result. A decisions model usually needs it: the result is what it is asked.
@@ -202,6 +203,116 @@ def finding_view(f: Finding) -> dict[str, Any]:
     }
 
 
+class RunsAccess(Protocol):
+    """What the chat needs to look up a workflow's runs: ``wf.dryrun.DryRunner`` already
+    has both, so the app passes it straight through."""
+
+    def list_runs(self, workflow: str | None = None, limit: int = 50) -> list[dict[str, Any]]: ...
+
+    def snapshot(self, run_id: str) -> dict[str, Any]: ...
+
+
+def _recent_runs(runs: RunsAccess, workflow: str, args: dict[str, Any]) -> Any:
+    limit = max(1, min(int(args.get("limit") or 5), 20))
+    return [
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "status": r["status"],
+            "started_at": r["started_at"],
+            "cost": r["cost"],
+            "steps": r["steps"],
+        }
+        for r in runs.list_runs(workflow, limit=limit)
+    ]
+
+
+def _run_details(runs: RunsAccess, args: dict[str, Any]) -> Any:
+    run_id = str(args.get("run_id") or "")
+    try:
+        snap = runs.snapshot(run_id)
+    except KeyError:
+        return {"error": f"No run with id {run_id!r}."}
+    return {
+        "id": snap["id"],
+        "title": snap["title"],
+        "status": snap["status"],
+        "error": snap["error"],
+        "cost": snap["cost"],
+        "started_at": snap["started_at"],
+        "finished_at": snap["finished_at"],
+        # the step a real run stopped after, waiting for someone's OK, if it is
+        "waiting_on": snap["gate"],
+        # the run's own account of why it is not still running, if it said one; not
+        # always one of the steps below, since a step it paused or stopped before can
+        # have no run of its own yet
+        "stopped": snap["stopped"],
+        "steps": [
+            {
+                "step_id": s["step_id"],
+                "title": s["title"],
+                "status": s["status"],
+                "error": s["error"],
+                "cost_usd": s["cost_usd"],
+                # what the step decided, and why the run stopped or moved on, in plain
+                # sentences: kind is "decision" (the step, about its own work), "guess"
+                # (an unanswered field the run filled in), "control" (the run pausing,
+                # stopping or repeating) or "ignored" (instructions found in fetched data).
+                "decisions": [
+                    {"kind": d["kind"], "text": d["text"], "reason": d["reason"]}
+                    for d in s["decisions"]
+                ],
+            }
+            for s in snap["steps"]
+        ],
+    }
+
+
+def _runs_tools(runs: RunsAccess, workflow: str) -> list[ToolSpec]:
+    """Tools the chat calls to see this workflow's runs, fetched only when a question
+    needs them rather than sent on every turn."""
+    return [
+        ToolSpec(
+            name="recent_runs",
+            description=(
+                "This workflow's recent runs, newest first: id, title, status, when it "
+                "started, what it cost so far, and each step's status. Call this to find "
+                "a run id, then run_details for the full story of one run."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "How many runs to list, newest first. Defaults to 5.",
+                    }
+                },
+            },
+            executor=lambda i: _recent_runs(runs, workflow, i),
+        ),
+        ToolSpec(
+            name="run_details",
+            description=(
+                "One run in full: its status, where it stopped and why (waiting for someone's "
+                "OK, paused, stopped at the spending limit, or broke), its cost, and each "
+                "step's status and what it decided."
+            ),
+            input_schema={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["run_id"],
+                "properties": {
+                    "run_id": {"type": "string", "description": "A run id from recent_runs."}
+                },
+            },
+            executor=lambda i: _run_details(runs, i),
+        ),
+    ]
+
+
 def chat(
     model: ModelActivity,
     result: AuditResult,
@@ -215,6 +326,7 @@ def chat(
     capabilities: dict[str, Any] | None = None,
     model_limits: dict[str, dict[str, str]] | None = None,
     result_costs: dict[str, dict[str, list[str]]] | None = None,
+    runs: RunsAccess | None = None,
 ) -> ChatOutcome:
     """One chat turn. ``about`` is the id of the question the person opened the chat from;
     ``document`` is what they first wrote, which the draft was built from; ``workflows``
@@ -223,13 +335,17 @@ def chat(
     ``model_limits`` the models each step cannot run on, and why
     (``wf.validate.models.models_steps_cannot_use``), and ``result_costs``, per step and
     instructions, what taking the result those instructions come with would take from
-    the steps that read it (``result_costs`` in ``wf.audit.catalog``)."""
+    the steps that read it (``result_costs`` in ``wf.audit.catalog``). ``runs`` looks up
+    this workflow's runs (``wf.dryrun.DryRunner``); when given, the chat can call tools to
+    see a run's status, where it stopped and why, and what a step decided, fetched only
+    when a question needs them rather than sent on every turn."""
     caps = capabilities or {}
     focus = next((f for f in result.open_findings() if f.id == about), None) if about else None
     req = ModelRequest(
         tag="audit:chat",
         model=model_name or chat_model(),
         system=CHAT_INSTRUCTIONS,
+        tools=_runs_tools(runs, result.name) if runs is not None else [],
         input={
             **({"document": document} if document else {}),
             "draft": result.definition,

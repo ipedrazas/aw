@@ -44,7 +44,7 @@ from wf.audit.triage import triage
 from wf.decisions import is_decisions_model
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
-from wf.interpret.interpreter import fingerprint, stops_for_ok
+from wf.interpret.interpreter import fingerprint, run_title, stops_for_ok
 from wf.logs import get_logger, setup_logging
 from wf.schema import (
     AppSettings,
@@ -72,7 +72,15 @@ from wf.validate.models import (
 
 from .audits import AuditStore
 from .diagram import describe, flow, render_svg
-from .plain import TRUST_CHOICES, plain_steps, plain_summary, trust_label
+from .plain import (
+    TRUST_CHOICES,
+    plain_steps,
+    plain_summary,
+    run_fields,
+    sends_outside,
+    starts_more_work,
+    trust_label,
+)
 from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -190,6 +198,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
             "findings": [f.model_dump(mode="json") for f in result.ordered()],
             "questions": _questions(result.findings, wf),
             "cases": st().ws.list_cases(),
+            "run_fields": run_fields(wf),
+            "starts_more_work": starts_more_work(wf),
+            "sends_outside": sends_outside(wf),
         }
 
     @app.post("/api/workflows/{name}/answer")
@@ -683,6 +694,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 model_limits=models_steps_cannot_use(result.workflow(), st().ws),
                 result_costs=result_costs(st().ws, result.workflow()),
                 about=body.get("about") or None,
+                runs=st().runner,
             )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e
@@ -1033,7 +1045,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request,
             f"{template}.html",
-            {"offline": st().offline, "search_live": search_mode() == "exa", **ctx},
+            {
+                "offline": st().offline,
+                "search_live": search_mode() == "exa",
+                "section": _section(request.url.path),
+                "needs_you": _needs_you(st()),
+                **ctx,
+            },
         )
 
     @app.get("/", response_class=HTMLResponse)
@@ -1046,7 +1064,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/workflows/{name}", response_class=HTMLResponse)
     def workflow_page(request: Request, name: str) -> Any:
-        return page(request, "workflow", data=get_workflow(name), name=name)
+        return page(request, "workflow", data=get_workflow(name), name=name, cases=cases())
 
     @app.get("/workflows/{name}/settings", response_class=HTMLResponse)
     def settings_page(request: Request, name: str) -> Any:
@@ -1157,6 +1175,20 @@ def _where_to_answer(state: AppState, name: str) -> tuple[dict[str, str], bool]:
             if f.status == "open":
                 links.setdefault(f.id, f"/audits/{a['id']}#q-{f.id}")
     return links, found
+
+
+def _section(path: str) -> str:
+    """Which part of the nav a page belongs to: a workflow's settings are the workflow's,
+    a draft is a workflow being made, one instruction file is among the instructions."""
+    first = path.strip("/").split("/")[0]
+    return {"audits": "workflows", "skill": "skills", "": "workflows"}.get(first, first)
+
+
+def _needs_you(state: AppState) -> int:
+    """How many runs are waiting for someone: an OK, or an answer. Shown on every page,
+    since a run that stopped for you should not wait until you look at the runs list."""
+    with state.db.session() as s:
+        return s.query(Run).filter_by(status="waiting").count()
 
 
 def _load(state: AppState, name: str):
@@ -1731,6 +1763,7 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         "asking": (f.id if (f := asking(result.findings, rec.chat or [])) else None),
         "explanations": result.explanations,
         "cases": state.ws.list_cases(),
+        "run_fields": run_fields(wf),
         "runs": state.runner.list_runs(result.name),
     }
 
@@ -1984,7 +2017,7 @@ def _start_in_background(
         parent=None,
         parent_step_run=None,
         budget_usd=budget.max_usd,
-        title=title or str(inputs.get("topic") or wf.metadata.name),
+        title=title or run_title(wf, inputs),
         case_name=case,
     )
     run_id = run.id
