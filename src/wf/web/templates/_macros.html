@@ -5,7 +5,7 @@
 {%- endmacro %}
 
 {% macro status_pill(status) -%}
-  {%- set words = {"running": "Running", "done": "Done: PDF ready", "failed": "Stopped: something broke", "paused_budget": "Paused: spending limit", "waiting": "Needs you", "skipped": "Skipped", "paused": "Paused", "stopped": "Stopped by you"} -%}
+  {%- set words = {"running": "Running", "done": "Done", "failed": "Stopped: something broke", "paused_budget": "Paused: spending limit", "waiting": "Needs you", "skipped": "Skipped", "paused": "Paused", "stopped": "Stopped by you"} -%}
   {%- set cls = {"running": "pill-blue", "done": "pill-green", "failed": "pill-red", "paused_budget": "pill-red", "waiting": "pill-yellow", "skipped": "pill-grey", "paused": "pill-yellow", "stopped": "pill-grey"} -%}
   <span class="pill {{ cls.get(status, 'pill-grey') }}">{{ words.get(status, status) }}</span>
 {%- endmacro %}
@@ -95,4 +95,36 @@
   {%- elif folded > 1 %}, {{ shown }} to go through: {{ folded }} are questions already asked of other steps, and are answered together with them.
   {%- else %}.{% endif %}
   A real run needs them all answered; a dry run guesses the rest and says where.</p>
+{%- endmacro %}
+
+{#- The form that starts a run: one field per input the workflow declares (the runtime's
+    own are left out), or a past case, which brings its own inputs. -#}
+{% macro run_inputs(fields, cases) -%}
+  <div class="run-grid">
+    {% for f in fields %}
+    <div>
+      <label class="small muted" for="in-{{ f.name }}">{{ f.label }}{% if not f.required %} (optional){% endif %}</label>
+      {%- set attrs %} id="in-{{ f.name }}" data-input="{{ f.name }}" data-type="{{ f.type }}" data-label="{{ f.label }}"{% if f.required %} data-required{% endif %}{% if f.min_length %} data-min-length="{{ f.min_length }}"{% endif %}{% endset %}
+      {% if f.enum %}
+        <select{{ attrs }}>{% if not f.required %}<option value="">Not given</option>{% endif %}{% for o in f.enum %}<option value="{{ o }}"{% if o == f.default %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+      {% elif f.type == "boolean" %}
+        <label class="small"><input type="checkbox"{{ attrs }}{% if f.default %} checked{% endif %}> Yes</label>
+      {% elif f.type in ("integer", "number") %}
+        <input type="number"{{ attrs }} step="{{ '1' if f.type == 'integer' else 'any' }}"{% if f.default is not none %} value="{{ f.default }}"{% endif %}>
+      {% elif f.type == "list" %}
+        <textarea rows="3"{{ attrs }} placeholder="One per line">{{ (f.default or []) | join('\n') }}</textarea>
+      {% elif f.type == "object" %}
+        <textarea rows="3" class="mono"{{ attrs }} placeholder='{"key": "value"}'>{{ f.default | tojson if f.default is not none else "" }}</textarea>
+      {% else %}
+        <input type="text"{{ attrs }}{% if f.min_length %} placeholder="At least {{ f.min_length }} characters"{% endif %}{% if f.default is not none %} value="{{ f.default }}"{% endif %}>
+      {% endif %}
+      {% if f.description %}<div class="small muted">{{ f.description }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% if cases %}
+    <div><label class="small muted" for="in-case">{{ "Or a past case with a known outcome" if fields else "A past case with a known outcome (optional)" }}</label>
+      <select id="in-case" name="case"><option value="">Pick a case</option>{% for c in cases %}<option value="{{ c.name }}">{{ c.title }}</option>{% endfor %}</select></div>
+    {% endif %}
+    {% if not fields and not cases %}<p class="small muted" style="margin:0">This workflow takes nothing to start: it runs as it is.</p>{% endif %}
+  </div>
 {%- endmacro %}
