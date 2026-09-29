@@ -13,10 +13,9 @@
     <span class="topbar-title">{% block bar_title %}{% endblock %}</span>
   </div>
   <nav class="topbar-nav">
-    <a href="/workflows">Workflows</a>
-    <a href="/skills">Instructions</a>
-    <a href="/runs">Runs</a>
-    <a href="/settings">Settings</a>
+    {% for href, key, label in [("/workflows", "workflows", "Workflows"), ("/skills", "skills", "Instructions"), ("/runs", "runs", "Runs"), ("/settings", "settings", "Settings")] %}
+    <a href="{{ href }}"{% if section == key %} class="active" aria-current="page"{% endif %}>{{ label }}{% if key == "runs" and needs_you %} <span class="badge" title="{{ needs_you }} run{{ 's' if needs_you != 1 }} waiting for you">{{ needs_you }}<span class="visually-hidden"> waiting for you</span></span>{% endif %}</a>
+    {% endfor %}
     {% if offline %}<span class="pill pill-offline" title="No API key: outputs are placeholders, not judgement">Offline model</span>{% endif %}
     {% block bar_right %}<a class="btn btn-primary" href="/audits/new">New workflow</a>{% endblock %}
   </nav>

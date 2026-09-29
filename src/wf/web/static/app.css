@@ -17,6 +17,11 @@ h1{font-size:30px;margin:0 0 4px}h2{font-size:18px;margin:0 0 6px}h3{font-size:1
 .topbar a{color:#fff;text-decoration:none}
 .brand{font-weight:600}.topbar-title{margin-left:16px;color:#cfd3cc}
 .topbar-nav{display:flex;align-items:center;gap:18px}
+.topbar-nav > a:not(.btn){color:#cfd3cc;padding:4px 0;border-bottom:2px solid transparent}
+.topbar-nav > a:not(.btn):hover,.topbar-nav > a.active{color:#fff}
+.topbar-nav > a.active{border-bottom-color:#fff}
+.badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:999px;background:#e0a52b;color:#1b1f1e;font-size:12px;font-weight:700;text-align:center;line-height:18px}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .topbar .btn-primary{background:var(--blue);color:#fff}
 .topbar .btn{color:#fff}
 .page{padding:24px 28px 60px}
