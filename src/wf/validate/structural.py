@@ -313,7 +313,8 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
             findings.append(
                 make_finding("gap", f"steps.{step.id}.max_fanout", step=step, unblocks=unblocks)
             )
-        if step.with_ is not None and step.for_each is None:
+        # a step that starts a workflow gives it ``with``; any other step fills each item
+        if step.with_ is not None and step.for_each is None and step.kind != "subworkflow":
             findings.append(
                 make_finding(
                     "conflict",

@@ -517,6 +517,18 @@ def apply_answer(
         change(field, str(answer), "The declared shape of this step's output.")
     elif (
         finding.type == "conflict"
+        and ".with." in field
+        and isinstance(answer, dict)
+        and answer.get("op") in ("rename", "leave_out")
+    ):
+        # something a step gives the workflow it starts, under a name that has no input
+        given = _get(d, field)
+        change(field, None, "The workflow it starts takes no input by that name.")
+        if answer["op"] == "rename":
+            to = str(answer["to"])
+            change(f"steps.{sid}.with.{to}", given, f"Given as its “{to}” instead.")
+    elif (
+        finding.type == "conflict"
         and isinstance(answer, dict)
         and answer.get("op") == "move_before"
     ):
