@@ -108,9 +108,10 @@ class Wiring:
 
     # -- the passes ------------------------------------------------------------------
 
-    def run(self) -> None:
+    def run(self, only: set[str] | None = None) -> None:
+        """Wire the capability steps, or only the ones named in ``only``."""
         self.adopt_contracts()
-        for sid in [s["id"] for s in self.steps]:
+        for sid in [s["id"] for s in self.steps if only is None or s["id"] in only]:
             step = next((s for s in self.steps if s["id"] == sid), None)
             takes = self.takes(step) if step else None
             if step is None or takes is None:
