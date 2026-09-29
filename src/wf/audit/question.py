@@ -228,6 +228,14 @@ def apply_answer(
                 f"“{gone.get('title') or gone['id']}” is now how far "
                 f"“{_step(d, sid).get('title') or sid}” searches further.",
             )
+            outputs = d["spec"].get("outputs") or {}
+            reads_gone = re.compile(rf"\bsteps\.{re.escape(answer['step'])}\b")
+            if any(reads_gone.search(str(v)) for v in outputs.values()):
+                change(
+                    "spec.outputs",
+                    {k: reads_gone.sub(f"steps.{sid}", str(v)) for k, v in outputs.items()},
+                    "What it hands back comes from the step that now goes deeper.",
+                )
             change(field, answer["search_further"], "How far it searches further.")
             for name in _get(d, f"steps.{sid}.tools") or {}:
                 if name.split(".")[-1] == "search":
@@ -236,8 +244,8 @@ def apply_answer(
                         answer["round_searches"],
                         "Each round leaves searches for the ones after it.",
                     )
-        elif isinstance(answer, dict) and isinstance(answer.get("set"), dict) and sid:
-            if key == "search_further":
+        elif isinstance(answer, dict) and "set" in answer:
+            if key == "search_further" and sid and isinstance(answer["set"], dict):
                 # how far it searches further, and a round's share of it
                 picked = answer["set"]
                 change(field, picked["search_further"], "How far it searches further.")
