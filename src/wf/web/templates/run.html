@@ -13,6 +13,11 @@
       {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
     </div>
 {%- endmacro %}
+{#- where a question the run met can be answered now, or that it has been since -#}
+{% macro answer_now(fid) -%}
+  {%- if fid and answer_at.get(fid) %} <a class="btn btn-sm" href="{{ answer_at[fid] }}">Answer this now</a>
+  {%- elif fid and can_tell %} <span class="small muted">Answered since this run.</span>{% endif -%}
+{%- endmacro %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
 {% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
@@ -83,17 +88,26 @@
 
     <div class="card">
       <div class="card-head"><h2>Where it had to guess</h2><span class="muted">{{ rep.guesses | length }}</span></div>
-      <p class="sub">Each guess is a place your process is silent, found by running it rather than reading it.</p>
+      <p class="sub">Each guess is a place your process is silent, found by running it rather than reading it. Answer it, then run it again to see the gap closed.</p>
       {% if not rep.guesses %}<p style="margin:0">It never had to guess. Every required field was answered.</p>{% endif %}
       {% for g in rep.guesses %}
         <div class="guess">
           <div class="small muted">{{ g.step_title }}</div>
           <div><strong>{{ g.text }}</strong></div>
           <div>{{ g.reason }}</div>
-          {% if g.question %}<div class="small" style="margin-top:4px">The question: <em>{{ g.question }}</em></div>{% endif %}
+          {% if g.question %}<div class="small" style="margin-top:4px">The question: <em>{{ g.question }}</em>{{ answer_now(g.finding_id) }}</div>{% endif %}
           {% if g.alternatives %}<div class="chips">{% for a in g.alternatives %}<span class="chip">{{ a }}</span>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
+      {% set asked = (rep.guesses | map(attribute="finding_id") | select | list) + (rep.findings | selectattr("status", "equalto", "open") | map(attribute="id") | list) %}
+      {% if asked and run.depth == 0 and run.status not in ("running", "waiting") %}
+      {% set since = asked | reject("in", answer_at) | unique | list | length if can_tell else 0 %}
+      <div class="actions" data-rerun="{{ run.workflow }}" data-rerun-body='{{ {"case": run.case_name, "inputs": run.inputs} | tojson }}' style="margin-top:10px">
+        <button class="btn" type="button">Run it again, as a dry run</button>
+        <span class="small muted">{% if since %}{{ since }} of the questions it met {{ "has" if since == 1 else "have" }} been answered since. {% endif %}Same {{ "case" if run.case_name else "inputs" }}; compare the two runs afterwards.</span>
+        <span data-msg class="small"></span>
+      </div>
+      {% endif %}
     </div>
 
     {% if rep.expectations %}
@@ -115,7 +129,7 @@
     {% if open_f %}
     <div class="card">
       <div class="card-head"><h2>Open questions</h2><span class="muted">{{ open_f | length }}</span></div>
-      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
+      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}{{ answer_now(f.id) }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
     </div>
     {% endif %}
 
