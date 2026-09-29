@@ -119,8 +119,9 @@
       </ol>
     </div>
 
-    <div class="card">
-      <div class="card-head"><h2>What you expect</h2><span class="muted">{{ audit.counts.answered }} of {{ audit.counts.total }} answered</span></div>
+    <div class="card" id="questions">
+      <div class="card-head"><h2>Questions</h2><span class="muted">{{ audit.counts.answered }} of {{ audit.counts.total }} answered</span></div>
+      {% if audit.counts.total %}<progress class="bar" value="{{ audit.counts.answered }}" max="{{ audit.counts.total }}" aria-label="Questions answered">{{ audit.counts.answered }} of {{ audit.counts.total }}</progress>{% endif %}
       {% if not audit.questions %}<p class="muted">Nothing left to ask. The draft says everything the system needs.</p>
       {% else %}{{ questions_summary(audit.questions) }}{% endif %}
       {% for g in audit.questions %}
