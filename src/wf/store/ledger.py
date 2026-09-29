@@ -115,6 +115,7 @@ class Ledger:
         run.spent_minutes = round(spent_minutes, 3)
         run.error = error
         run.finished_at = now()
+        run.pause_requested = False
         self._commit()
 
     def update_spend(self, run: Run, spent_usd: float, spent_minutes: float) -> None:

@@ -202,6 +202,30 @@ class DryRunner:
             ledger.close()
         return self.report(run_id, result=result)
 
+    def pause(self, run_id: str) -> None:
+        """Ask a running run to pause. It stops after the step it is on finishes."""
+        with self.db.session() as s:
+            run = s.get(Run, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            run.pause_requested = True
+
+    def carry_on_paused(self, run_id: str) -> DryRunReport:
+        """Carry a paused run on, from the step it paused before, whether you paused it
+        or it hit its spending limit. The steps that finished are not run again."""
+        ledger = Ledger(self.db)
+        try:
+            run = ledger.session.get(Run, run_id)
+            if run is None:
+                raise KeyError(run_id)
+            wf = self.ws.load_definition(run.workflow_name)
+            interp = Interpreter(self.ws, self.activities, ledger, self.config)
+            result = interp.carry_on_paused(run, wf)
+            self.rescore_expectations(ledger, result)
+        finally:
+            ledger.close()
+        return self.report(run_id, result=result)
+
     def rescore_expectations(self, ledger: Ledger, result: RunResult) -> None:
         """Score a run's expectations again, against where it ended this time."""
         rows = ledger.session.query(Expectation).filter_by(run_id=result.run_id).all()
