@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from wf.audit import Change
+from wf.audit.catalog import known_instructions
 from wf.schema import Workflow, Workspace, WorkspaceError, load_workflow_dict, parse_pin
 from wf.store import repo as gitrepo
 
@@ -65,6 +66,37 @@ def used_by(ws: Workspace, rel: str) -> list[dict[str, Any]]:
                         "version": pin.version if pin else None,
                     }
                 )
+    return out
+
+
+def skill_catalog(ws: Workspace) -> list[dict[str, Any]]:
+    """Every instruction file at the top of ``skills/``: what it is for, every step of
+    every workflow that follows it, at whichever version it pins, and every version the
+    file has had. What a step's "use these instructions" picker offers, laid out to browse."""
+    out = []
+    for i in known_instructions(ws):
+        rel = i["ref"].partition("@")[0]
+        versions = ws.skill_versions(rel)
+        latest = versions[-1] if versions else i["version"]
+        users = used_by(ws, rel)
+        out.append(
+            {
+                "path": rel,
+                "ref": i["ref"],
+                "title": i["title"],
+                "what": i["what"],
+                "latest": latest,
+                "versions": [
+                    {
+                        "version": v,
+                        "latest": v == latest,
+                        "pinned_by": [u for u in users if u["version"] == v],
+                    }
+                    for v in reversed(versions)
+                ],
+                "used_by": users,
+            }
+        )
     return out
 
 

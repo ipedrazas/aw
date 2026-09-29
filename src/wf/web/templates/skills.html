@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Instructions{% endblock %}
+{% block content %}
+<div class="card-head"><h1>Instructions</h1></div>
+<p class="sub">Every instruction file in the workspace: what it is for, which steps follow it, and every version it has had. A step's “Use these instructions” picker offers these, pinned to the version chosen there.</p>
+
+{% if not skills %}<div class="card">No instruction files yet.</div>{% endif %}
+{% for k in skills %}
+<div class="card">
+  <div class="card-head">
+    <div><h2 style="margin:0"><a href="{{ skill_url(k.ref) }}">{{ k.title }}</a></h2>
+      <p class="small muted mono" style="margin:2px 0 0">{{ k.path }}</p></div>
+    <span class="small muted">Version {{ k.latest }}</span>
+  </div>
+  {% if k.what %}<p style="margin:6px 0">{{ k.what }}</p>{% endif %}
+  <div class="grid2">
+    <div>
+      <h3 class="small muted" style="margin:0 0 4px">Used by</h3>
+      {% if not k.used_by %}<p class="small muted" style="margin:0">Nothing uses it yet.</p>
+      {% else %}<ul class="small" style="margin:0;padding-left:18px">
+        {% for u in k.used_by %}<li><a href="/workflows/{{ u.workflow }}">{{ u.workflow }}</a>: {{ u.step_title }} (version {{ u.version }})</li>{% endfor %}
+      </ul>{% endif %}
+    </div>
+    <div>
+      <h3 class="small muted" style="margin:0 0 4px">Versions</h3>
+      <ul class="small" style="margin:0;padding-left:18px">
+        {% for v in k.versions %}<li><a href="{{ skill_url(k.path ~ '@' ~ v.version) }}">Version {{ v.version }}</a>{% if v.latest %} <span class="muted">latest</span>{% endif %}</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

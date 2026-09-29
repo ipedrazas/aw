@@ -65,7 +65,7 @@ from wf.validate.models import (
 from .audits import AuditStore
 from .diagram import describe, flow, render_svg
 from .plain import TRUST_CHOICES, plain_steps, plain_summary, trust_label
-from .skills import SkillError, edit_step_skill, skill_url, skill_view
+from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 
@@ -439,6 +439,12 @@ def create_app(state: AppState | None = None) -> FastAPI:
         }
 
     # -- instruction files ------------------------------------------------------
+
+    @app.get("/api/skills")
+    def list_skills() -> list[dict[str, Any]]:
+        """Every instruction file: what it is for, which steps of which workflows
+        follow it, and every version it has had."""
+        return skill_catalog(st().ws)
 
     @app.get("/api/skill")
     def get_skill(
@@ -1018,6 +1024,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/workflows/{name}/settings", response_class=HTMLResponse)
     def settings_page(request: Request, name: str) -> Any:
         return page(request, "settings", data=get_settings(name), name=name)
+
+    @app.get("/skills", response_class=HTMLResponse)
+    def skills_page(request: Request) -> Any:
+        return page(request, "skills", skills=list_skills())
 
     @app.get("/skill", response_class=HTMLResponse)
     def skill_page(
