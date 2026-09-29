@@ -28,6 +28,7 @@ from wf.validate import (
 from wf.validate.findings import plain_value
 
 from .ingest import Passage
+from .wiring import wire
 
 
 def mentions_finding(
@@ -229,6 +230,15 @@ def build_draft(
     for s in steps_in:
         sid = s["id"]
         kind = s["kind"]
+        leaves = bool(((s.get("side_effects") or {}).get("items")) or [])
+        if kind in ("check", "tool") and not s.get("run") and not leaves:
+            # no routine does it: a model does, rather than the nearest-sounding routine
+            kind = "agent"
+            s = {**s, "kind": "agent"}
+            notes.append(
+                f"No fixed routine does “{s['title']}”, so a model does it, following "
+                "instructions written from your document."
+            )
         step: dict[str, Any] = {
             "id": sid,
             "kind": kind,
@@ -510,6 +520,21 @@ def build_draft(
                 )
 
         steps_out.append({k: v for k, v in step.items() if v is not None})
+
+    # the steps that use a capability get what it takes, from its contract
+    wired = wire(
+        steps_out,
+        schemas,
+        skills,
+        skill_briefs,
+        notes,
+        own,
+        {x["id"]: x.get("uses") for x in steps_in},
+        name,
+    )
+    assumptions[:] = [
+        a for a in assumptions if not (a.step_id in wired and a.field.endswith(".input"))
+    ]
 
     definition: dict[str, Any] = {
         "apiVersion": "workflows.tavon.io/v1alpha1",

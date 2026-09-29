@@ -113,6 +113,8 @@ def known_instructions(ws: Workspace) -> list[dict[str, Any]]:
                 "result": skill.result,
                 # what they take, when they say: a step runs them once per item of it
                 "takes": _takes_words(t) if (t := skill_takes(skill.takes)) else None,
+                # the same, as declared, for the code that wires a step to them
+                "contract": skill.takes if t else None,
                 "what": _first_paragraph(skill.body),
                 "version": skill.version,
                 "body": skill.body.strip(),
