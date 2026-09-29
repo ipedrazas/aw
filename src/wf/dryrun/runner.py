@@ -451,7 +451,24 @@ class DryRunner:
     def diff(self, run_a: str, run_b: str) -> RunDiff:
         return diff_runs(self.snapshot(run_a), self.snapshot(run_b))
 
-    def list_runs(self, workflow: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def count_runs(self, workflow: str | None = None, mode: str | None = None) -> int:
+        """How many runs a filtered list has in all, to say whether there are older ones."""
+        with self.db.session() as s:
+            q = s.query(Run)
+            if workflow:
+                q = q.filter_by(workflow_name=workflow)
+            if mode:
+                q = q.filter_by(mode=mode)
+            return q.count()
+
+    def list_runs(
+        self,
+        workflow: str | None = None,
+        limit: int = 50,
+        *,
+        mode: str | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         """The latest runs, newest first, each followed by the follow-ups it started.
 
         A follow-up sits under its parent however long after it started, with ``level``
@@ -463,7 +480,9 @@ class DryRunner:
             q = s.query(Run).order_by(Run.started_at.desc())
             if workflow:
                 q = q.filter_by(workflow_name=workflow)
-            runs = q.limit(limit).all()
+            if mode:
+                q = q.filter_by(mode=mode)
+            runs = q.offset(offset).limit(limit).all()
             # follow-ups the limit or the filter left out still belong under their parent
             have = {r.id for r in runs}
             frontier = list(have)
