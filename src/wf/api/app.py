@@ -1106,11 +1106,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
         for s in run["steps"]:
             s["calls"] = calls.get(s["step_id"], [])
             s["search_limits"] = search_limits.get(s["step_id"])
+        answer_at, can_tell = _where_to_answer(st(), run["workflow"])
         return page(
             request,
             "run",
             run=run,
             others=[r for r in list_runs(None) if r["id"] != run_id],
+            answer_at=answer_at,
+            can_tell=can_tell,
         )
 
     @app.get("/runs/{run_a}/diff/{run_b}", response_class=HTMLResponse)
@@ -1128,6 +1131,32 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
 
 # -- helpers -----------------------------------------------------------------------
+
+
+def _where_to_answer(state: AppState, name: str) -> tuple[dict[str, str], bool]:
+    """Where each question still open about a workflow can be answered: on the workflow's
+    page, else on a draft of it. A guess or open question on a run that is in neither has
+    been answered (or has stopped applying) since. The bool says whether anywhere was
+    looked at, so a run of a deleted workflow does not claim its questions are settled."""
+    links: dict[str, str] = {}
+    found = False
+    try:
+        wf = state.ws.load_definition(name)
+        found = True
+        for f in validate(wf, state.ws).findings:
+            if f.status == "open":
+                links[f.id] = f"/workflows/{name}#q-{f.id}"
+    except WorkspaceError:
+        pass
+    for a in state.audits.list():
+        if a["name"] != name:
+            continue
+        found = True
+        result, _rec = state.audits.load(a["id"])
+        for f in result.findings:
+            if f.status == "open":
+                links.setdefault(f.id, f"/audits/{a['id']}#q-{f.id}")
+    return links, found
 
 
 def _load(state: AppState, name: str):
