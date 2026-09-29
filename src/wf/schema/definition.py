@@ -87,6 +87,19 @@ class MayRepeat(Strict):
     limit: int = 3
 
 
+class SearchFurther(Strict):
+    """Topics a searching step finds are searched in turn, in the same run, within
+    fixed limits: going deeper without starting anything new. ``follow`` names the list
+    in the step's result where it puts the topics worth following (``{topic, why}``);
+    ``levels`` is how many rounds past the first; ``max_searches`` caps the searches of
+    every round together, ``max_topics`` the topics followed in one round."""
+
+    follow: str = "new_topics"
+    levels: int = 2
+    max_searches: int = 25
+    max_topics: int = 3
+
+
 class Origin(Strict):
     """Who put this step here. Drives the "I suggested this" markers in the UI."""
 
@@ -117,6 +130,7 @@ class Step(Strict):
     model: str | None = None
     skill: str | None = None
     tools: dict[str, ToolPermission] | None = None
+    search_further: SearchFurther | None = None
     decision_log: Literal["optional", "required"] | None = None
 
     # check / tool

@@ -87,6 +87,12 @@ QUESTIONS: dict[str, tuple[str, str]] = {
         "If nobody answers “{step}” in time, what then?",
         "",
     ),
+    "follow": (
+        "When is a topic “{step}” finds worth following?",
+        "It searches further on the topics that meet your rule, within its limits. Say what "
+        "makes one worth it, for example: closely related to the question and not already "
+        "covered.",
+    ),
     "hands_on": (
         "What should “{step}” pass on from what it finds?",
         "To cite a source or check its link later, the steps after it need its address.",

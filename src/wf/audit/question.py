@@ -395,6 +395,25 @@ def apply_answer(
                 reason="It hands on every source it used, with its address.",
             )
         )
+    elif key == "follow" and ".search_further." in field and ws is not None:
+        # "when is a topic worth following?": the rule becomes the description of the
+        # list the step names its topics in, which it applies while it searches
+        rel = _get(d, f"steps.{sid}.output.schema")
+        before = ws.load_schema(rel) if rel else None
+        if before is None or not str(answer or "").strip():
+            raise AnswerRejected(why_rejected(finding, answer))
+        from wf.validate import with_topics
+
+        follow = _get(d, f"steps.{sid}.search_further.follow") or "new_topics"
+        ws.save_schema(rel, with_topics(before, follow, str(answer)))
+        changes.append(
+            Change(
+                path=f"steps.{sid}.output.schema",
+                before=rel,
+                after=rel,
+                reason="It names the topics worth following, by your rule.",
+            )
+        )
     elif key == "follows" and isinstance(answer, dict) and answer.get("when"):
         for k in ("when", "for_each", "with"):
             change(

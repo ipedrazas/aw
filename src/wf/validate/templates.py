@@ -151,3 +151,45 @@ def with_sources(schema: dict[str, Any] | None) -> dict[str, Any]:
         if "sources" not in req:
             req.append("sources")
     return out
+
+
+#: One topic a searching step names as worth following (``search_further``).
+TOPIC_ITEM: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["topic", "why"],
+    "properties": {
+        "topic": {"type": "string", "description": "What to search next, in a few words."},
+        "why": {"type": "string", "description": "Why it is worth following."},
+    },
+}
+
+
+def holds_topics(schema: dict[str, Any] | None, follow: str) -> bool:
+    """Whether a step's result has the list ``search_further`` reads its topics from."""
+    node = ((schema or {}).get("properties") or {}).get(follow)
+    item = (node or {}).get("items") or {}
+    return (
+        isinstance(node, dict)
+        and node.get("type") == "array"
+        and "topic" in (item.get("properties") or {})
+    )
+
+
+def with_topics(schema: dict[str, Any] | None, follow: str, when: str) -> dict[str, Any]:
+    """The same shape, with the list of topics worth following, described by ``when``:
+    the person's rule for what is worth following, which the step applies."""
+    import copy
+
+    out = copy.deepcopy(schema) if isinstance(schema, dict) else {"type": "object"}
+    out.setdefault("type", "object")
+    out.setdefault("properties", {})[follow] = {
+        "type": "array",
+        "description": f"Topics you found that are worth searching next: {when.strip()} "
+        "Leave it empty when none are.",
+        "items": copy.deepcopy(TOPIC_ITEM),
+    }
+    req = out.setdefault("required", [])
+    if follow not in req:
+        req.append(follow)
+    return out
