@@ -299,6 +299,19 @@ class DryRunner:
                         "error": child.error,
                     }
                 )
+            # The run's own account of why it is not still running: the last thing it
+            # said about control flow. A step it paused or stopped before starting has
+            # no row of its own yet, so this is not always one of the steps below.
+            controls = [d for d in decisions if d.kind == "control"]
+            stopped = (
+                {
+                    "step_id": controls[-1].step_id,
+                    "text": controls[-1].text,
+                    "reason": controls[-1].reason,
+                }
+                if controls
+                else None
+            )
             latest = _latest_attempts(steps)
             attempts: dict[str, int] = {}
             for st in steps:
@@ -349,6 +362,7 @@ class DryRunner:
                 "gate": _gate_view(gate, steps, by_step)
                 if gate and run.status == "waiting"
                 else None,
+                "stopped": stopped,
                 "artifacts": [
                     {
                         "id": a.id,

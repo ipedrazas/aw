@@ -694,6 +694,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 model_limits=models_steps_cannot_use(result.workflow(), st().ws),
                 result_costs=result_costs(st().ws, result.workflow()),
                 about=body.get("about") or None,
+                runs=st().runner,
             )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(502, f"The chat could not answer: {e}") from e
