@@ -15,7 +15,7 @@
 {%- endmacro %}
 
 {% macro step_squares(steps) -%}
-  {% for s in steps %}<span class="sq sq-{{ s.status or 'none' }}" title="{{ s.step_id }}: {{ s.status or 'not started' }}"></span>{% endfor %}
+  {% for s in steps %}<span class="sq sq-{{ s.status or 'none' }}" title="{{ s.title or (s.step_id | replace('_', ' ') | capitalize) }}: {{ step_word(s.status) | lower }}"></span>{% endfor %}
 {%- endmacro %}
 
 {% macro tech_switch() -%}
