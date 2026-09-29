@@ -585,3 +585,17 @@ workflow per topic (kept, for separate follow-up reports), or `may_repeat` (goes
 only to an earlier step, and a rerun replaces the result it had). Why: a user's
 "go deeper, 25 searches, 2 levels" became prose nothing enforced, and their answer to
 "how should it be done?" said when. The full reasoning is in `plans/search-further.md`.
+
+**Capabilities say what they take; the model picks, code wires.** A routine or one of
+the system's own instructions declares what it takes (`ROUTINE_TAKES` beside
+`RUNNERS`; `takes: {per, fields, what}` in a skill's front matter), next to what it
+gives back. The validator holds a step that names one to it: the input it reads, the
+shape it needs, once or once per item, and offers the earlier results with that shape
+as the fix. The extractor still picks a step's capability; wiring it, adding a missing
+shape (a report's citations) or a step it needs first (reading the pages), and naming
+what the workflow hands back are the pieces after this one. Alternative: better
+descriptions for the extractor to match on. Why: in run 8979b2e2 the link check opened
+every address in a whole pipeline, the claim check ran once on everything before any
+page was read, and "add the sources at the end" became the page-reading routine: the
+code guessed what a routine takes, and the model guessed the wiring. The reasoning is
+in `plans/capability-contracts.md`.

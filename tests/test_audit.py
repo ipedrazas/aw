@@ -177,10 +177,21 @@ def test_answers_write_back_and_close_findings(ws):
     assert "steps.send.requires_approval" not in open_fields
     assert "steps.review.output.continue_on.verdict.reject" not in open_fields
     assert "steps.write.input" not in open_fields
-    # what is left are the fields nobody has answered yet
-    assert open_fields <= {"steps.more_research.max_fanout", "steps.brief.output.schema"} | {
-        f for f in open_fields if f.startswith("steps.more_research")
+    # what is left are the fields nobody has answered yet, and what the routines the
+    # draft names need and are not given (plans/capability-contracts.md; wired in piece 2)
+    contracts = {
+        "steps.check_links.input.sources",
+        "steps.export_pdf.input.report",
+        "steps.send.input.to",
+        "steps.send.input.subject",
+        "steps.send.input.body",
     }
+    assert (
+        open_fields
+        <= {"steps.more_research.max_fanout", "steps.brief.output.schema"}
+        | {f for f in open_fields if f.startswith("steps.more_research")}
+        | contracts
+    )
     # the saved definition on disk validates the same way
     fresh = validate(ws.load_definition("client-research"), ws)
     assert {f.field for f in fresh.findings if f.type != "assumption"} == open_fields
