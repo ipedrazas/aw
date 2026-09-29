@@ -50,37 +50,48 @@ def step(data: dict[str, Any], step_id: str) -> dict[str, Any]:
     raise KeyError(step_id)
 
 
-_made: list[Any] = []
+_made: list[tuple[Any, Path | None]] = []
 
 
 def make_db():
-    """SQLite in memory by default; WF_TEST_DATABASE_URL (CI: Postgres) when set, with fresh tables."""
+    """A fresh database for one test: SQLite in a file of its own by default;
+    WF_TEST_DATABASE_URL (CI: Postgres) when set, with fresh tables.
+
+    Not SQLite in memory: that is one connection shared by every thread, and a run's
+    worker writing while the test reads on it mixes up their results."""
     import os
+    import tempfile
+
+    from sqlalchemy.orm import close_all_sessions
 
     from wf.store import Base, Database
 
-    url = os.environ.get("WF_TEST_DATABASE_URL", "sqlite://")
+    url = os.environ.get("WF_TEST_DATABASE_URL")
+    folder = None
+    if not url:
+        folder = Path(tempfile.mkdtemp(prefix="wf-test-db-"))
+        url = f"sqlite:///{folder / 'wf.db'}"
     db = Database(url)
-    if not url.startswith("sqlite"):
+    if folder is None:
         # a session an earlier test left in a transaction holds a lock that would
         # keep the drop waiting for ever
-        from sqlalchemy.orm import close_all_sessions
-
         close_all_sessions()
         Base.metadata.drop_all(db.engine)
         Base.metadata.create_all(db.engine)
-        _made.append(db)
+    _made.append((db, folder))
     return db
 
 
 def close_dbs() -> None:
-    """Close what the tests left open on Postgres and let go of each database's
-    connections; an engine keeps its pool open until it is collected, and Postgres
-    takes 100 clients. SQLite in memory has nothing to let go of."""
+    """Close what a test left open and let go of its databases' connections: an engine
+    keeps its pool open until it is collected, and Postgres takes 100 clients."""
     if not _made:
         return
     from sqlalchemy.orm import close_all_sessions
 
     close_all_sessions()
     while _made:
-        _made.pop().engine.dispose()
+        db, folder = _made.pop()
+        db.engine.dispose()
+        if folder is not None:
+            shutil.rmtree(folder, ignore_errors=True)
