@@ -275,6 +275,7 @@ def _step(**kw: Any) -> dict[str, Any]:
         "side_effects": None,
         "deadline": None,
         "limits": None,
+        "search_further": None,
         "judgement": None,
         "uses": None,
     }

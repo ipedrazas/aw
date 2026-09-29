@@ -193,3 +193,21 @@ def with_topics(schema: dict[str, Any] | None, follow: str, when: str) -> dict[s
     if follow not in req:
         req.append(follow)
     return out
+
+
+#: How far a step searches further when the document does not say.
+FURTHER_DEFAULT: dict[str, int] = {"levels": 2, "max_searches": 25, "max_topics": 3}
+
+
+def further_limits(levels: int, max_searches: int, max_topics: int = 3) -> dict[str, Any]:
+    """``search_further`` with these limits, and the search limit of one round that
+    leaves room for the rest: the total shared between the first round and each level
+    after it, never below 5."""
+    return {
+        "search_further": {
+            "levels": levels,
+            "max_searches": max_searches,
+            "max_topics": max_topics,
+        },
+        "round_searches": min(max_searches, max(5, -(-max_searches // (levels + 1)))),
+    }
