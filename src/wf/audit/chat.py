@@ -23,8 +23,36 @@ from .service import AuditResult
 CHAT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["reply", "edits", "answers", "dismiss", "point_to_finding", "ask_next"],
+    "required": [
+        "reply",
+        "edits",
+        "answers",
+        "dismiss",
+        "point_to_finding",
+        "ask_next",
+        "suggest",
+    ],
     "properties": {
+        "suggest": {
+            "type": "array",
+            "description": "Steps that do on their own instructions what one of the system's routines or own instructions does, to offer as questions.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["step_id", "name", "why"],
+                "properties": {
+                    "step_id": {"type": "string"},
+                    "name": {
+                        "type": "string",
+                        "description": "The routine's or the instructions' name under what_the_system_can_do.",
+                    },
+                    "why": {
+                        "type": "string",
+                        "description": "One plain line the person reads: what it would do for this step.",
+                    },
+                },
+            },
+        },
         "reply": {
             "type": "string",
             "description": "A few plain sentences for the person; a short list when they asked how something works. No field names or file names unless they used them first.",
@@ -125,6 +153,7 @@ Rules:
 - A step can be told to follow one of the system's own instructions, or put on another model. Both are listed under "what_the_system_can_do", and the person may name one by its title, its name or its reference (such as skills/claim-support.md@1 or typesafe/jev-1.13): match what they said against every one of those before deciding it is unknown. When they ask for it, edit steps.<id>.skill to the instructions' "ref", and steps.<id>.model to the model's "value" (spec.defaults.model for every step that names no model of its own). A step keeps the other one unless they asked to change it too.
 - Some instructions come with a result of their own ("result"): what they are written to give back. When a step is moved onto them and gives back something else, say so and ask whether it should give back theirs too, naming what "switching_result_would_take" lists for that step and those instructions (the later steps that would lose what they read). When they agree, edit steps.<id>.output.schema to that result. A decisions model usually needs it: the result is what it is asked.
 - Some models suit only some steps: a decisions model answers pick-one and yes/no questions with how sure it is, and writes no text. "models_a_step_cannot_use" lists, for each step, the ones it cannot run on and why. When they ask for one of those, make no edit: tell them why in their terms, and what would have to change for it to work. Every edit is checked again when it is made, and one that cannot be made is refused with the reason.
+- When they ask whether the system already does any of their steps, or a step clearly does on its own instructions the job of one of the system's routines or of its own instructions that say what they take (checking each citation against its page, checking links open), propose it under suggest. The system checks it can be wired and puts it on the right as a question; do not edit the step yourself. Say in your reply what you proposed, and that it will appear on the right if it fits.
 - When their message or their document mentions something you cannot find in the draft, the document, their workflows or what the system can do, such as another process or a system of theirs, do not pretend to know what it is. Ask them what it involves, in one question, and propose no edits in that turn. Ask the same when a request could mean two different changes.
 - Only propose an edit when the person asked for a change or clearly agreed to one. Never change limits, approvals or what leaves the system without them saying so.
 - When the person answers an open question in the chat, record it under answers rather than editing the draft directly.
@@ -157,6 +186,7 @@ class ChatOutcome(BaseModel):
     dismiss: list[dict[str, Any]] = Field(default_factory=list)
     point_to_finding: str | None = None
     ask_next: dict[str, Any] | None = None
+    suggest: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def finding_view(f: Finding) -> dict[str, Any]:
@@ -241,4 +271,5 @@ def chat(
         dismiss=list(out.get("dismiss", [])),
         point_to_finding=out.get("point_to_finding"),
         ask_next=out.get("ask_next") if isinstance(out.get("ask_next"), dict) else None,
+        suggest=[x for x in out.get("suggest") or [] if isinstance(x, dict)],
     )

@@ -39,6 +39,7 @@ from wf.audit.chat import chat
 from wf.audit.fold import suggestions
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
+from wf.audit.suggest import offers
 from wf.audit.triage import triage
 from wf.decisions import is_decisions_model
 from wf.dryrun import DryRunner
@@ -709,6 +710,21 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 )
             )
         ]
+        # what it proposed for steps the system already knows how to do, if it wires
+        if outcome.suggest:
+            known = {f.id for f in result.findings}
+            offered = [
+                f for f in offers(result.definition, st().ws, outcome.suggest) if f.id not in known
+            ]
+            result.findings += offered
+            if len(offered) < len(outcome.suggest):
+                refused.append(
+                    "Not everything I proposed could be fitted to its step as the draft is, "
+                    "so only what fits is on the right."
+                    if offered
+                    else "None of what I proposed could be fitted to its step as the draft "
+                    "is, so nothing new is on the right."
+                )
         reply = "\n\n".join([outcome.reply, *refused]) if refused else outcome.reply
         chat_so_far = list(rec.chat or [])
         nxt = outcome.ask_next or {}
@@ -1593,6 +1609,11 @@ def _triage(
     except Exception as e:  # noqa: BLE001 - the questions can still be asked in order
         logger.warning("could not sort the questions of %s: %s", result.name, e)
         return None, [], []
+    # what it proposed for steps the system already knows how to do, if it wires
+    known = {f.id for f in result.findings}
+    result.findings += [
+        f for f in offers(result.definition, state.ws, t.capabilities) if f.id not in known
+    ]
     settled: list[dict[str, Any]] = []
     changes: list[Change] = []
     for s in t.settle:

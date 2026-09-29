@@ -215,7 +215,16 @@ def apply_answer(
         changes.append(Change(path=path, before=before, after=after, reason=reason))
 
     if finding.type == "assumption":
-        if isinstance(answer, dict) and answer.get("op") == "fold" and sid:
+        if isinstance(answer, dict) and answer.get("op") == "use_capability" and sid and ws:
+            # a step moved onto one of the system's capabilities, wired as a new draft is
+            from .suggest import use
+
+            try:
+                steps, notes = use(d, ws, sid, str(answer["name"]))
+            except ValueError as e:
+                raise AnswerRejected(f"{e}, so the draft is unchanged.") from e
+            change("spec.steps", steps, " ".join(notes) or "It uses the system's own way.")
+        elif isinstance(answer, dict) and answer.get("op") == "fold" and sid:
             # a separate "go deeper" step becomes the searching step's own limits
             from .fold import fold
 

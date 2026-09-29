@@ -53,7 +53,7 @@ Settled without asking, open to change:
 
 ## Pieces, each a PR
 
-Done: 1 is #64, 2 is #65, 3 is the PR after it. In piece 2 the PDF routine's contract became
+Done: 1 is #64, 2 is #65, 3 is #66, 4 is the PR after it. In piece 2 the PDF routine's contract became
 "the report" with no required field: it prints any report, using its longest text when
 the title and Markdown are named otherwise, so demanding `body_md` refused reports it
 prints. A routine that is wired keeps the rest of what it was given (the PDF also
