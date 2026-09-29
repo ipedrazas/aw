@@ -571,4 +571,25 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     t.textContent = Math.abs(n) < 45 && unit === "second" ? "just now" : ago.format(Math.round(n), unit);
     t.title = full.format(d);
   });
+/* Run page: run it again as a dry run, with the same case or inputs, to see whether the
+   questions answered since closed the gaps it guessed at. */
+document.querySelectorAll("[data-rerun]").forEach(box => {
+  const btn = box.querySelector("button"), msg = box.querySelector("[data-msg]");
+  btn.addEventListener("click", async () => {
+    const was = JSON.parse(box.dataset.rerunBody);
+    const body = was.case ? {case: was.case, mode: "dry"} : {inputs: was.inputs, mode: "dry"};
+    btn.disabled = true; say(msg, "Starting…");
+    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(box.dataset.rerun) + "/runs", body); location.href = "/runs/" + d.run_id; }
+    catch (err) { btn.disabled = false; say(msg, err.message, true); }
+  });
+});
+
+/* Arriving at a question by its link (#q-…): show which one. A question answered together
+   with another has no place of its own, so fall back to the list it would be in. */
+(function () {
+  if (!location.hash.startsWith("#q-")) return;
+  const t = document.getElementById(location.hash.slice(1)) || document.getElementById("questions");
+  if (!t) return;
+  t.scrollIntoView({block: "center"});
+  t.classList.add("q-target"); setTimeout(() => t.classList.remove("q-target"), 2500);
 })();
