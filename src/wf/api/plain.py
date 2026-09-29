@@ -192,3 +192,34 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
             k: v.model_dump(exclude_none=True) for k, v in wf.spec.inputs.items() if not v.internal
         },
     }
+
+
+def run_fields(wf: Workflow) -> list[dict[str, Any]]:
+    """What a person fills in to start a run: the workflow's inputs, less the ones the
+    runtime sets itself, each with what the form needs to ask for it."""
+    return [
+        {
+            "name": name,
+            "label": name.replace("_", " ").capitalize(),
+            "type": spec.type,
+            "required": spec.required,
+            "default": spec.default,
+            "min_length": spec.min_length,
+            "enum": spec.enum,
+            "description": spec.description,
+        }
+        for name, spec in wf.spec.inputs.items()
+        if not spec.internal
+    ]
+
+
+def starts_more_work(wf: Workflow) -> bool:
+    """Whether a run can start work beyond its own steps: a follow-up run, or searching
+    further. The confirm before a real run says so only when it can."""
+    return any(s.kind == "subworkflow" or s.search_further for s in wf.spec.steps)
+
+
+def sends_outside(wf: Workflow) -> bool:
+    """Whether a real run sends anything out of the system (an email, a message, a
+    ticket), so the page does not promise that nothing is sent."""
+    return any(s.side_effects not in (None, "none", []) for s in wf.spec.steps)

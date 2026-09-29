@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import question, tech_switch, status_pill, delete_button, questions_summary %}
+{% from "_macros.html" import question, tech_switch, status_pill, delete_button, questions_summary, run_inputs %}
 {% block title %}{{ audit.title if audit else "New workflow" }}{% endblock %}
 {% block bar_title %}{{ audit.title if audit else "New workflow" }} <span class="muted small">{{ ("Saved" if audit.status == "saved" else "Draft, not saved") if audit else "Not started" }}</span>{% endblock %}
 {% block bar_right %}
@@ -8,7 +8,7 @@
         "Delete this draft? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if audit.status == "saved" else ""),
         label="Delete draft", cls="btn btn-danger") }}
     <button class="btn" data-save>Save draft</button>
-    <button class="btn btn-primary" data-toggle="tryform">Save and try it on a topic</button>
+    <button class="btn btn-primary" data-toggle="tryform">Save and try it</button>
   {% endif %}
 {% endblock %}
 {% block content %}
@@ -17,11 +17,7 @@
 {% if audit %}
 <div id="tryform" class="card hidden">
   <form data-try>
-    <div class="grid2">
-      <div><label class="small muted">A topic to try it on</label><input type="text" name="topic" placeholder="At least ten characters"></div>
-      <div><label class="small muted">Or a past case with a known outcome</label>
-        <select name="case"><option value="">Pick a case</option>{% for c in cases %}<option value="{{ c.name }}">{{ c.title }}</option>{% endfor %}</select></div>
-    </div>
+    {{ run_inputs(audit.run_fields, cases) }}
     <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit">Save and start a dry run</button><span class="small muted">Where it has to guess, it says so. Nothing is sent anywhere.</span><span data-msg class="small"></span></div>
   </form>
 </div>
