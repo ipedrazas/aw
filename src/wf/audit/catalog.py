@@ -110,3 +110,44 @@ def capabilities(ws: Workspace, exclude: str | None = None) -> dict[str, Any]:
         "models": step_models(),
         "workflows": known_workflows(ws, exclude=exclude),
     }
+
+
+def resolve_skill(ws: Workspace, value: str) -> str | None:
+    """The instructions ``value`` names, pinned to a version: a reference
+    (``skills/claim-support.md@1``), a path without a pin, or the name of one of the
+    system's own (``claim-support``). None when there are no such instructions."""
+    rel, _, pin = str(value).strip().partition("@")
+    if "/" not in rel:
+        rel = f"skills/{rel.removesuffix('.md')}.md"
+    ref = f"{rel}@{pin}" if pin else rel
+    skill = ws.load_skill(ref)
+    if skill is None:
+        return None
+    return ref if pin else f"{rel}@{skill.version or 1}"
+
+
+def own_instructions(ws: Workspace) -> str:
+    """The system's own instructions, as a person is told them when a name is not one."""
+    return ", ".join(f"“{i['title']}” ({i['ref']})" for i in known_instructions(ws))
+
+
+def skill_choices(
+    ws: Workspace, workflow: str, step_id: str, current: str | None
+) -> list[dict[str, str]]:
+    """What a step can be told to follow: the instructions written for it, and the
+    system's own. The one it follows now is on the list at the version it pins."""
+    out: list[dict[str, str]] = []
+    written = f"skills/{workflow}/{step_id}.md"
+    own = ws.load_skill(written)
+    if own is not None:
+        out.append({"value": f"{written}@{own.version or 1}", "label": "Its own instructions"})
+    out += [{"value": i["ref"], "label": i["title"]} for i in known_instructions(ws)]
+    if current:
+        rel = current.partition("@")[0]
+        match = next((c for c in out if c["value"].partition("@")[0] == rel), None)
+        if match:
+            match["value"] = current
+        else:
+            skill = ws.load_skill(current)
+            out.insert(0, {"value": current, "label": skill.title if skill else current})
+    return out

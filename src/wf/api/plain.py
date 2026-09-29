@@ -96,10 +96,11 @@ def when_label(wf: Workflow, step: Step) -> str | None:
     return f"Only if “{name}” {verb} “{m.group(4).replace('_', ' ')}”"
 
 
-def resets_on_model(wf: Workflow, step: Step) -> bool:
-    """Whether changing this step's model starts its count of accepted runs again."""
+def resets_on(wf: Workflow, step: Step, what: str) -> bool:
+    """Whether changing this step's ``what`` (its model, its skill) starts its count of
+    accepted runs again."""
     t = wf.trust_for(step)
-    return bool(t and t.policy == "earned" and "model" in (t.reset_on or []))
+    return bool(t and t.policy == "earned" and what in (t.reset_on or []))
 
 
 def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
@@ -114,7 +115,8 @@ def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
             "model_inherited": s.kind == "agent" and not s.model and wf.model_for(s) is not None,
             "model_own": s.model,
             "model_label": model_label(wf.model_for(s) if s.kind == "agent" else s.model, wf),
-            "model_resets_trust": resets_on_model(wf, s),
+            "model_resets_trust": resets_on(wf, s, "model"),
+            "skill_resets_trust": resets_on(wf, s, "skill"),
             "skill": s.skill,
             "run": s.run,
             "workflow": s.workflow,

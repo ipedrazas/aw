@@ -27,7 +27,7 @@ from wf.validate.models import (
     resolve_model,
 )
 
-from .catalog import capabilities, known_instructions
+from .catalog import capabilities, own_instructions, resolve_skill
 from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
@@ -326,18 +326,14 @@ class Auditor:
         ref = str(value).strip()
         if any(s.get("skill") == ref for s in result.definition["spec"]["steps"]):
             return ref
-        rel, _, pin = ref.partition("@")
-        if "/" not in rel:
-            rel = f"skills/{rel.removesuffix('.md')}.md"
-        ref = f"{rel}@{pin}" if pin else rel
-        skill = self.ws.load_skill(ref)
-        if skill is None:
-            own = ", ".join(f"“{i['title']}” ({i['ref']})" for i in known_instructions(self.ws))
+        pinned = resolve_skill(self.ws, ref)
+        if pinned is None:
+            own = own_instructions(self.ws)
             raise AnswerRejected(
                 f"There are no instructions called “{value}”, so the draft is unchanged. "
                 + (f"The system's own are {own}." if own else "")
             )
-        return ref if "@" in ref else f"{ref}@{skill.version or 1}"
+        return pinned
 
     def set_field(self, result: AuditResult, path: str, value: Any, reason: str) -> Change:
         """A direct edit (from the chat or the UI), recorded as a change.
