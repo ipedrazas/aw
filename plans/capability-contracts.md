@@ -51,6 +51,13 @@ Settled without asking, open to change:
 
 ## Pieces, each a PR
 
+Done: 1 is #64, 2 is the PR after it. In piece 2 the PDF routine's contract became
+"the report" with no required field: it prints any report, using its longest text when
+the title and Markdown are named otherwise, so demanding `body_md` refused reports it
+prints. A routine that is wired keeps the rest of what it was given (the PDF also
+prints follow-up reports); instructions run once per item are given exactly what they
+take.
+
 1. **Contracts and validation.** `takes` for the routines and claim-support; the
    validator checks a capability step's input (the key, the shape, once or per item);
    the catalogue shows the contracts to the extractor, triage and chat.

@@ -31,20 +31,33 @@ class Takes:
     key: str | None = None
     many: bool = True
     per: str | None = None
+    # what it is about, when that decides where it comes from: the links a link check
+    # opens are the report's, not whatever was found along the way
+    of: str | None = None
 
 
 #: The routines' contracts, beside their description in ``RUNNERS``.
 ROUTINE_TAKES: dict[str, Takes] = {
     "checks.http_resolves": Takes(
-        key="sources", fields=("url",), what="the links to check, each with its address"
+        key="sources",
+        fields=("url",),
+        what="the links to check, each with its address",
+        of="report",
     ),
     "tools.fetch_pages": Takes(
         key="sources",
         fields=("url",),
         what="the cited links, each with its address and the claim it backs",
+        of="report",
     ),
     "tools.render_pdf": Takes(
-        key="report", fields=("body_md",), many=False, what="the report, with its text"
+        # any report: it prints its title and Markdown when it has them, and its longest
+        # piece of writing when they are named otherwise
+        key="report",
+        fields=(),
+        many=False,
+        what="the report",
+        of="report",
     ),
     "tools.send_email": Takes(
         fields=("to", "subject", "body"), many=False, what="who to send to, a subject and a body"
