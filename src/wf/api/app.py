@@ -1055,6 +1055,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/settings", response_class=HTMLResponse)
     def app_settings_page(request: Request) -> Any:
         return page(request, "app_settings", data=get_app_settings())
+
     @app.get("/skills", response_class=HTMLResponse)
     def skills_page(request: Request) -> Any:
         return page(request, "skills", skills=list_skills())
