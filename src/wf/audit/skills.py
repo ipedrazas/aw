@@ -45,7 +45,8 @@ Write it the way the examples are written: for a capable colleague, in plain sen
 Rules:
 - Start with `# ` and the step's title, then a short paragraph on what the step is for and what the next step does with its work.
 - Draw on the document: the step's own passages first, the rest for context (what comes before and after, standards the process applies throughout). Keep the document's terms. Never invent criteria, thresholds, owners, sources, deadlines or limits the document does not give.
-- If the document does not say how to do this step (`document_says_how` is false), say so in one plain sentence near the top, then give only what follows from the step's purpose and its place in the process. Do not pad.
+- If the document does not say how to do this step (`document_says_how` is false) and the step has `system_knows_how`, that is how the system already does this kind of step well: build on it. Keep its method and its standards, but adapt it to this step's place, inputs and fields; where it names different fields or other steps, use this step's. Do not say the document was silent.
+- If the document does not say how and there is no `system_knows_how`, say so in one plain sentence near the top, then give only what follows from the step's purpose and its place in the process. Do not pad.
 - Name every field the step produces, exactly as given, in backticks, and say what belongs in it. For a field with a fixed set of values, say what each value means when the document says. The shape is enforced separately, so describe meaning, not JSON.
 - If the step has tools, say how to use them and that there is a limit on calls.
 - The step must record its decisions, each in plain sentences: what it decided, why, and what else it considered. Say which decisions matter most for this step.

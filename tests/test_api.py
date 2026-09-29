@@ -96,6 +96,13 @@ def client(ws, tmp_path: Path):
                             [
                                 *(w["name"] for w in req.input["your_workflows"]),
                                 "guide" if "What you can ask the chat" in guide else "no guide",
+                                *(t["name"] for t in req.input["what_the_system_can_do"]["tools"]),
+                                "Research"
+                                if any(
+                                    i["title"] == "Research"
+                                    for i in req.input["what_the_system_can_do"]["instructions"]
+                                )
+                                else "no instructions",
                             ]
                         ),
                         "edits": [],
@@ -639,13 +646,14 @@ def test_the_chat_opens_with_what_the_person_wrote_and_is_sent_it(client):
 
 
 def test_the_chat_knows_how_the_system_works_and_the_other_workflows(client):
-    """Not the draft it is on, which it has already."""
+    """Not the draft it is on, which it has already; and what the system can do, so it
+    does not ask how to search the web."""
     audit = client.post(
         "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
     ).json()
     c = client.post(f"/api/audits/{audit['id']}/chat", json={"message": "what can I ask?"})
     assert c.status_code == 200, c.text
-    assert c.json()["chat"][-1]["text"] == "deep-research guide"
+    assert c.json()["chat"][-1]["text"] == "deep-research guide search get_contents Research"
 
 
 def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):

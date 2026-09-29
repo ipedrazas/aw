@@ -120,10 +120,16 @@ class Draft(BaseModel):
 
 
 def build_draft(
-    extracted: dict[str, Any], passages: list[Passage], workflows: list[str] | None = None
+    extracted: dict[str, Any],
+    passages: list[Passage],
+    workflows: list[str] | None = None,
+    instructions: list[dict[str, Any]] | None = None,
 ) -> Draft:
     """``workflows`` are the names of the workflows the workspace already has, which a
-    step that relies on another process can be handed to."""
+    step that relies on another process can be handed to. ``instructions`` are the
+    system's own (``wf.audit.catalog.known_instructions``): a step the document does
+    not explain, but that one of them does, is written from it rather than asked about."""
+    own = {i["name"]: i for i in instructions or []}
     by_id = {p.id: p for p in passages}
     name = extracted["name"]
     steps_in = extracted.get("steps", [])
@@ -330,11 +336,18 @@ def build_draft(
             skill_rel = f"skills/{name}/{sid}.md"
             instr = s.get("instructions")
             src = passage_text(s.get("passage"))
-            body = _skill_body(s, instr, src)
+            based_on = own.get(s.get("uses") or "")
+            body = _skill_body(s, instr, src, based_on)
             skills[skill_rel] = body
             step["skill"] = f"{skill_rel}@1"
             if instr and instr.get("passage"):
                 prov[f"steps.{sid}.skill"] = instr["passage"]
+            elif based_on:
+                # the system already knows how to do this kind of step: nothing to ask
+                notes.append(
+                    f"Your document does not say how to do “{s['title']}”, so its "
+                    f"instructions start from the system's own “{based_on['title']}”."
+                )
             else:
                 assume(
                     f"steps.{sid}.skill",
@@ -368,7 +381,7 @@ def build_draft(
             if searches and rel in schemas and not holds_urls(schemas[rel]):
                 schemas[rel] = with_sources(schemas[rel])
             skill_briefs[skill_rel] = _brief(
-                s, step, schemas.get(rel or ""), instr, steps_in, set(inputs)
+                s, step, schemas.get(rel or ""), instr, steps_in, set(inputs), based_on
             )
             step["shows_user"] = ["output", "decisions"]
             step["decision_log"] = "required"
@@ -576,6 +589,7 @@ def _brief(
     instr: dict[str, Any] | None,
     steps_in: list[dict[str, Any]],
     inputs: set[str],
+    based_on: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What the writer of a step's instructions is told about the step: what it is, where
     it sits, what it hands on, and which passages of the document are its own."""
@@ -605,15 +619,38 @@ def _brief(
         "read_by": [x["title"] for x in steps_in if step["id"] in x.get("reads_from", [])],
         "tools": {k: v.get("max_calls") for k, v in (step.get("tools") or {}).items()},
         "produces": produces,
+        **(
+            {"system_knows_how": {"title": based_on["title"], "text": based_on["body"]}}
+            if based_on
+            else {}
+        ),
     }
 
 
-def _skill_body(step: dict[str, Any], instr: dict[str, Any] | None, source: str | None) -> str:
+def _skill_body(
+    step: dict[str, Any],
+    instr: dict[str, Any] | None,
+    source: str | None,
+    based_on: dict[str, Any] | None = None,
+) -> str:
     lines = [f"# {step['title']}", ""]
     if step.get("description"):
         lines += [step["description"], ""]
     if instr and instr.get("summary"):
         lines += ["## What to do", "", instr["summary"], ""]
+    elif based_on:
+        # its own heading and fields give way to this step's, which follow
+        how = "\n".join(
+            ln for ln in based_on["body"].splitlines() if not ln.startswith("# ")
+        ).strip()
+        lines += [
+            "## What to do",
+            "",
+            f"The process document names this step but does not say how to do it. Do it the way the system does “{based_on['title']}”, below; where that names what to produce, produce what this step lists instead.",
+            "",
+            how.replace("\n## ", "\n### "),
+            "",
+        ]
     else:
         lines += [
             "## What to do",

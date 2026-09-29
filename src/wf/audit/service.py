@@ -21,7 +21,7 @@ from wf.store.db import Database
 from wf.store.sessions import session_span
 from wf.validate import Finding, validate
 
-from .catalog import known_workflows
+from .catalog import capabilities
 from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
@@ -130,10 +130,9 @@ class Auditor:
 
     def audit(self, document: str, name: str | None = None) -> AuditResult:
         passages = ingest(document)
-        workflows = known_workflows(self.ws, exclude=name)
-        req = extraction_request(
-            passages, self.extraction_model, name_hint=name, workflows=workflows
-        )
+        caps = capabilities(self.ws, exclude=name)
+        workflows = caps["workflows"]
+        req = extraction_request(passages, self.extraction_model, name_hint=name, capabilities=caps)
         with session_span("audit", name=name or "", title=_first_line(document)) as span:
             resp = run_with_policy(self.policy, lambda: self.model.complete(req))
             extracted = normalise(resp, name)
@@ -141,6 +140,7 @@ class Auditor:
                 extracted,
                 passages,
                 workflows=[w["name"] for w in workflows if w["name"] != extracted["name"]],
+                instructions=caps["instructions"],
             )
             if self.writes_skills:
                 # one step at a time: the calls land in this session in the order of the steps

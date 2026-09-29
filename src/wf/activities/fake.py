@@ -123,6 +123,7 @@ class FakeModel:
                 "deadline": None,
                 "limits": None,
                 "judgement": None,
+                "uses": None,
             }
             steps.append(step)
         if not steps:

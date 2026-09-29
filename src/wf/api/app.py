@@ -27,7 +27,7 @@ from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
 from wf.audit.asking import asking, skip
-from wf.audit.catalog import known_workflows
+from wf.audit.catalog import capabilities
 from wf.audit.chat import chat
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
@@ -547,6 +547,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
         if not message:
             raise HTTPException(400, "Say something first.")
         history = st().audits.chat_history(rec)
+        caps = capabilities(st().ws, exclude=result.name)
         try:
             outcome = chat(
                 st().model,
@@ -556,7 +557,8 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 model_name=st().chat_model,
                 audit_id=audit_id,
                 document=rec.document,
-                workflows=known_workflows(st().ws, exclude=result.name),
+                workflows=caps["workflows"],
+                capabilities=caps,
                 about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001
