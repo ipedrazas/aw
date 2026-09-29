@@ -50,6 +50,9 @@ class Skill:
     # their front matter (``result: schemas/claim_support.json``): a step moved onto
     # them is offered it too.
     result: str | None = None
+    # What they take to do it, when they say (``takes: {per: citation, fields: [claim,
+    # page]}``): the fields of their input, and whether a step runs them once per item.
+    takes: dict[str, Any] | None = None
 
     @property
     def title(self) -> str:
@@ -248,10 +251,15 @@ class Workspace:
         body: str,
         title: str | None = None,
         result: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Path:
+        """Write an instruction file at ``version``. ``result`` and anything else in
+        ``meta`` (what they take) go into its front matter beside the version."""
         p = self.path(rel)
         p.parent.mkdir(parents=True, exist_ok=True)
-        fm = f"---\nversion: {version}\n" + (f"result: {result}\n" if result else "") + "---\n"
+        extra = {**({"result": result} if result else {}), **(meta or {})}
+        head = {"version": version, **{k: v for k, v in extra.items() if k != "version"}}
+        fm = "---\n" + yaml.safe_dump(head, sort_keys=False, allow_unicode=True) + "---\n"
         if title and not body.lstrip().startswith("#"):
             body = f"# {title}\n\n{body}"
         p.write_text(fm + body.rstrip() + "\n")
@@ -281,7 +289,8 @@ class Workspace:
                 written.append(kept)
         version = max([*self.skill_versions(rel), 0]) + 1
         _, body = split_front_matter(body)  # front matter typed into the editor is ours to write
-        self.save_skill(rel, version, body, result=meta.get("result"))  # the result stays theirs
+        # what they give back and take stay theirs: only the version is ours to write
+        self.save_skill(rel, version, body, meta={k: v for k, v in meta.items() if k != "version"})
         written.append(rel)
         return version, written
 
@@ -354,6 +363,7 @@ def _read_skill(rel: str, file: str, p: Path) -> Skill:
         sha256=hashlib.sha256(text.encode()).hexdigest(),
         file=file,
         result=str(meta["result"]) if meta.get("result") else None,
+        takes=meta["takes"] if isinstance(meta.get("takes"), dict) else None,
     )
 
 

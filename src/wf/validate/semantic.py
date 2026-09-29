@@ -11,6 +11,7 @@ from typing import Any
 from wf.expr import ExprError, Path, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace
 
+from .contracts import Takes, contract_for, fits
 from .findings import Finding, Option, make_finding, plain_value
 from .schemas import SchemaResolver
 from .templates import PRODUCES
@@ -147,6 +148,8 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                 )
 
     findings.extend(_unread_inputs(wf))
+    for step in wf.spec.steps:
+        findings.extend(_held_to_contract(wf, step, ws, resolver))
     if ws is not None:
         for step in wf.spec.steps:
             child = (
@@ -275,6 +278,131 @@ def _what_it_is_given(step: Step, child: Workflow, resolver: SchemaResolver) -> 
                     )
                 )
     return findings
+
+
+def _declared_shape(value: Any, step: Step, resolver: SchemaResolver) -> dict[str, Any] | None:
+    """The declared shape of what an input reads, when it is one reference."""
+    if not isinstance(value, str):
+        return None
+    srcs = expressions_in(value)
+    if len(srcs) != 1 or value.strip() != f"${{{srcs[0]}}}":
+        return None
+    try:
+        expr = parse(srcs[0])
+    except ExprError:
+        return None
+    if not isinstance(expr, Path):
+        return None
+    r = resolver.resolve(expr, step_for_each=step.for_each)
+    return r.schema if r.ok and not r.unknown else None
+
+
+def _shaped_like(wf: Workflow, step: Step, takes: Takes, resolver: SchemaResolver) -> list[Option]:
+    """The earlier results that have the shape a capability takes, as choices: the one
+    right before it first."""
+    out: list[Option] = []
+    for earlier in reversed(wf.spec.steps[: wf.step_index(step.id)]):
+        schema = resolver.step_output_schema(earlier)
+        if not schema:
+            continue
+        name = earlier.title or earlier.id
+        if not takes.many and fits(schema, takes):
+            out.append(
+                Option(value=f"${{steps.{earlier.id}.output}}", label=f"What “{name}” gives back")
+            )
+        for field, node in (schema.get("properties") or {}).items():
+            if fits(node, takes):
+                out.append(
+                    Option(
+                        value=f"${{steps.{earlier.id}.output.{field}}}",
+                        label=f"“{name}”'s {field.replace('_', ' ')}",
+                    )
+                )
+    return out
+
+
+def _held_to_contract(
+    wf: Workflow, step: Step, ws: Workspace | None, resolver: SchemaResolver
+) -> list[Finding]:
+    """A step that names a capability gives it what it takes: under the input it reads,
+    in the shape it needs, once or once per item. Otherwise it reads whatever it finds,
+    which is how a link check came to open every address in a whole pipeline."""
+    got = contract_for(step, ws)
+    if got is None:
+        return []
+    name, takes = got
+    who = step.title or step.id
+    given = step.input or {}
+    out: list[Finding] = []
+
+    def ask(kind: str, field: str, question: str, detail: str, options: list[Option]) -> None:
+        f = make_finding(
+            kind,
+            f"steps.{step.id}.{field}",
+            step=step,
+            detail=detail,
+            answer_kind="choice" if options else "text",
+            options=options or None,
+        )
+        f.question = question
+        out.append(f)
+
+    if takes.per:
+        if step.for_each is None:
+            lists = [
+                Option(value=o.value, label=f"Once for each of {o.label}")
+                for o in _shaped_like(wf, step, takes, resolver)
+            ]
+            ask(
+                "conflict",
+                "for_each",
+                f"What should “{who}” run over, one {takes.per} at a time?",
+                f"“{name}” takes {takes.what}, one {takes.per} at a time, but “{who}” runs once.",
+                lists,
+            )
+        for f in takes.fields:
+            if f not in given:
+                ask(
+                    "gap",
+                    f"input.{f}",
+                    f"Where does “{who}” get each {takes.per}'s {f}?",
+                    f"“{name}” needs each {takes.per}'s {f}.",
+                    [Option(value=f"${{item.{f}}}", label=f"The {takes.per}'s {f}")]
+                    if step.for_each
+                    else [],
+                )
+    elif takes.key:
+        value = given.get(takes.key)
+        choices = _shaped_like(wf, step, takes, resolver)
+        them = "them" if takes.many else "it"
+        if value is None:
+            ask(
+                "gap",
+                f"input.{takes.key}",
+                f"Where does “{who}” get {takes.what}?",
+                f"“{name}” needs {takes.what}, and “{who}” is not given {them}, so it would "
+                f"look for {them} in everything it is given.",
+                choices,
+            )
+        elif fits(_declared_shape(value, step, resolver), takes) is False:
+            ask(
+                "conflict",
+                f"input.{takes.key}",
+                f"Where does “{who}” get {takes.what}?",
+                f"“{name}” needs {takes.what}, and what “{who}” is given is not that.",
+                choices,
+            )
+    else:
+        for f in takes.fields:
+            if f not in given:
+                ask(
+                    "gap",
+                    f"input.{f}",
+                    f"Where does “{who}” get its {f}?",
+                    f"“{name}” needs {takes.what}.",
+                    [],
+                )
+    return out
 
 
 def _unread_inputs(wf: Workflow) -> list[Finding]:

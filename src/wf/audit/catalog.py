@@ -22,6 +22,7 @@ from wf.decisions import NotAQuestion, questions_from_schema
 from wf.interpret.interpreter import CONTENTS_TOOL, SEARCH_TOOL
 from wf.schema import Step, Workflow, Workspace
 from wf.settings import step_models
+from wf.validate.contracts import ROUTINE_TAKES, Takes, skill_takes
 from wf.validate.findings import RUNNERS
 from wf.validate.readers import lost_by
 
@@ -67,9 +68,22 @@ def known_tools() -> list[dict[str, str]]:
 def known_routines() -> list[dict[str, str]]:
     """The fixed routines a check or tool step names. A workflow cannot add its own."""
     return [
-        {"name": name, "kind": kind, "does": label, "gives_back": what}
+        {
+            "name": name,
+            "kind": kind,
+            "does": label,
+            "gives_back": what,
+            **({"takes": _takes_words(ROUTINE_TAKES[name])} if name in ROUTINE_TAKES else {}),
+        }
         for name, (kind, label, what) in sorted(RUNNERS.items())
     ]
+
+
+def _takes_words(takes: Takes) -> str:
+    """What a capability takes, as the extractor, triage and the chat are told it."""
+    where = f" as its “{takes.key}”" if takes.key else ""
+    per = f", once per {takes.per}" if takes.per else ""
+    return f"{takes.what}{where}{per} (fields: {', '.join(takes.fields)})"
 
 
 def _first_paragraph(body: str) -> str:
@@ -97,6 +111,8 @@ def known_instructions(ws: Workspace) -> list[dict[str, Any]]:
                 "title": skill.title,
                 # the result they are written to give back, when they name one
                 "result": skill.result,
+                # what they take, when they say: a step runs them once per item of it
+                "takes": _takes_words(t) if (t := skill_takes(skill.takes)) else None,
                 "what": _first_paragraph(skill.body),
                 "version": skill.version,
                 "body": skill.body.strip(),

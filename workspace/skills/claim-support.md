@@ -1,6 +1,10 @@
 ---
 version: 1
 result: schemas/claim_support.json
+takes:
+  per: citation
+  fields: [claim, page]
+  what: each claim with the text of the page it cites
 ---
 # Check the page says what the report says
 
