@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from wf.schema import Step, Workflow
-from wf.validate.findings import model_options
+from wf.validate.models import model_label
 
 KIND_LABEL = {
     "agent": "AI agent",
@@ -96,25 +96,6 @@ def when_label(wf: Workflow, step: Step) -> str | None:
     return f"Only if “{name}” {verb} “{m.group(4).replace('_', ' ')}”"
 
 
-def model_choices(wf: Workflow) -> list[dict[str, str]]:
-    """The models a step or the workflow's default can be set to: the ones this
-    deployment configured, named for what they are good at, and any other
-    model this workflow already names, so the current choice is always on the list."""
-    out = [{"value": str(o.value), "label": o.label} for o in model_options()]
-    seen = {o["value"] for o in out}
-    for m in [wf.spec.defaults.model, *(s.model for s in wf.spec.steps)]:
-        if m and m not in seen:
-            out.append({"value": m, "label": m})
-            seen.add(m)
-    return out
-
-
-def model_label(wf: Workflow, model: str | None) -> str | None:
-    if model is None:
-        return None
-    return next((c["label"] for c in model_choices(wf) if c["value"] == model), model)
-
-
 def resets_on_model(wf: Workflow, step: Step) -> bool:
     """Whether changing this step's model starts its count of accepted runs again."""
     t = wf.trust_for(step)
@@ -132,7 +113,7 @@ def plain_steps(wf: Workflow) -> list[dict[str, Any]]:
             # the step names no model of its own and runs on the workflow's default
             "model_inherited": s.kind == "agent" and not s.model and wf.model_for(s) is not None,
             "model_own": s.model,
-            "model_label": model_label(wf, wf.model_for(s) if s.kind == "agent" else s.model),
+            "model_label": model_label(wf.model_for(s) if s.kind == "agent" else s.model, wf),
             "model_resets_trust": resets_on_model(wf, s),
             "skill": s.skill,
             "run": s.run,
@@ -186,7 +167,7 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
         "system_step_count": len(system_steps),
         "model_count": len(models),
         "default_model": wf.spec.defaults.model,
-        "default_model_label": model_label(wf, wf.spec.defaults.model),
+        "default_model_label": model_label(wf.spec.defaults.model, wf),
         "skill_count": len(skills),
         "budget": (
             f"${b.max_usd:g} and {b.max_minutes:g} minutes per run"

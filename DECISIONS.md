@@ -530,3 +530,24 @@ to follow when things don't go as planned", so the other paths are the point; dr
 from the definition, it cannot show something a run does not do, and needs no script
 or network. It is read-only: the chat stays the way to change the workflow.
 
+
+**What a step can run on and follow is one list, and every edit is checked against it.**
+`wf.settings.step_models` lists the models a step can be set to: standard and thorough,
+then whatever `WF_STEP_MODELS` adds (a JSON list of `{value, label, good_for, kind}`),
+or Jev when an OpenRouter key is set and nothing is named. The workflow page, the
+questions, the chat and the edit behind all three read it; the system's own
+instructions carry the reference a step names (`skills/claim-support.md@1`). An edit
+from the chat or the page takes a model by its name or its label and instructions by
+their reference or their name, and anything else is refused with what there is. A
+decisions model is checked against the step it would run (`wf.validate.models`): it
+cannot use tools and answers only the choices and yes/no questions in the step's
+output, so a step that is not only those is refused, the validator raises the same
+thing for a saved definition, and the chat is shown, per step, which models it cannot
+use and why. The reading of a schema into questions (`wf.decisions`) is shared with the
+call, so the check and the run cannot disagree. Alternative: tell the chat about more
+models in its instructions. Why: someone asked the chat to put a step on
+`skills/claim-support.md@1` and `typesafe/jev-1.13`, both of which the runtime could
+already run, and was told neither existed: the chat's instructions, the page's list and
+the endpoint's allowlist each held their own copy of "two models", and the chat saw the
+instructions by title only. Speaking plainly now governs what the chat says, not what it
+understands: a technical name the person uses is looked up and acted on.
