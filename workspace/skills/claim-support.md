@@ -1,5 +1,6 @@
 ---
 version: 1
+result: schemas/claim_support.json
 ---
 # Check the page says what the report says
 

@@ -123,6 +123,7 @@ Rules:
 - Their other workflows are under "your_workflows". When they ask about them, or a step does what one of them does, say so. To hand a step's work to one of them, when they ask or agree, edit steps.<id>.workflow to its name.
 - What the system already knows how to do is under "what_the_system_can_do": the tools a step can be given, the fixed routines a check or tool can run, and the system's own instructions for kinds of step it does well. When a question asks how a step is done and one of these already does it, say so in plain words ("the system already knows how to search recent web pages and news for this") and, if they agree, answer the question with the option that keeps the step as it is. Do not ask them to explain what the system already knows. When none of these does it, say plainly what it cannot do yet.
 - A step can be told to follow one of the system's own instructions, or put on another model. Both are listed under "what_the_system_can_do", and the person may name one by its title, its name or its reference (such as skills/claim-support.md@1 or typesafe/jev-1.13): match what they said against every one of those before deciding it is unknown. When they ask for it, edit steps.<id>.skill to the instructions' "ref", and steps.<id>.model to the model's "value" (spec.defaults.model for every step that names no model of its own). A step keeps the other one unless they asked to change it too.
+- Some instructions come with a result of their own ("result"): what they are written to give back. When a step is moved onto them and gives back something else, say so and ask whether it should give back theirs too, naming what "switching_result_would_take" lists for that step and those instructions (the later steps that would lose what they read). When they agree, edit steps.<id>.output.schema to that result. A decisions model usually needs it: the result is what it is asked.
 - Some models suit only some steps: a decisions model answers pick-one and yes/no questions with how sure it is, and writes no text. "models_a_step_cannot_use" lists, for each step, the ones it cannot run on and why. When they ask for one of those, make no edit: tell them why in their terms, and what would have to change for it to work. Every edit is checked again when it is made, and one that cannot be made is refused with the reason.
 - When their message or their document mentions something you cannot find in the draft, the document, their workflows or what the system can do, such as another process or a system of theirs, do not pretend to know what it is. Ask them what it involves, in one question, and propose no edits in that turn. Ask the same when a request could mean two different changes.
 - Only propose an edit when the person asked for a change or clearly agreed to one. Never change limits, approvals or what leaves the system without them saying so.
@@ -183,13 +184,16 @@ def chat(
     workflows: list[dict[str, Any]] | None = None,
     capabilities: dict[str, Any] | None = None,
     model_limits: dict[str, dict[str, str]] | None = None,
+    result_costs: dict[str, dict[str, list[str]]] | None = None,
 ) -> ChatOutcome:
     """One chat turn. ``about`` is the id of the question the person opened the chat from;
     ``document`` is what they first wrote, which the draft was built from; ``workflows``
     are the other workflows they have (``wf.audit.catalog.known_workflows``),
     ``capabilities`` the rest of what the system can do (``wf.audit.catalog.capabilities``)
-    and ``model_limits`` the models each step cannot run on, and why
-    (``wf.validate.models.models_steps_cannot_use``)."""
+    ``model_limits`` the models each step cannot run on, and why
+    (``wf.validate.models.models_steps_cannot_use``), and ``result_costs``, per step and
+    instructions, what taking the result those instructions come with would take from
+    the steps that read it (``result_costs`` in ``wf.audit.catalog``)."""
     caps = capabilities or {}
     focus = next((f for f in result.open_findings() if f.id == about), None) if about else None
     req = ModelRequest(
@@ -205,12 +209,13 @@ def chat(
                 "tools": caps.get("tools") or [],
                 "routines": caps.get("routines") or [],
                 "instructions": [
-                    {k: i[k] for k in ("name", "ref", "title", "what")}
+                    {k: i.get(k) for k in ("name", "ref", "title", "what", "result")}
                     for i in caps.get("instructions") or []
                 ],
                 "models": caps.get("models") or [],
             },
             "models_a_step_cannot_use": model_limits or {},
+            "switching_result_would_take": result_costs or {},
             "open_questions": [finding_view(f) for f in result.open_findings()],
             "recent_changes": [c.model_dump() for c in result.changes[-10:]],
             "conversation": [{"role": t.role, "text": t.text} for t in history[-12:]],

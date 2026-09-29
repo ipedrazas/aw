@@ -181,9 +181,17 @@ function wireAnswers(base, reload) {
     sel.dataset.was = sel.value;
     sel.addEventListener("change", () => choose(sel, "model", {step: sel.dataset.modelStep, model: sel.value || null}));
   });
+  /* Instructions that come with a result of their own: ask whether the step should give
+     back theirs too, saying which later steps would lose what they read. */
+  const takesResult = (sel) => {
+    const opt = sel.selectedOptions[0];
+    if (!opt || !opt.dataset.result) return false;
+    const loses = opt.dataset.loses ? "\n\n" + opt.dataset.loses : "";
+    return confirm("“" + opt.textContent + "” is written to give back a result of its own, not what “" + sel.dataset.title + "” gives back now." + loses + "\n\nOK: give back theirs as well.\nCancel: keep what it gives back now.");
+  };
   document.querySelectorAll("[data-skill-step]").forEach(sel => {
     sel.dataset.was = sel.value;
-    sel.addEventListener("change", () => choose(sel, "instructions", {step: sel.dataset.skillStep, skill: sel.value}));
+    sel.addEventListener("change", () => choose(sel, "instructions", {step: sel.dataset.skillStep, skill: sel.value, result: takesResult(sel)}));
   });
 })();
 

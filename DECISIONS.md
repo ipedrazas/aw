@@ -551,3 +551,18 @@ already run, and was told neither existed: the chat's instructions, the page's l
 the endpoint's allowlist each held their own copy of "two models", and the chat saw the
 instructions by title only. Speaking plainly now governs what the chat says, not what it
 understands: a technical name the person uses is looked up and acted on.
+
+**Instructions may name the result they are written for, and a step moved onto them is
+offered it.** An instruction file's front matter can say `result: schemas/…json`
+(`claim-support.md` does). Choosing those instructions on the workflow page asks
+whether the step should give back that result too, listing which later steps read a
+field that would go, or all of it (`wf.validate.readers`); the chat is shown the same
+list per step and asks the same question. Yes is one committed change to the step's
+skill and its output schema; no changes the skill alone. A new version of the file
+keeps its `result`. Alternative: switch the result silently with the instructions, or
+never. Why: a decisions model is asked what the result holds, so "use claim-support and
+Jev" needs the result to move with the instructions; but other steps read the old
+result, so it is the person's choice, made knowing the cost. The list compares field
+names only: a field both results have with different values (`verdict`) is not named
+beforehand, and the branches on values that are gone are raised by the validator once
+the change is made.
