@@ -599,3 +599,15 @@ every address in a whole pipeline, the claim check ran once on everything before
 page was read, and "add the sources at the end" became the page-reading routine: the
 code guessed what a routine takes, and the model guessed the wiring. The reasoning is
 in `plans/capability-contracts.md`.
+
+**A run's history reaches the chat through a tool call, not the turn's context.**
+`wf.audit.chat` offers `recent_runs` and `run_details` (backed by
+`wf.dryrun.DryRunner.list_runs`/`snapshot`) as tools, the same way a step is offered
+`search`, rather than adding a workflow's runs to what is sent on every turn as the
+draft and the guide already are. The app passes its `DryRunner` in as `runs`; chat.py
+only depends on the two methods it calls, not the class, so a test can hand it
+anything with the same shape. Alternative: send the latest few runs' summaries with
+every turn, so the model never has to ask. Why: a run's decisions are the one part of
+this chat's context that is both large (every step's full trail) and rarely the
+subject of a given message, so paying for it on every turn would cost far more than
+the questions that actually need it.
