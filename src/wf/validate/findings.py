@@ -145,7 +145,9 @@ QUESTIONS: dict[str, tuple[str, str]] = {
     ),
     "skill": (
         "How should “{step}” be done?",
-        "Your answer becomes the instructions it follows. You can change them later.",
+        "Explain it the way you would to someone doing it for the first time: what to "
+        "look at, what to do, and how they know it is done. Your words become the "
+        "instructions it follows, and you can change them later.",
     ),
     "output.schema": (
         "What does “{step}” produce?",
