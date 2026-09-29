@@ -166,8 +166,11 @@ function wireAnswers(base, reload) {
 (function () {
   const root = document.querySelector("[data-models]"); if (!root) return;
   const base = "/api/workflows/" + encodeURIComponent(root.dataset.models);
-  const msg = root.querySelector("[data-msg]");
+  /* What happened is said beside the dropdown that was changed, not at the top of the page. */
   const choose = async (sel, what, body) => {
+    const msg = sel.parentElement.querySelector("[data-msg]");
+    const opt = sel.selectedOptions[0];
+    if (opt && opt.dataset.cannot) { sel.value = sel.dataset.was; say(msg, opt.dataset.cannot, true); return; }
     if (sel.dataset.resets && !confirm("Changing the " + what + " of “" + sel.dataset.title + "” starts its count of accepted runs again, so it asks you before running on its own.")) {
       sel.value = sel.dataset.was; return;
     }

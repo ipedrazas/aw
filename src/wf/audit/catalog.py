@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from wf.decisions import NotAQuestion, questions_from_schema
 from wf.interpret.interpreter import CONTENTS_TOOL, SEARCH_TOOL
 from wf.schema import Step, Workflow, Workspace
 from wf.settings import step_models
@@ -177,4 +178,18 @@ def result_costs(ws: Workspace, wf: Workflow) -> dict[str, dict[str, list[str]]]
         costs = {c["value"]: c["loses"] for c in skill_choices(ws, wf, step) if "result" in c}
         if costs:
             out[step.id] = costs
+    return out
+
+
+def answered_by_decisions(ws: Workspace) -> list[str]:
+    """The titles of the system's own instructions whose result a decisions model can
+    answer: what a step has to be moved onto before it can run on one."""
+    out = []
+    for i in known_instructions(ws):
+        shape = ws.load_schema(i["result"]) if i["result"] else None
+        try:
+            if shape is not None and questions_from_schema(shape):
+                out.append(i["title"])
+        except NotAQuestion:
+            continue
     return out
