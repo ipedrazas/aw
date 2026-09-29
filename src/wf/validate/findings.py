@@ -14,7 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from wf.schema import FindingType
-from wf.settings import careful_model, quick_model
+from wf.settings import step_models
 
 AnswerKind = Literal["choice", "multi", "text", "bool", "number", "list"]
 
@@ -206,22 +206,18 @@ TRUST_OPTIONS = [
 
 
 def model_options() -> list[Option]:
-    """The two models the deployment configured, named for what they are good at.
+    """The models a step that writes can be set to (``wf.settings.step_models``), named
+    for what they are good at: standard and thorough, and whatever else this deployment
+    runs. A decisions model is not offered: it writes no text, and the page and the chat
+    offer it where a step can run on it.
 
     "Standard" and "thorough" rather than "quick" and "careful": people read quick
     judgement as careless judgement, and neither is.
     """
     return [
-        Option(
-            value=quick_model(),
-            label="Standard",
-            consequence="Faster and cheaper. Enough for planning and research.",
-        ),
-        Option(
-            value=careful_model(),
-            label="Thorough",
-            consequence="Slower and costs more. Better at writing and review.",
-        ),
+        Option(value=m["value"], label=m["label"], consequence=m["good_for"])
+        for m in step_models()
+        if m["kind"] == "text"
     ]
 
 

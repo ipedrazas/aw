@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import re
 
+from wf.decisions import is_decisions_model
 from wf.expr import ExprError, expressions_in, parse, walk
 from wf.schema import Step, Workflow, Workspace, parse_pin
 from wf.settings import quick_model
 
 from .findings import RUNNERS, Finding, Option, make_finding, model_options, runner_options
+from .models import model_label, model_problem
 from .templates import (
     PRODUCES,
     STEP_TEMPLATES,
@@ -49,6 +51,42 @@ def _model_finding(field: str, model: str, step: Step | None = None) -> Finding:
         answer_kind="choice",
         options=model_options(),
     ).model_copy(update={"question": f"Which model should {who} run on?"})
+
+
+def _check_decisions_model(wf: Workflow, step: Step, ws: Workspace | None) -> list[Finding]:
+    """A step on a decisions model asks it only what it can answer, and shows what it
+    can give: it answers typed questions and gives no reasons."""
+    model = wf.model_for(step)
+    if step.kind != "agent" or not is_decisions_model(model):
+        return []
+    findings: list[Finding] = []
+    why = model_problem(wf, step, model, ws)
+    if why:
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.model",
+                step=step,
+                detail=why,
+                answer_kind="choice",
+                options=model_options(),
+            ).model_copy(
+                update={"question": f"Which model should “{step.title or step.id}” run on?"}
+            )
+        )
+    if "decisions" in (step.shows_user or []):
+        findings.append(
+            make_finding(
+                "conflict",
+                f"steps.{step.id}.shows_user",
+                step=step,
+                detail=f"{model_label(model, wf)} gives no reasons, so there would be nothing "
+                "to show for what it decided and why.",
+                answer_kind="choice",
+                options=[Option(value=["output"], label="Its result")],
+            )
+        )
+    return findings
 
 
 def _has(step: Step, wf: Workflow, field: str) -> bool:
@@ -119,6 +157,7 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
         unblocks = _unblocks(wf, step)
         if _bad_model_name(step.model):
             findings.append(_model_finding(f"steps.{step.id}.model", str(step.model), step))
+        findings.extend(_check_decisions_model(wf, step, ws))
         if step.id in seen:
             findings.append(
                 make_finding(

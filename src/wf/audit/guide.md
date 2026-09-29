@@ -79,14 +79,23 @@ guesses and says so. A real run needs every question answered.
 
 ## Models
 
-Each step that uses judgement runs on one of two models:
+Each step that uses judgement runs on a model. Two are always there:
 
 - Standard: faster and cheaper. Enough for planning and research.
 - Thorough: slower and costs more. Better at writing and review.
 
-A workflow has a default, and a single step can be moved to the other one from the
-workflow page. Both are careful; the difference is how much effort and cost goes into
-each answer. The draft only asks about a step's model when your text singles it out.
+A deployment can add others, and the chat knows which. One kind works differently: a
+decisions model, such as Jev, answers pick-one and yes/no questions with how sure it
+is. It writes no text, gives no reasons and cannot search, so it suits only a step
+whose result is such questions, like whether a page supports what the report says.
+
+A workflow has a default, and a single step can be moved to another model from the
+workflow page or by asking in the chat. Standard and thorough are both careful; the
+difference is how much effort and cost goes into each answer. The draft only asks
+about a step's model when your text singles it out.
+
+A step can also be told to follow one of the system's own instructions instead of the
+ones written for it: ask in the chat.
 
 ## Runs
 

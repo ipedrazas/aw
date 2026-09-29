@@ -20,8 +20,14 @@ from wf.schema import Workflow, Workspace, dump_workflow, load_workflow_dict
 from wf.store.db import Database
 from wf.store.sessions import session_span
 from wf.validate import Finding, validate
+from wf.validate.models import (
+    default_model_problem,
+    labels_of_choices,
+    model_problem,
+    resolve_model,
+)
 
-from .catalog import capabilities
+from .catalog import capabilities, known_instructions
 from .diff import document_diff
 from .draft import Draft, build_draft, materialise
 from .extract import extraction_request, normalise
@@ -302,13 +308,46 @@ class Auditor:
                 bits[1] = steps[int(bits[1])]["id"]
         return ".".join(bits)
 
+    def _model(self, result: AuditResult, value: Any) -> str:
+        """The model an edit names, by its name or its label; refused when it is not
+        one a step can be set to."""
+        wf = result.workflow()
+        model = resolve_model(str(value), wf)
+        if model is None:
+            raise AnswerRejected(
+                f"“{value}” is not a model this system runs. A step can run on "
+                f"{labels_of_choices(wf)}, so the draft is unchanged."
+            )
+        return model
+
+    def _skill(self, result: AuditResult, value: Any) -> str:
+        """The instructions an edit names, pinned to a version: one the draft already
+        uses, or the system's own by reference or by name ("claim-support")."""
+        ref = str(value).strip()
+        if any(s.get("skill") == ref for s in result.definition["spec"]["steps"]):
+            return ref
+        rel, _, pin = ref.partition("@")
+        if "/" not in rel:
+            rel = f"skills/{rel.removesuffix('.md')}.md"
+        ref = f"{rel}@{pin}" if pin else rel
+        skill = self.ws.load_skill(ref)
+        if skill is None:
+            own = ", ".join(f"“{i['title']}” ({i['ref']})" for i in known_instructions(self.ws))
+            raise AnswerRejected(
+                f"There are no instructions called “{value}”, so the draft is unchanged. "
+                + (f"The system's own are {own}." if own else "")
+            )
+        return ref if "@" in ref else f"{ref}@{skill.version or 1}"
+
     def set_field(self, result: AuditResult, path: str, value: Any, reason: str) -> Change:
         """A direct edit (from the chat or the UI), recorded as a change.
 
         Removing a whole step (``steps.<id>`` set to null) is recorded against the step
         list, so undoing it puts the step back where it was and rewires what read it.
         Naming a workflow for a step that does the work itself (``steps.<id>.workflow``)
-        hands the step's work to that workflow, recorded the same way.
+        hands the step's work to that workflow, recorded the same way. A model or a
+        step's instructions must be ones the system has, and a model one the step can
+        run on; anything else is refused with the reason, and nothing changes.
         """
         from .question import _get, _set, hand_to_workflow, remove_step
 
@@ -327,6 +366,13 @@ class Auditor:
             and any(s["id"] == bits[1] and s["kind"] != "subworkflow" for s in steps)
         ):
             path, value = "spec.steps", hand_to_workflow(result.definition, bits[1], value, self.ws)
+        is_model = path == "spec.defaults.model" or (
+            len(bits) == 3 and bits[0] == "steps" and bits[2] == "model"
+        )
+        if is_model and value is not None:
+            value = self._model(result, value)
+        if len(bits) == 3 and bits[0] == "steps" and bits[2] == "skill" and value is not None:
+            value = self._skill(result, value)
         before = _get(result.definition, path)
         new_def = copy.deepcopy(result.definition)
         _set(new_def, path, value)
@@ -336,6 +382,15 @@ class Auditor:
             raise AnswerRejected(
                 f"“{value}” cannot go into {path}, so the draft is unchanged."
             ) from e
+        if is_model and value is not None:
+            step = wf.step(bits[1]) if bits[0] == "steps" else None
+            why = (
+                model_problem(wf, step, value, self.ws)
+                if step
+                else default_model_problem(wf, value, self.ws)
+            )
+            if why:
+                raise AnswerRejected(f"{why} The draft is unchanged.")
         result.definition = new_def
         ch = Change(path=path, before=before, after=value, reason=reason)
         result.changes.append(ch)

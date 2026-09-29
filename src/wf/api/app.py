@@ -43,10 +43,18 @@ from wf.store import Artifact, Database, Gate, Run
 from wf.store import repo as gitrepo
 from wf.store.sessions import SessionLog, session_log_mode
 from wf.validate import validate
+from wf.validate.models import (
+    default_model_problem,
+    labels_of_choices,
+    model_choices,
+    model_problem,
+    models_steps_cannot_use,
+    resolve_model,
+)
 
 from .audits import AuditStore
 from .diagram import describe, flow, render_svg
-from .plain import TRUST_CHOICES, model_choices, plain_steps, plain_summary, trust_label
+from .plain import TRUST_CHOICES, plain_steps, plain_summary, trust_label
 from .skills import SkillError, edit_step_skill, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
@@ -217,13 +225,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
         ``{"step": id, "model": m}`` sets a step's own model; ``"model": null`` puts it
         back on the default. ``{"step": null, "model": m}`` sets the default. Only the
         models on the page's list are taken: the ones this deployment configured, and
-        any this workflow already names."""
+        any this workflow already names; and only one the step can run on."""
         wf = _load(st(), name)
-        sid, model = body.get("step"), body.get("model") or None
-        allowed = {c["value"] for c in model_choices(wf)}
-        if model is not None and model not in allowed:
+        sid, asked = body.get("step"), body.get("model") or None
+        model = resolve_model(str(asked), wf) if asked else None
+        if asked and model is None:
             raise HTTPException(
-                400, f"“{model}” is not one of the models this deployment runs, so nothing changed."
+                400,
+                f"“{asked}” is not one of the models this deployment runs "
+                f"({labels_of_choices(wf)}), so nothing changed.",
             )
         if sid:
             step = wf.step(sid)
@@ -236,8 +246,12 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 raise HTTPException(
                     400, "This workflow has no default model, so the step has to name one."
                 )
+            why = model_problem(wf, step, model or wf.spec.defaults.model, st().ws)
         else:
             path, before, what = "spec.defaults.model", wf.spec.defaults.model, "the default"
+            why = default_model_problem(wf, model, st().ws)
+        if why:
+            raise HTTPException(400, f"{why} Nothing changed.")
         if model == before:
             return {**get_workflow(name), "commit": None, "drafts": 0}
         said = f"{what} runs on {model}" if model else f"{what} runs on the default"
@@ -563,6 +577,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 document=rec.document,
                 workflows=caps["workflows"],
                 capabilities=caps,
+                model_limits=models_steps_cannot_use(result.workflow(), st().ws),
                 about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001
@@ -572,7 +587,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
         result, rec = _audit(st(), audit_id)
         applied: list[Change] = []
         refused: list[str] = []
-        for edit in outcome.edits:
+        # a model is checked against what the step gives back, so it goes on after the
+        # rest of the turn: a new result and a model for it are judged together
+        for edit in sorted(outcome.edits, key=lambda e: str(e.get("path")).endswith(".model")):
             if not edit.get("path"):
                 continue
             try:

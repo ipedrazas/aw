@@ -25,6 +25,8 @@ import json
 import os
 from typing import Any
 
+from wf.decisions import is_decisions_model
+
 DEFAULT_QUICK = "claude-sonnet-5"
 DEFAULT_CAREFUL = "claude-opus-5"
 
@@ -100,6 +102,66 @@ def careful_model() -> str:
 def model_for(judgement: str | None) -> str:
     """The model for a level of judgement. Anything but ``careful`` is quick."""
     return careful_model() if judgement == "careful" else quick_model()
+
+
+#: The decisions model a deployment with an OpenRouter key can put a step on. It is
+#: served only there, whichever provider answers the rest.
+JEV = "typesafe/jev-1.13"
+
+
+def step_models() -> list[dict[str, str]]:
+    """Every model a step can be set to: what the page offers, the chat may choose and
+    an edit is checked against. One list, so none of them can know of a model the
+    others refuse.
+
+    Each is ``{value, label, good_for, kind}``; ``kind`` is ``text`` or ``decisions``
+    (answers typed questions, writes no text). Standard and thorough come first, from
+    ``WF_QUICK_MODEL`` and ``WF_CAREFUL_MODEL``. ``WF_STEP_MODELS`` adds the rest as a
+    JSON list of the same objects (only ``value`` is required); left unset, Jev is
+    added when an OpenRouter key is, since that is the only way to reach it.
+    """
+    models = [
+        {
+            "value": quick_model(),
+            "label": "Standard",
+            "good_for": "Faster and cheaper. Enough for planning and research.",
+            "kind": "text",
+        },
+        {
+            "value": careful_model(),
+            "label": "Thorough",
+            "good_for": "Slower and costs more. Better at writing and review.",
+            "kind": "text",
+        },
+    ]
+    raw = os.environ.get("WF_STEP_MODELS")
+    if raw:
+        extra = [e if isinstance(e, dict) else {"value": str(e)} for e in json.loads(raw)]
+    elif os.environ.get("OPENROUTER_API_KEY"):
+        extra = [
+            {
+                "value": JEV,
+                "label": "Jev",
+                "good_for": "Answers pick-one and yes/no questions with how sure it is, and "
+                "writes no text. Only for a step whose result is such questions.",
+            }
+        ]
+    else:
+        extra = []
+    for e in extra:
+        value = str(e["value"])
+        models.append(
+            {
+                "value": value,
+                "label": str(e.get("label") or value),
+                "good_for": str(e.get("good_for") or ""),
+                "kind": str(
+                    e.get("kind") or ("decisions" if is_decisions_model(value) else "text")
+                ),
+            }
+        )
+    seen: set[str] = set()
+    return [m for m in models if not (m["value"] in seen or seen.add(m["value"]))]
 
 
 def extraction_model() -> str:
@@ -268,6 +330,7 @@ def model_plan() -> dict[str, Any]:
         "search": search_mode(),
         "link_check": link_check_mode(),
         "tasks": [],
+        "step_models": step_models(),
     }
     if where == OPENROUTER:
         plan["base_url"] = openrouter_base_url()

@@ -7,7 +7,7 @@ from and its steps in order; nothing about how the steps do their work.
 
 And what a step can use without the document saying how: the tools a judgement step
 can be given, the fixed routines a check or tool step can name, and the hand-written
-instructions at the top of ``skills/``. A document that says "search the web" or
+instructions at the top of ``skills/``, and the models a step can run on. A document that says "search the web" or
 "check the links" has said enough when the system already knows how; only what it
 cannot match is asked. Every entry is read from the code or the workspace, so the list
 stays true when either changes.
@@ -20,6 +20,7 @@ from typing import Any
 
 from wf.interpret.interpreter import CONTENTS_TOOL, SEARCH_TOOL
 from wf.schema import Workspace
+from wf.settings import step_models
 from wf.validate.findings import RUNNERS
 
 log = logging.getLogger(__name__)
@@ -89,6 +90,8 @@ def known_instructions(ws: Workspace) -> list[dict[str, Any]]:
         out.append(
             {
                 "name": p.stem,
+                # what a step's ``skill`` is set to, to follow these instructions
+                "ref": f"skills/{p.name}@{skill.version or 1}",
                 "title": skill.title,
                 "what": _first_paragraph(skill.body),
                 "version": skill.version,
@@ -104,5 +107,6 @@ def capabilities(ws: Workspace, exclude: str | None = None) -> dict[str, Any]:
         "tools": known_tools(),
         "routines": known_routines(),
         "instructions": known_instructions(ws),
+        "models": step_models(),
         "workflows": known_workflows(ws, exclude=exclude),
     }

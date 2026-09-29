@@ -8,16 +8,11 @@ chat/completions, so it cannot be one more name behind ``OpenRouterModel``.
 
 What it can be is one more implementation of ``ModelActivity``, so an agent step runs
 on it the way it runs on Claude, with the step's model the only thing that changes.
-The step's output schema is where the questions come from, read by these rules:
-
-- a string property with an ``enum`` is a choice among its values;
-- a boolean property is a yes or no;
-- the property's ``description`` is the question, and ``x-criteria`` (value → what it
-  means) says what each answer means, the same words a text model reads;
-- a property named ``probabilities``, if the schema has one, is not asked: it is
-  filled with Jev's probabilities, one entry per question. A text model asked the same
-  schema states its own there, which is the difference the claim-support experiment
-  measures.
+The step's output schema is where the questions come from, read by the rules in
+``wf.decisions`` (shared with the check that a step can run on it): a string with an
+``enum`` is a choice, a boolean a yes or no, and a property named ``probabilities`` is
+filled with Jev's probabilities rather than asked. A text model asked the same schema
+states its own there, which is the difference the claim-support experiment measures.
 
 Anything else in the schema is a question Jev cannot answer, and the step is told so
 rather than handed a guess. Jev gives no reasons, so the response carries no decisions;
@@ -28,6 +23,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from wf.decisions import PROBABILITIES, NotAQuestion, is_decisions_model
+from wf.decisions import questions_from_schema as _questions
 from wf.logs import ROOT, get_logger
 from wf.settings import openrouter_api_key, openrouter_base_url
 
@@ -35,56 +32,19 @@ from .base import ActivityError, ModelActivity, ModelRequest, ModelResponse, Usa
 
 logger = get_logger(f"{ROOT}.activities.jev")
 
-#: Model names OpenRouter serves through the Decisions endpoint.
-DECISIONS_VENDORS = ("typesafe/", "~typesafe/")
-
-#: The property a decisions model fills with its probabilities instead of answering.
-PROBABILITIES = "probabilities"
-
 #: Statuses worth another go, as for the chat gateway.
 RETRYABLE = frozenset({408, 409, 425, 429})
 
 DEFAULT_TIMEOUT_S = 60.0
 
 
-def is_decisions_model(model: str) -> bool:
-    return model.startswith(DECISIONS_VENDORS)
-
-
 def questions_from_schema(schema: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """The typed questions an output schema asks, by the rules in the module docstring."""
-    questions: dict[str, dict[str, Any]] = {}
-    for name, prop in (schema.get("properties") or {}).items():
-        if name == PROBABILITIES:
-            continue
-        instructions = str(prop.get("description") or name)
-        criteria = prop.get("x-criteria")
-        if prop.get("type") == "string" and prop.get("enum"):
-            options = [str(v) for v in prop["enum"]]
-            meaning = criteria if isinstance(criteria, dict) else {}
-            questions[name] = {
-                "type": "choice",
-                "instructions": instructions,
-                "criteria": {v: str(meaning.get(v) or v) for v in options},
-            }
-        elif prop.get("type") == "boolean":
-            meaning = criteria if isinstance(criteria, dict) else {}
-            questions[name] = {
-                "type": "noul",
-                "instructions": instructions,
-                "criteria": {
-                    "true": str(meaning.get("true") or "Yes."),
-                    "false": str(meaning.get("false") or "No."),
-                },
-            }
-        else:
-            raise ActivityError(
-                f"a decisions model answers only choices and yes/no questions, and "
-                f"“{name}” in this step's output is neither"
-            )
-    if not questions:
-        raise ActivityError("this step's output asks no question a decisions model can answer")
-    return questions
+    """The typed questions an output schema asks (``wf.decisions``), refused as an
+    activity error when it asks one a decisions model cannot answer."""
+    try:
+        return _questions(schema)
+    except NotAQuestion as e:
+        raise ActivityError(str(e)) from e
 
 
 def answer_from(
