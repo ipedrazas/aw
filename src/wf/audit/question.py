@@ -440,6 +440,20 @@ def apply_answer(
         if valid and answer not in valid:
             raise AnswerRejected(why_rejected(finding, answer))
         change(field, answer, "Your answer.")
+    elif key == "skill" and ws is not None and sid:
+        # "How should it be done?" takes instructions the system has, by name, or the
+        # person's own words, which become the step's instructions
+        from .catalog import resolve_skill
+
+        ref = resolve_skill(ws, str(answer)) if _names_instructions(answer) else None
+        if ref is not None:
+            change(field, ref, "It follows the instructions you named.")
+        else:
+            change(
+                field,
+                write_instructions(d, ws, sid, str(answer)),
+                "Your words are now its instructions.",
+            )
     elif key in ("on_timeout", "skill", "title", "workflow"):
         change(field, answer, "Your answer.")
     elif key == "shows_user":
@@ -685,3 +699,41 @@ def answer_definition(
         finding.status, finding.answer = was
         raise AnswerRejected(why_rejected(finding, answer))
     return new_def, changes
+
+
+def _names_instructions(answer: Any) -> bool:
+    """Whether an answer could be a reference or a name rather than an explanation: one
+    word, no spaces."""
+    return isinstance(answer, str) and bool(answer.strip()) and " " not in answer.strip()
+
+
+def write_instructions(d: dict[str, Any], ws: Workspace, sid: str, words: str) -> str:
+    """The person's own words, laid out as a step's instructions (what to do, what to
+    produce, the decisions and data rules the runtime relies on), written as the next
+    version of the step's own file so what it had before is kept. Returns the pinned
+    reference."""
+    from .draft import _skill_body
+
+    s = _step(d, sid)
+    rel = f"skills/{d['metadata']['name']}/{sid}.md"
+    shape = ws.load_schema(_get(d, f"steps.{sid}.output.schema") or "") or {}
+    produces = [
+        {
+            "name": name,
+            "type": node.get("type", "string"),
+            "description": node.get("description", ""),
+            **({"enum": list(node["enum"])} if node.get("enum") else {}),
+        }
+        for name, node in (shape.get("properties") or {}).items()
+    ]
+    body = _skill_body(
+        {"title": s.get("title") or sid, "description": s.get("description"), "produces": produces},
+        {"summary": words.strip()},
+        None,
+    )
+    if ws.exists(rel):
+        version, _ = ws.save_skill_version(rel, body)
+    else:
+        ws.save_skill(rel, 1, body)
+        version = 1
+    return f"{rel}@{version}"
