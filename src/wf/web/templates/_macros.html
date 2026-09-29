@@ -25,8 +25,9 @@
 {#- where="chat" is the copy the chat asks: its own element ids, no "Chat about this"
     (it is the chat), and a way to put it aside -#}
 {#- lead is how the chat put it, when it put it in its own words -#}
-{% macro question(f, audit_id, chat=True, where="", lead="") -%}
-  <div class="q" id="q-{{ where }}{{ f.id }}">
+{#- prefix changes only the element's id, for a second copy of a question on one page -#}
+{% macro question(f, audit_id, chat=True, where="", lead="", prefix="") -%}
+  <div class="q" id="q-{{ prefix or where }}{{ f.id }}">
     {% if lead %}<div class="qtext">{{ lead }}</div><div class="small muted">{{ f.question }}</div>
     {% else %}<div class="qtext">{{ f.question }}</div>{% endif %}
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
