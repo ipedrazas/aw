@@ -24,9 +24,11 @@
 
 {#- where="chat" is the copy the chat asks: its own element ids, no "Chat about this"
     (it is the chat), and a way to put it aside -#}
-{% macro question(f, audit_id, chat=True, where="") -%}
+{#- lead is how the chat put it, when it put it in its own words -#}
+{% macro question(f, audit_id, chat=True, where="", lead="") -%}
   <div class="q" id="q-{{ where }}{{ f.id }}">
-    <div class="qtext">{{ f.question }}</div>
+    {% if lead %}<div class="qtext">{{ lead }}</div><div class="small muted">{{ f.question }}</div>
+    {% else %}<div class="qtext">{{ f.question }}</div>{% endif %}
     {% if f.detail %}<div class="small muted">{{ f.detail }}</div>{% endif %}
     {% if f.source_text %}<div class="says">Your document says: “{{ f.source_text }}”</div>{% endif %}
     <form data-answer="{{ f.id }}" data-kind="{{ f.answer_kind }}" data-question="{{ f.question }}"{% if where %} data-from-chat{% endif %}>

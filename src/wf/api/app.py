@@ -26,11 +26,12 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
-from wf.audit.asking import asking, skip
+from wf.audit.asking import ask_first, asking, skip
 from wf.audit.catalog import capabilities
 from wf.audit.chat import chat
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
+from wf.audit.triage import triage
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.interpret.interpreter import fingerprint, stops_for_ok
@@ -437,7 +438,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
             result = st().auditor.audit(document, name=name)
         except Exception as e:  # noqa: BLE001 - surface the reason to the UI
             raise HTTPException(502, f"The draft could not be made: {e}") from e
-        audit_id = st().audits.create(result, document)
+        plan, settled, changes = _triage(st(), result, document)
+        audit_id = st().audits.create(result, document, plan=plan, settled=settled)
+        if changes:
+            st().audits.save(audit_id, result, changes, by="assistant")
         st().sessions.link_audit(result.session_id, audit_id)
         logger.info(
             "drafted %s from a document of %d characters",
@@ -619,8 +623,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
             )
         ]
         reply = "\n\n".join([outcome.reply, *refused]) if refused else outcome.reply
+        chat_so_far = list(rec.chat or [])
+        nxt = outcome.ask_next or {}
+        if any(f.id == nxt.get("finding_id") and f.status == "open" for f in result.findings):
+            # the chat chose what to ask next; it asks it once the one it is on is closed
+            chat_so_far = ask_first(chat_so_far, nxt["finding_id"], str(nxt.get("text") or ""))
         new_chat = [
-            *(rec.chat or []),
+            *chat_so_far,
             {"role": "user", "text": message},
             {
                 "role": "assistant",
@@ -1436,12 +1445,65 @@ def _audit_view(state: AppState, audit_id: str) -> dict[str, Any]:
         "document": rec.document,
         "chat": rec.chat or [],
         "asked": _asked_view(result, rec.chat or [], wf),
+        # the questions the chat answered itself, while still answered the way it did
+        "settled": {
+            c["finding_id"]: c
+            for c in ((rec.chat or [{}])[0].get("settled") or [])
+            if any(
+                f.id == c["finding_id"]
+                and f.status == "answered"
+                and _said(f, f.answer) == c["said"]
+                for f in result.findings
+            )
+        },
         # the question the chat is waiting on: what they type next is about it
         "asking": (f.id if (f := asking(result.findings, rec.chat or [])) else None),
         "explanations": result.explanations,
         "cases": state.ws.list_cases(),
         "runs": state.runner.list_runs(result.name),
     }
+
+
+def _triage(
+    state: AppState, result: Any, document: str
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[Change]]:
+    """Let the chat sort a new draft's questions, and answer the ones it settled. When
+    it cannot, the draft is no worse: every question is asked, in the list's order."""
+    try:
+        t = triage(
+            state.model,
+            result,
+            document=document,
+            capabilities=capabilities(state.ws, exclude=result.name),
+            model_name=state.chat_model,
+        )
+    except Exception as e:  # noqa: BLE001 - the questions can still be asked in order
+        logger.warning("could not sort the questions of %s: %s", result.name, e)
+        return None, [], []
+    settled: list[dict[str, Any]] = []
+    changes: list[Change] = []
+    for s in t.settle:
+        # an answer before it may have closed this one, or raised it again differently
+        f = next(
+            (x for x in result.findings if x.id == s["finding_id"] and x.status == "open"), None
+        )
+        if f is None:
+            continue
+        question = f.question
+        try:
+            changes += state.auditor.answer(result, f.id, s["value"])
+        except AnswerRejected as e:
+            logger.info("the chat's answer to %s was not taken: %s", f.id, e)
+            continue
+        settled.append(
+            {
+                "finding_id": f.id,
+                "question": question,
+                "said": _said(f, s["value"]),
+                "reason": s["reason"],
+            }
+        )
+    return t.plan(), settled, changes
 
 
 def _refuse_while_open(findings: list[Any], then: str) -> None:

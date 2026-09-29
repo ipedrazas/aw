@@ -28,6 +28,15 @@ link check uses the system's own check, and a step your text names without expla
 (research, write the report, review it) starts from the system's own instructions for
 that kind of step, which the draft says under what it changed.
 
+Before it asks anything, the chat reads the questions and sorts them. One it can answer
+from what you wrote, or from what the system already does, it answers for you and says
+why; it shows as answered on the right, where you can change it. It never answers for
+you about money, limits, approvals, what leaves the system or which model runs. One
+that does not matter until you have tried the draft it leaves for later: a dry run
+guesses it and says where, and a real run still needs it answered. The rest it asks,
+one at a time, the ones that matter most to you first, in its own words; what you tell
+it can change what it asks next.
+
 Questions can be answered by picking a choice, or in the chat. If a question does not
 make sense, say so: it may rest on a wrong reading of your text, and the chat can fix
 the step instead. Every change has a reason next to it and can be undone.
