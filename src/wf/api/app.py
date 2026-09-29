@@ -947,8 +947,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def run_page(request: Request, run_id: str) -> Any:
         run = get_run(run_id)
         calls = _calls_by_step(st(), run_id, _tools_by_step(st(), run["workflow"]))
+        search_limits = _search_limits_by_step(st(), run["workflow"])
         for s in run["steps"]:
             s["calls"] = calls.get(s["step_id"], [])
+            s["search_limits"] = search_limits.get(s["step_id"])
         return page(
             request,
             "run",
@@ -1048,6 +1050,14 @@ def _positive(v: Any, what: str, whole: bool = False) -> float | int:
     return n
 
 
+def _domain_list(raw: Any, what: str) -> list[str]:
+    if not raw:
+        return []
+    if not isinstance(raw, list) or not all(isinstance(d, str) for d in raw):
+        raise HTTPException(400, f"The {what} has to be a list of site names.")
+    return [d.strip().lower() for d in raw if d.strip()]
+
+
 def _settings_edits(wf: Workflow, body: dict[str, Any]) -> tuple[list[tuple[str, Any, str]], str]:
     sid = body.get("step")
     step = wf.step(sid) if sid else None
@@ -1107,6 +1117,31 @@ def _settings_edits(wf: Workflow, body: dict[str, Any]) -> tuple[list[tuple[str,
             [(f"steps.{sid}.limits", value, "Set in the workflow's settings.")],
             f"{title} goes {value['max_depth']} deep, {value['max_fanout']} at most",
         )
+    if "domains" in body:
+        if step is None or not (step.tools or {}).get("search"):
+            raise HTTPException(400, "Only a step that searches has these limits.")
+        d = body["domains"] or {}
+        include = _domain_list(d.get("include_domains"), "sites to search only")
+        exclude = _domain_list(d.get("exclude_domains"), "sites to leave out")
+        if include and exclude:
+            raise HTTPException(
+                400, f"{title} can search only some sites, or leave some out — not both."
+            )
+        value = step.tools["search"].model_dump(exclude_none=True)
+        value.pop("include_domains", None)
+        value.pop("exclude_domains", None)
+        if include:
+            value["include_domains"] = include
+        if exclude:
+            value["exclude_domains"] = exclude
+        said = (
+            f"{title} searches only {', '.join(include)}"
+            if include
+            else f"{title} does not search {', '.join(exclude)}"
+            if exclude
+            else f"{title} searches everywhere again"
+        )
+        return ([(f"steps.{sid}.tools.search", value, "Set in the workflow's settings.")], said)
     raise HTTPException(400, "Nothing to change.")
 
 
@@ -1175,6 +1210,16 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
             for s in wf.spec.steps
             if s.kind == "subworkflow"
         ],
+        "search_steps": [
+            {
+                "id": s.id,
+                "title": s.title or s.id,
+                "include_domains": s.tools["search"].include_domains or [],
+                "exclude_domains": s.tools["search"].exclude_domains or [],
+            }
+            for s in wf.spec.steps
+            if (s.tools or {}).get("search")
+        ],
     }
 
 
@@ -1237,6 +1282,23 @@ def _tools_by_step(state: AppState, name: str) -> dict[str, list[str]]:
         s.id: [seen[t.split(".")[-1]] for t in (s.tools or {}) if t.split(".")[-1] in seen]
         for s in wf.spec.steps
     }
+
+
+def _search_limits_by_step(state: AppState, name: str) -> dict[str, dict[str, list[str]]]:
+    """The sites each step's search was limited to, or kept off, if any."""
+    try:
+        wf = state.ws.load_definition(name)
+    except WorkspaceError:
+        return {}
+    out: dict[str, dict[str, list[str]]] = {}
+    for s in wf.spec.steps:
+        perm = (s.tools or {}).get("search")
+        if perm and (perm.include_domains or perm.exclude_domains):
+            out[s.id] = {
+                "include_domains": perm.include_domains or [],
+                "exclude_domains": perm.exclude_domains or [],
+            }
+    return out
 
 
 def _calls_by_step(

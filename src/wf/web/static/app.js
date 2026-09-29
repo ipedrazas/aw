@@ -397,6 +397,11 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   root.querySelectorAll("form[data-limits]").forEach(f => f.addEventListener("submit", e => {
     e.preventDefault(); save({step: f.dataset.limits, limits: {max_fanout: num(f, "max_fanout"), max_depth: num(f, "max_depth")}});
   }));
+  const lines = (form, name) => form.querySelector("[name=" + name + "]").value.split("\n").map(s => s.trim()).filter(Boolean);
+  root.querySelectorAll("form[data-domains]").forEach(f => f.addEventListener("submit", e => {
+    e.preventDefault();
+    save({step: f.dataset.domains, domains: {include_domains: lines(f, "include_domains"), exclude_domains: lines(f, "exclude_domains")}});
+  }));
 })();
 
 /* Run page: say OK to the step a real run stopped after, or stop it there. */

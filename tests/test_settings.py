@@ -59,9 +59,47 @@ def test_settings_that_do_not_fit_change_nothing(client, ws):  # noqa: F811
         {"budget": {"max_usd": -1, "max_minutes": 10}},
         {"step": "plan", "limits": {"max_depth": 1, "max_fanout": 1}},
         {"step": "nope", "trust": None},
+        {"step": "plan", "domains": {"include_domains": ["docs.temporal.io"]}},
+        {"domains": {"include_domains": ["docs.temporal.io"]}},
+        {
+            "step": "research",
+            "domains": {
+                "include_domains": ["docs.temporal.io"],
+                "exclude_domains": ["pinterest.com"],
+            },
+        },
+        {"step": "research", "domains": {"include_domains": "docs.temporal.io"}},
     ):
         assert client.post(URL, json=body).status_code in (400, 404), body
     assert read_yaml(ws, DEF) == before
+
+
+def test_a_step_that_searches_can_be_limited_to_or_kept_off_sites(client, ws):  # noqa: F811
+    r = client.post(
+        URL,
+        json={
+            "step": "research",
+            "domains": {"include_domains": ["docs.temporal.io", " Restate.dev "]},
+        },
+    )
+    assert r.status_code == 200, r.text
+    search = step_of(ws, "research")["tools"]["search"]
+    assert search["include_domains"] == ["docs.temporal.io", "restate.dev"]
+    assert search["max_calls"] == 25, "what the page does not show is kept"
+    assert "exclude_domains" not in search
+
+    r = client.post(
+        URL, json={"step": "research", "domains": {"exclude_domains": ["pinterest.com"]}}
+    )
+    assert r.status_code == 200, r.text
+    search = step_of(ws, "research")["tools"]["search"]
+    assert search["exclude_domains"] == ["pinterest.com"]
+    assert "include_domains" not in search, "setting one clears the other"
+
+    r = client.post(URL, json={"step": "research", "domains": {}})
+    assert r.status_code == 200, r.text
+    search = step_of(ws, "research")["tools"]["search"]
+    assert "include_domains" not in search and "exclude_domains" not in search
 
 
 def test_the_spending_limit_and_how_far_follow_ups_go(client, ws):  # noqa: F811

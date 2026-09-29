@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 from wf.schema import Workspace
 
@@ -31,6 +32,35 @@ def _tokens(s: str) -> set[str]:
     }
 
 
+def _host(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
+
+
+def _on_domain(host: str, domain: str) -> bool:
+    domain = domain.strip().lower().lstrip("*.")
+    return host == domain or host.endswith("." + domain)
+
+
+def _by_domain(
+    results: list[dict[str, Any]],
+    *,
+    include_domains: list[str] | None,
+    exclude_domains: list[str] | None,
+) -> list[dict[str, Any]]:
+    """What Exa's own ``includeDomains``/``excludeDomains`` would have left: filtered
+    before anything is cut down to ``max_results``, so a dry run finds what a live
+    search would have, not fewer results because the cut came first."""
+    if include_domains:
+        results = [
+            r for r in results if any(_on_domain(_host(r["url"]), d) for d in include_domains)
+        ]
+    if exclude_domains:
+        results = [
+            r for r in results if not any(_on_domain(_host(r["url"]), d) for d in exclude_domains)
+        ]
+    return results
+
+
 class FixtureSearch:
     def __init__(self, ws: Workspace):
         self.ws = ws
@@ -38,7 +68,14 @@ class FixtureSearch:
         self.contents: dict[str, Any] = ws.load_json("fixtures/contents.json", default={}) or {}
         self.calls: list[dict[str, Any]] = []
 
-    def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        *,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> list[SearchResult]:
         self.calls.append({"op": "search", "query": query})
         q = _tokens(query)
         best: tuple[float, int] | None = None
@@ -54,7 +91,11 @@ class FixtureSearch:
                 best = (score, i)
         if best is None:
             return []
-        results = self.entries[best[1]].get("results", [])[:max_results]
+        results = self.entries[best[1]].get("results", [])
+        results = _by_domain(
+            results, include_domains=include_domains, exclude_domains=exclude_domains
+        )
+        results = results[:max_results]
         return [
             SearchResult(r["url"], r.get("title", ""), r.get("snippet", ""), r.get("published"))
             for r in results
@@ -71,7 +112,14 @@ class FixtureSearch:
 class NoSearch:
     """Live search is not wired in this phase. Says so instead of pretending."""
 
-    def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        *,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> list[SearchResult]:
         raise RuntimeError("live web search is not configured; runs use recorded fixtures")
 
     def get_contents(self, url: str) -> dict[str, Any]:

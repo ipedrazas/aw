@@ -25,6 +25,35 @@ def test_fixture_search_matches_by_meaning_not_exact_text(sample_ws):
     assert "error" in s.get_contents("https://nowhere.example/x")
 
 
+def test_fixture_search_can_be_limited_to_or_kept_off_sites(sample_ws):
+    s = FixtureSearch(sample_ws)
+    q = "durable execution platforms for AI agents"
+    only = s.search(q, max_results=5, include_domains=["docs.temporal.io"])
+    assert only and all(r.url.startswith("https://docs.temporal.io/") for r in only)
+    without = s.search(
+        q, max_results=5, exclude_domains=["rankings.example.com", "vendorlist.example.com"]
+    )
+    assert without and all(
+        "rankings.example.com" not in r.url and "vendorlist.example.com" not in r.url
+        for r in without
+    )
+    assert s.search(q, include_domains=["nowhere.example"]) == []
+
+
+def test_fixture_search_filters_sites_before_it_cuts_to_max_results(sample_ws):
+    """A site limit has to narrow the full recorded set before ``max_results`` cuts it
+    down, the way Exa itself would filter before it ever answers — otherwise a match
+    further down the list is lost to the cut before the filter runs."""
+    s = FixtureSearch(sample_ws)
+    q = "durable execution recover after failed step long running agent"
+    unfiltered = s.search(q, max_results=5)
+    assert unfiltered[-1].url.startswith("https://engineering-blog.example.net/"), (
+        "the domain below is the last of five raw results, not among the first three"
+    )
+    only = s.search(q, max_results=3, include_domains=["engineering-blog.example.net"])
+    assert only and all("engineering-blog.example.net" in r.url for r in only)
+
+
 def test_fixture_link_check_records_its_vantage(sample_ws):
     lc = FixtureLinkCheck(sample_ws)
     dead = "https://research.example.com/reports/agent-pilots-to-production-2026"
@@ -119,6 +148,26 @@ def test_exa_search_and_fetch_speak_the_fixture_shape():
         "published": None,
     }
     assert "could not fetch" in s.get_contents("https://gone.example/")["error"]
+
+
+def test_exa_search_passes_site_limits_to_the_api_and_leaves_them_out_when_there_are_none():
+    seen = []
+
+    def exa(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"results": []})
+
+    s = ExaSearch("k", transport=httpx.MockTransport(exa))
+    s.search("durable agents")
+    assert "includeDomains" not in seen[-1] and "excludeDomains" not in seen[-1]
+    s.search("durable agents", include_domains=["docs.temporal.io", "restate.dev"])
+    assert seen[-1]["includeDomains"] == ["docs.temporal.io", "restate.dev"]
+    assert "excludeDomains" not in seen[-1]
+    s.search("durable agents", exclude_domains=["pinterest.com"])
+    assert seen[-1]["excludeDomains"] == ["pinterest.com"]
+    assert "includeDomains" not in seen[-1]
 
 
 def test_search_is_exa_when_there_is_a_key(sample_ws, monkeypatch):

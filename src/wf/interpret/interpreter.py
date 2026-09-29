@@ -784,10 +784,13 @@ class Interpreter:
                         SEARCH_TOOL.name,
                         SEARCH_TOOL.description,
                         SEARCH_TOOL.input_schema,
-                        lambda i: [
+                        lambda i, perm=perm: [
                             r.__dict__
                             for r in self.acts.search.search(
-                                i["query"], int(i.get("max_results", 5))
+                                i["query"],
+                                int(i.get("max_results", 5)),
+                                include_domains=perm.include_domains,
+                                exclude_domains=perm.exclude_domains,
                             )
                         ],
                         perm.max_calls,

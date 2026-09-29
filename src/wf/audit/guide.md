@@ -114,8 +114,10 @@ shared catalogue of instructions yet, beyond the ones that come with the sample.
 
 ## Search
 
-Search looks at recent web pages and news. Limiting a step to particular sites is not
-possible yet.
+Search looks at recent web pages and news. A step that searches can be limited to
+particular sites, or kept off particular sites, from the workflow's settings page —
+not both at once. A dry run honours the same limits: recorded fixtures are filtered
+the same way a live search would be, so it finds what a real run would.
 
 ## Connecting to your own systems
 
