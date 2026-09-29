@@ -361,7 +361,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
         ``{"reset_steps": true}`` every step back to the workflow's;
         ``{"budget": {"max_usd": n, "max_minutes": n}}`` the spending limit for a run;
         ``{"step": id, "limits": {"max_depth": n, "max_fanout": n}}`` how far a
-        follow-up step may go."""
+        follow-up step may go;
+        ``{"step": id, "search_further": {"levels": n, "max_searches": n, "max_topics": n}}``
+        how far a step that searches further may go."""
         wf = _load(st(), name)
         edits, said = _settings_edits(wf, body)
         if not edits:
@@ -1330,6 +1332,21 @@ def _settings_edits(wf: Workflow, body: dict[str, Any]) -> tuple[list[tuple[str,
             [(f"steps.{sid}.limits", value, "Set in the workflow's settings.")],
             f"{title} goes {value['max_depth']} deep, {value['max_fanout']} at most",
         )
+    if "search_further" in body:
+        if step is None or step.search_further is None:
+            raise HTTPException(400, "Only a step that searches further has these limits.")
+        sf = body["search_further"] or {}
+        value = {
+            **step.search_further.model_dump(),
+            "levels": _positive(sf.get("levels"), "How many rounds", whole=True),
+            "max_searches": _positive(sf.get("max_searches"), "How many searches", whole=True),
+            "max_topics": _positive(sf.get("max_topics"), "How many topics a round", whole=True),
+        }
+        return (
+            [(f"steps.{sid}.search_further", value, "Set in the workflow's settings.")],
+            f"{title} searches {value['levels']} rounds further, {value['max_searches']} "
+            f"searches at most, {value['max_topics']} topics a round",
+        )
     if "domains" in body:
         if step is None or not (step.tools or {}).get("search"):
             raise HTTPException(400, "Only a step that searches has these limits.")
@@ -1432,6 +1449,11 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
             }
             for s in wf.spec.steps
             if (s.tools or {}).get("search")
+        ],
+        "further_steps": [
+            {"id": s.id, "title": s.title or s.id, **s.search_further.model_dump()}
+            for s in wf.spec.steps
+            if s.search_further is not None
         ],
     }
 
