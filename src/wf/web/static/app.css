@@ -29,7 +29,15 @@ h1{font-size:30px;margin:0 0 4px}h2{font-size:18px;margin:0 0 6px}h3{font-size:1
 .btn{display:inline-block;border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 14px;border-radius:6px;cursor:pointer;font:inherit;text-decoration:none}
 .btn-primary{background:var(--blue);color:var(--blue-ink);border-color:var(--blue)}
 .btn-sm{padding:4px 10px;font-size:13px}
+.btn:hover:not(:disabled){background:#f3f4f1}
+.btn-primary:hover:not(:disabled){background:#1a3f9c;border-color:#1a3f9c}
 .btn:disabled{opacity:.5;cursor:default}
+/* where the keyboard is, on everything you can reach with it */
+a:focus-visible,.btn:focus-visible,.tabs button:focus-visible,summary:focus-visible,.switch:focus-within,
+.opt:focus-within,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.topbar a:focus-visible{outline-color:#fff}
+.opt input:focus-visible,.chat-box textarea:focus-visible,.switch input:focus-visible{outline:none}
+.msg-error{color:var(--red-ink)}
 .btn-danger{color:var(--red-ink);border-color:#e6bcb6}
 .btn-danger:hover{background:var(--red-bg)}
 .topbar .btn-danger{color:#f0b5ae;border-color:#5b3a36;background:transparent}
@@ -99,6 +107,8 @@ textarea{min-height:110px;resize:vertical}
 .opts{display:flex;flex-direction:column;gap:6px;margin:8px 0}
 .opt{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:6px;padding:8px 10px;cursor:pointer;background:#fff}
 .opt input{margin-top:3px}
+.opt:hover{border-color:#b9beb9}
+.opt:has(input:checked){border-color:var(--blue);background:var(--blue-bg)}
 .opt .cons{color:var(--muted);font-size:13px}
 .own{margin:0 0 8px}
 .own textarea{min-height:70px}

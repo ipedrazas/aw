@@ -19,8 +19,18 @@ const kept = {
 };
 function say(el, text, isError) {
   if (!el) { if (isError) alert(text); return; }
-  el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
+  el.textContent = text;
+  el.classList.add("small");
+  el.classList.toggle("muted", !isError);
+  el.classList.toggle("msg-error", !!isError);
 }
+
+/* Every place a page says what happened ("Saving…", an error) is read out when it
+   changes, without taking the focus from where you are. */
+document.querySelectorAll("[data-msg]").forEach(el => {
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+});
 
 /* Technical details switch, remembered per browser. */
 (function () {
@@ -481,17 +491,27 @@ document.querySelectorAll("[data-pause]").forEach(box => {
   }));
 });
 
-/* Runs list: filter tabs and compare. */
+/* Runs list: filter tabs and compare. The filter is kept in the address (?status=), so
+   a reload or a shared link shows the same runs. */
 (function () {
   const tabs = document.querySelectorAll("[data-filter]"); if (!tabs.length) return;
-  tabs.forEach(t => t.addEventListener("click", () => {
-    tabs.forEach(x => x.classList.remove("active")); t.classList.add("active");
+  const show = (t) => {
+    tabs.forEach(x => { x.classList.toggle("active", x === t); x.setAttribute("aria-selected", x === t ? "true" : "false"); });
     const want = t.dataset.filter;
     document.querySelectorAll("tr[data-status]").forEach(row => {
       const s = row.dataset.status, group = s === "done" ? "done" : s === "running" ? "running" : s === "waiting" ? "needs" : "stopped";
       row.classList.toggle("hidden", want !== "all" && group !== want);
     });
+  };
+  tabs.forEach(t => t.addEventListener("click", () => {
+    show(t);
+    const url = new URL(location.href);
+    if (t.dataset.filter === "all") url.searchParams.delete("status"); else url.searchParams.set("status", t.dataset.filter);
+    history.replaceState(null, "", url);
   }));
+  const asked = new URLSearchParams(location.search).get("status");
+  const first = Array.from(tabs).find(t => t.dataset.filter === asked);
+  if (first) show(first);
   const cmp = document.querySelector("form[data-compare]");
   if (cmp) cmp.addEventListener("submit", e => {
     e.preventDefault();
