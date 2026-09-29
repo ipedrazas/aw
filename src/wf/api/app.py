@@ -1033,7 +1033,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
         return templates.TemplateResponse(
             request,
             f"{template}.html",
-            {"offline": st().offline, "search_live": search_mode() == "exa", **ctx},
+            {
+                "offline": st().offline,
+                "search_live": search_mode() == "exa",
+                "section": _section(request.url.path),
+                "needs_you": _needs_you(st()),
+                **ctx,
+            },
         )
 
     @app.get("/", response_class=HTMLResponse)
@@ -1128,6 +1134,20 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
 
 # -- helpers -----------------------------------------------------------------------
+
+
+def _section(path: str) -> str:
+    """Which part of the nav a page belongs to: a workflow's settings are the workflow's,
+    a draft is a workflow being made, one instruction file is among the instructions."""
+    first = path.strip("/").split("/")[0]
+    return {"audits": "workflows", "skill": "skills", "": "workflows"}.get(first, first)
+
+
+def _needs_you(state: AppState) -> int:
+    """How many runs are waiting for someone: an OK, or an answer. Shown on every page,
+    since a run that stopped for you should not wait until you look at the runs list."""
+    with state.db.session() as s:
+        return s.query(Run).filter_by(status="waiting").count()
 
 
 def _load(state: AppState, name: str):
