@@ -13,9 +13,11 @@ Keep it true to the code: when behaviour changes, change this.
 - About your other workflows: which ones exist, what they do, and whether a step in
   this one could hand its work to one of them.
 - About how the system works: anything on this page.
+- About your runs: a run's status, where it stopped and why, and what a step decided.
+  The chat looks a run up when you ask; it does not keep runs in mind otherwise.
 
-The chat cannot see past runs or their results yet, and it cannot start a run. Runs
-are on the Runs page; a draft is tried with "Save and try it on a topic" on the draft page.
+The chat cannot start a run. Runs are on the Runs page; a draft is tried with "Save and
+try it on a topic" on the draft page.
 
 ## The draft and its questions
 
