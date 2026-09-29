@@ -95,7 +95,10 @@ difference is how much effort and cost goes into each answer. The draft only ask
 about a step's model when your text singles it out.
 
 A step can also be told to follow one of the system's own instructions instead of the
-ones written for it: ask in the chat.
+ones written for it, from the workflow page or by asking in the chat. Some of those
+instructions come with the result they are written to give back; a step moved onto
+them can give back that result too. You are told first which later steps read
+something that would go, and they are asked about afterwards.
 
 ## Runs
 

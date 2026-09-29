@@ -19,9 +19,10 @@ import logging
 from typing import Any
 
 from wf.interpret.interpreter import CONTENTS_TOOL, SEARCH_TOOL
-from wf.schema import Workspace
+from wf.schema import Step, Workflow, Workspace
 from wf.settings import step_models
 from wf.validate.findings import RUNNERS
+from wf.validate.readers import lost_by
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +94,8 @@ def known_instructions(ws: Workspace) -> list[dict[str, Any]]:
                 # what a step's ``skill`` is set to, to follow these instructions
                 "ref": f"skills/{p.name}@{skill.version or 1}",
                 "title": skill.title,
+                # the result they are written to give back, when they name one
+                "result": skill.result,
                 "what": _first_paragraph(skill.body),
                 "version": skill.version,
                 "body": skill.body.strip(),
@@ -131,23 +134,47 @@ def own_instructions(ws: Workspace) -> str:
     return ", ".join(f"“{i['title']}” ({i['ref']})" for i in known_instructions(ws))
 
 
-def skill_choices(
-    ws: Workspace, workflow: str, step_id: str, current: str | None
-) -> list[dict[str, str]]:
+def skill_choices(ws: Workspace, wf: Workflow, step: Step) -> list[dict[str, Any]]:
     """What a step can be told to follow: the instructions written for it, and the
-    system's own. The one it follows now is on the list at the version it pins."""
-    out: list[dict[str, str]] = []
-    written = f"skills/{workflow}/{step_id}.md"
+    system's own. The one it follows now is on the list at the version it pins.
+
+    Instructions that come with a result the step does not give back now carry it as
+    ``result``, with ``loses``: what switching to it would take from the steps that
+    read this one (``wf.validate.readers.lost_by``)."""
+    out: list[dict[str, Any]] = []
+    written = f"skills/{wf.metadata.name}/{step.id}.md"
     own = ws.load_skill(written)
     if own is not None:
         out.append({"value": f"{written}@{own.version or 1}", "label": "Its own instructions"})
-    out += [{"value": i["ref"], "label": i["title"]} for i in known_instructions(ws)]
-    if current:
-        rel = current.partition("@")[0]
+    out += [
+        {"value": i["ref"], "label": i["title"], "result": i["result"]}
+        for i in known_instructions(ws)
+    ]
+    if step.skill:
+        rel = step.skill.partition("@")[0]
         match = next((c for c in out if c["value"].partition("@")[0] == rel), None)
         if match:
-            match["value"] = current
+            match["value"] = step.skill
         else:
-            skill = ws.load_skill(current)
-            out.insert(0, {"value": current, "label": skill.title if skill else current})
+            skill = ws.load_skill(step.skill)
+            out.insert(0, {"value": step.skill, "label": skill.title if skill else step.skill})
+    now = step.output.schema_ if step.output else None
+    for c in out:
+        result = c.pop("result", None)
+        if result and result != now:
+            c["result"] = result
+            c["loses"] = lost_by(wf, step.id, ws.load_schema(result))
+    return out
+
+
+def result_costs(ws: Workspace, wf: Workflow) -> dict[str, dict[str, list[str]]]:
+    """Per step, per instructions that come with a result it does not give back now:
+    what switching to that result would take from the steps that read it."""
+    out: dict[str, dict[str, list[str]]] = {}
+    for step in wf.spec.steps:
+        if step.kind != "agent":
+            continue
+        costs = {c["value"]: c["loses"] for c in skill_choices(ws, wf, step) if "result" in c}
+        if costs:
+            out[step.id] = costs
     return out

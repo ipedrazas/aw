@@ -27,7 +27,13 @@ from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
 from wf.audit.asking import ask_first, asking, skip
-from wf.audit.catalog import capabilities, own_instructions, resolve_skill, skill_choices
+from wf.audit.catalog import (
+    capabilities,
+    own_instructions,
+    resolve_skill,
+    result_costs,
+    skill_choices,
+)
 from wf.audit.chat import chat
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
@@ -158,9 +164,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
             **_picture(wf, result.findings, st().ws),
             "models": model_choices(wf),
             "skill_choices": {
-                s.id: skill_choices(st().ws, name, s.id, s.skill)
-                for s in wf.spec.steps
-                if s.kind == "agent"
+                s.id: skill_choices(st().ws, wf, s) for s in wf.spec.steps if s.kind == "agent"
             },
             "yaml": dump_workflow(wf),
             "findings": [f.model_dump(mode="json") for f in result.ordered()],
@@ -269,7 +273,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def set_skill(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         """Choose the instructions one agent step follows: ``{"step": id, "skill": ref}``,
         where ``ref`` is the step's own instructions or one of the system's, by
-        reference or by name. Anything else is refused and nothing changes."""
+        reference or by name. ``"result": true`` also gives the step the result those
+        instructions come with, in the same change. Anything else is refused and
+        nothing changes."""
         wf = _load(st(), name)
         sid, asked = body.get("step"), str(body.get("skill") or "").strip()
         step = wf.step(str(sid)) if sid else None
@@ -278,22 +284,36 @@ def create_app(state: AppState | None = None) -> FastAPI:
         if step.kind != "agent":
             raise HTTPException(400, f"“{step.title or sid}” does not follow instructions.")
         ref = resolve_skill(st().ws, asked) if asked else None
-        if ref is None:
+        skill = st().ws.load_skill(ref) if ref else None
+        if ref is None or skill is None:
             raise HTTPException(
                 400,
                 f"There are no instructions called “{asked}”, so nothing changed. "
                 f"The system's own are {own_instructions(st().ws)}.",
             )
-        if ref == step.skill:
+        who = f"“{step.title or step.id}”"
+        edits = []
+        if ref != step.skill:
+            edits.append((f"steps.{step.id}.skill", ref, "Chosen on the workflow page."))
+        said = f"{who} follows “{skill.title}”"
+        if body.get("result"):
+            if not skill.result or st().ws.load_schema(skill.result) is None:
+                raise HTTPException(
+                    400, f"“{skill.title}” comes with no result of its own, so nothing changed."
+                )
+            now = step.output.schema_ if step.output else None
+            if skill.result != now:
+                edits.append(
+                    (
+                        f"steps.{step.id}.output.schema",
+                        skill.result,
+                        f"The result “{skill.title}” is written to give back.",
+                    )
+                )
+                said += " and gives back what they are written for"
+        if not edits:
             return {**get_workflow(name), "commit": None, "drafts": 0}
-        skill = st().ws.load_skill(ref)
-        title = skill.title if skill else ref
-        commit, drafts = _commit_settings(
-            st(),
-            wf,
-            [(f"steps.{step.id}.skill", ref, "Chosen on the workflow page.")],
-            f"“{step.title or step.id}” follows “{title}”",
-        )
+        commit, drafts = _commit_settings(st(), wf, edits, said)
         return {**get_workflow(name), "commit": commit, "drafts": drafts}
 
     @app.get("/api/workflows/{name}/settings")
@@ -614,6 +634,7 @@ def create_app(state: AppState | None = None) -> FastAPI:
                 workflows=caps["workflows"],
                 capabilities=caps,
                 model_limits=models_steps_cannot_use(result.workflow(), st().ws),
+                result_costs=result_costs(st().ws, result.workflow()),
                 about=body.get("about") or None,
             )
         except Exception as e:  # noqa: BLE001

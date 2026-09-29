@@ -369,6 +369,11 @@ class Auditor:
             value = self._model(result, value)
         if len(bits) == 3 and bits[0] == "steps" and bits[2] == "skill" and value is not None:
             value = self._skill(result, value)
+        if bits[0] == "steps" and bits[2:] == ["output", "schema"] and value is not None:
+            if not isinstance(value, str) or self.ws.load_schema(value) is None:
+                raise AnswerRejected(
+                    f"There is no result called “{value}”, so the draft is unchanged."
+                )
         before = _get(result.definition, path)
         new_def = copy.deepcopy(result.definition)
         _set(new_def, path, value)

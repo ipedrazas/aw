@@ -46,6 +46,10 @@ class Skill:
     # The file the text was read from: ``path`` itself, or the kept copy of an earlier
     # version under ``.versions/`` when the step pins one the file has moved on from.
     file: str = ""
+    # The result these instructions are written to give back, when they name one in
+    # their front matter (``result: schemas/claim_support.json``): a step moved onto
+    # them is offered it too.
+    result: str | None = None
 
     @property
     def title(self) -> str:
@@ -237,10 +241,17 @@ class Workspace:
                 versions.add(current)
         return sorted(versions)
 
-    def save_skill(self, rel: str, version: int, body: str, title: str | None = None) -> Path:
+    def save_skill(
+        self,
+        rel: str,
+        version: int,
+        body: str,
+        title: str | None = None,
+        result: str | None = None,
+    ) -> Path:
         p = self.path(rel)
         p.parent.mkdir(parents=True, exist_ok=True)
-        fm = f"---\nversion: {version}\n---\n"
+        fm = f"---\nversion: {version}\n" + (f"result: {result}\n" if result else "") + "---\n"
         if title and not body.lstrip().startswith("#"):
             body = f"# {title}\n\n{body}"
         p.write_text(fm + body.rstrip() + "\n")
@@ -259,6 +270,7 @@ class Workspace:
             raise WorkspaceError(f"no instruction file {rel!r} in the workspace")
         text = p.read_text()
         current, _ = split_front_matter(text)
+        meta, _ = front_matter(text)
         written: list[str] = []
         if current is not None:
             kept = f"{_versions_dir(rel)}/{current}.md"
@@ -269,7 +281,7 @@ class Workspace:
                 written.append(kept)
         version = max([*self.skill_versions(rel), 0]) + 1
         _, body = split_front_matter(body)  # front matter typed into the editor is ours to write
-        self.save_skill(rel, version, body)
+        self.save_skill(rel, version, body, result=meta.get("result"))  # the result stays theirs
         written.append(rel)
         return version, written
 
@@ -332,24 +344,32 @@ def _versions_dir(rel: str) -> str:
 
 def _read_skill(rel: str, file: str, p: Path) -> Skill:
     text = p.read_text()
-    version, body = split_front_matter(text)
+    meta, body = front_matter(text)
+    version = meta.get("version")
     return Skill(
         path=rel,
-        version=version,
+        version=int(version) if version is not None else None,
         content=text,
         body=body,
         sha256=hashlib.sha256(text.encode()).hexdigest(),
         file=file,
+        result=str(meta["result"]) if meta.get("result") else None,
     )
 
 
-def split_front_matter(text: str) -> tuple[int | None, str]:
+def front_matter(text: str) -> tuple[dict[str, Any], str]:
+    """The front matter of an instruction file, and the text after it."""
     m = _FRONT_MATTER.match(text)
     if not m:
-        return None, text
-    data = yaml.safe_load(m.group(1)) or {}
-    version = data.get("version")
-    return (int(version) if version is not None else None), text[m.end() :]
+        return {}, text
+    data = yaml.safe_load(m.group(1))
+    return (data if isinstance(data, dict) else {}), text[m.end() :]
+
+
+def split_front_matter(text: str) -> tuple[int | None, str]:
+    meta, body = front_matter(text)
+    version = meta.get("version")
+    return (int(version) if version is not None else None), body
 
 
 def load_workflow_text(text: str) -> Workflow:
@@ -409,5 +429,6 @@ __all__ = [
     "load_workflow_dict",
     "load_workflow_text",
     "parse_pin",
+    "front_matter",
     "split_front_matter",
 ]

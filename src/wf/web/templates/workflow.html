@@ -75,7 +75,7 @@
       {% if st.kind == "agent" %}
       <select data-skill-step="{{ st.id }}" data-title="{{ st.title }}"{% if st.technical.skill_resets_trust %} data-resets="1"{% endif %} aria-label="Instructions for {{ st.title }}">
         {% if not st.technical.skill %}<option value="" selected>Not chosen yet</option>{% endif %}
-        {% for c in data.skill_choices[st.id] %}<option value="{{ c.value }}"{% if c.value == st.technical.skill %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        {% for c in data.skill_choices[st.id] %}<option value="{{ c.value }}"{% if c.result %} data-result="{{ c.result }}" data-loses="{{ c.loses | join('\n') }}"{% endif %}{% if c.value == st.technical.skill %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
       </select>
       {% if st.technical.skill %}<div class="tech small mono"><a href="{{ skill_url(st.technical.skill, workflow=name, step=st.id) }}" title="Read, compare or edit these instructions">{{ st.technical.skill }}</a></div>{% endif %}
       {% else %}<span class="muted">None</span>{% if st.technical.run or st.technical.workflow %}<div class="tech small mono">{{ st.technical.run or st.technical.workflow }}</div>{% endif %}{% endif %}
