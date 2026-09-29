@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_pill, step_word, tech_switch %}
 {% set rep = run.report %}
+{% set result_first = run.status == "done" and run.mode != "dry" %}
+{#- what the run made; first on a finished real run, since it is what the run was for -#}
+{% macro artefacts_card(run, rep) -%}
+    <div class="card" id="artefacts">
+      <h2>{{ "What it made" if run.status == "done" else "Artefacts" }}</h2>
+      {% if not rep.artifacts %}<p class="muted" style="margin:0">Nothing produced{{ ' yet' if run.status == 'running' else '' }}.</p>{% endif %}
+      {% for a in rep.artifacts %}
+        <div class="change"><span>{% if a.simulated %}<span class="sim">SIMULATED</span> {% endif %}<a href="/api/runs/{{ run.id }}/artifacts/{{ a.id }}">{{ a.name }}</a></span><span class="mono small muted">{{ a.sha256[:12] }}</span></div>
+      {% endfor %}
+      {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
+    </div>
+{%- endmacro %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
 {% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
@@ -12,7 +24,7 @@
       {% for s in run.steps %}
       <li class="{{ 'active' if s.status in ('running', 'waiting') }}">
         <span class="dot dot-{{ s.status }}">{{ '✓' if s.status == 'done' else loop.index }}</span>
-        <span><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></span>
+        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
       </li>
       {% endfor %}
     </ol>
@@ -54,14 +66,20 @@
       </form>
     {% elif run.status == "waiting" and run.gate %}
       {% set gated = run.steps | selectattr("step_id", "equalto", run.gate.step_id) | first %}
-      <div class="banner"><span>Waiting for your OK on “{{ gated.title if gated else run.gate.step_id }}”. Look at what it produced below, then carry on or stop the run there.</span><span>{{ status_pill(run.status) }}</span></div>
+      <div class="banner"><span>Waiting for your OK on “{{ gated.title if gated else run.gate.step_id }}”. Look at what it produced, then carry on or stop the run there. <a href="#ok-{{ run.gate.step_id }}">Go to it</a></span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "waiting" %}
-      <div class="banner"><span>Waiting for you. Answer the step marked “Needs you” below and the run carries on from there.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% set waiting_step = run.steps | selectattr("status", "equalto", "waiting") | first %}
+      <div class="banner"><span>Waiting for you. Answer the step marked “Needs you” and the run carries on from there.{% if waiting_step %} <a href="#step-{{ waiting_step.step_id }}">Go to it</a>{% endif %}</span><span>{{ status_pill(run.status) }}</span></div>
     {% elif run.status == "stopped" %}
       <div class="banner banner-grey"><span>You stopped this run. The steps that finished keep their results.</span><span>{{ status_pill(run.status) }}</span></div>
     {% else %}
-      <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Guess points first, then what you expected, then the result.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% if result_first %}
+      <div class="banner banner-grey"><span>Finished. What it made is first, then every step it took.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% else %}
+      <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Where it had to guess comes first, then what you expected, then <a href="#artefacts">what it made</a>.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% endif %}
     {% endif %}
+    {% if result_first %}{{ artefacts_card(run, rep) }}{% endif %}
 
     <div class="card">
       <div class="card-head"><h2>Where it had to guess</h2><span class="muted">{{ rep.guesses | length }}</span></div>
@@ -97,12 +115,12 @@
     {% if open_f %}
     <div class="card">
       <div class="card-head"><h2>Open questions</h2><span class="muted">{{ open_f | length }}</span></div>
-      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{{ f.step_id or 'the whole workflow' }}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
+      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
     </div>
     {% endif %}
 
     {% for s in run.steps %}
-    <div class="card">
+    <div class="card" id="step-{{ s.step_id }}">
       <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
       {% if s.error %}<div class="dec-ignored">{{ s.error }}</div>{% endif %}
       {% if s.follow_ups %}
@@ -119,7 +137,7 @@
       {% for d in s.decisions if d.kind == "ignored" %}<div class="dec-ignored" style="margin-top:8px"><strong>Ignored instructions found in a source.</strong> {{ d.text }}<div class="small">{{ d.reason }}</div></div>{% endfor %}
       {% for d in s.decisions if d.kind == "control" %}<div class="dec dec-control">{{ d.text }}{% if d.reason %} <span class="muted">{{ d.reason }}</span>{% endif %}</div>{% endfor %}
       {% if run.gate and not run.gate.before and run.gate.step_id == s.step_id and run.status == "waiting" %}
-      <form class="waitform" data-ok="{{ run.id }}">
+      <form class="waitform" id="ok-{{ s.step_id }}" data-ok="{{ run.id }}">
         <p style="margin:0 0 8px"><strong>Is this OK?</strong> <span class="muted">Look at what it produced below.</span></p>
         <p><input type="text" name="note" placeholder="Anything to add? Optional." aria-label="A note with your answer"></p>
         <div class="actions"><button class="btn btn-primary" type="submit" value="ok">OK, carry on</button><button class="btn" type="submit" value="stop">Stop the run here</button><span data-msg class="small muted"></span></div>
@@ -182,14 +200,7 @@
     </div>
     {% endfor %}
 
-    <div class="card">
-      <h2>Artefacts</h2>
-      {% if not rep.artifacts %}<p class="muted" style="margin:0">Nothing produced{{ ' yet' if run.status == 'running' else '' }}.</p>{% endif %}
-      {% for a in rep.artifacts %}
-        <div class="change"><span>{% if a.simulated %}<span class="sim">SIMULATED</span> {% endif %}<a href="/api/runs/{{ run.id }}/artifacts/{{ a.id }}">{{ a.name }}</a></span><span class="mono small muted">{{ a.sha256[:12] }}</span></div>
-      {% endfor %}
-      {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
-    </div>
+    {% if not result_first %}{{ artefacts_card(run, rep) }}{% endif %}
   </section>
 </div>
 {% endblock %}
