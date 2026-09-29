@@ -162,6 +162,48 @@ def test_the_pages_link_to_the_instructions(client, ws):  # noqa: F811
     assert 'class="textdiff"' in page and "Version 2 to version 3" in page
 
 
+def test_the_catalogue_lists_every_instruction_file(client, ws):  # noqa: F811
+    catalog = {k["path"]: k for k in client.get("/api/skills").json()}
+    assert set(catalog) == {
+        "skills/claim-support.md",
+        "skills/deep-researcher.md",
+        "skills/report-reviewer.md",
+        "skills/report-reviser.md",
+        "skills/report-writer.md",
+        "skills/research-brief.md",
+    }
+    writer = catalog[WRITER]
+    assert writer["ref"] == f"{WRITER}@2" and writer["latest"] == 2
+    assert "busy reader can trust" in writer["what"]
+    assert writer["used_by"] == [
+        {
+            "workflow": "deep-research",
+            "step_id": "write",
+            "step_title": "Write the report",
+            "version": 2,
+        }
+    ]
+    assert [v["version"] for v in writer["versions"]] == [2]
+    assert writer["versions"][0]["latest"] is True
+
+    # editing adds a version to the catalogue too, and used_by moves to it
+    ws.save_skill_version(WRITER, "# Write the report\n\nNew text.\n")
+    client.post(
+        "/api/workflows/deep-research/steps/write/skill",
+        json={"body": "# Write the report\n\nNewer.\n", "latest": 3},
+    )
+    writer = {k["path"]: k for k in client.get("/api/skills").json()}[WRITER]
+    assert [v["version"] for v in writer["versions"]] == [4, 3, 2]
+    assert writer["used_by"][0]["version"] == 4
+
+
+def test_the_skills_page_lists_and_links_to_each_file(client):  # noqa: F811
+    page = client.get("/skills").text
+    assert "Write the report" in page
+    assert "/skill?path=skills%2Freport-writer.md&amp;v=2" in page
+    assert "Write the report" in page and "write" in page.lower()
+
+
 def test_a_run_links_to_the_version_it_used(client, ws):  # noqa: F811
     r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
     assert r.status_code == 200, r.text
