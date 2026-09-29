@@ -196,3 +196,4 @@ td select[data-model-step]{width:auto;min-width:170px}
 .dg-out-person{fill:var(--yellow-bg);stroke:#e7c77f}.dg-out-question{fill:var(--red-bg);stroke:var(--red-ink);stroke-dasharray:4 3}
 .dg-question-line{stroke:var(--red-ink);stroke-dasharray:4 3}
 .flow-desc{max-width:760px}
+.stat{font-size:28px;font-weight:600;margin:2px 0 4px}
