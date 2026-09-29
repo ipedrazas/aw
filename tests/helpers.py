@@ -50,6 +50,9 @@ def step(data: dict[str, Any], step_id: str) -> dict[str, Any]:
     raise KeyError(step_id)
 
 
+_made: list[Any] = []
+
+
 def make_db():
     """SQLite in memory by default; WF_TEST_DATABASE_URL (CI: Postgres) when set, with fresh tables."""
     import os
@@ -66,4 +69,15 @@ def make_db():
         close_all_sessions()
         Base.metadata.drop_all(db.engine)
         Base.metadata.create_all(db.engine)
+    _made.append(db)
     return db
+
+
+def close_dbs() -> None:
+    """Close what the tests left open and let go of each database's connections; an
+    engine keeps its pool open until it is collected, and Postgres takes 100 clients."""
+    from sqlalchemy.orm import close_all_sessions
+
+    close_all_sessions()
+    while _made:
+        _made.pop().engine.dispose()

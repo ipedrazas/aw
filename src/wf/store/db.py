@@ -62,8 +62,8 @@ def _add_missing_columns(engine: Engine) -> None:
     """create_all makes missing tables but leaves existing ones as they are, so a column
     added since a database was made is added here, with its default for the rows it
     already has. Only columns that are nullable or have a plain default can be."""
-    insp = inspect(engine)
     with engine.begin() as conn:
+        insp = inspect(conn)
         for table in Base.metadata.sorted_tables:
             have = {c["name"] for c in insp.get_columns(table.name)}
             for col in table.columns:

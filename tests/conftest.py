@@ -1,6 +1,6 @@
 import pytest
 
-from tests.helpers import sample_ws, ws  # noqa: F401  (pytest fixtures)
+from tests.helpers import close_dbs, sample_ws, ws  # noqa: F401  (pytest fixtures)
 
 
 @pytest.fixture(autouse=True)
@@ -15,3 +15,10 @@ def _recorded_tools(monkeypatch):
     """The suite does not touch the network; tests of the live tools patch it in."""
     monkeypatch.setenv("WF_LINK_CHECK", "recorded")
     monkeypatch.setenv("WF_SEARCH", "recorded")
+
+
+@pytest.fixture(autouse=True)
+def _close_dbs():
+    """Each test's databases are let go of when it ends."""
+    yield
+    close_dbs()
