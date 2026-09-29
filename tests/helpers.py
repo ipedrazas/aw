@@ -69,13 +69,16 @@ def make_db():
         close_all_sessions()
         Base.metadata.drop_all(db.engine)
         Base.metadata.create_all(db.engine)
-    _made.append(db)
+        _made.append(db)
     return db
 
 
 def close_dbs() -> None:
-    """Close what the tests left open and let go of each database's connections; an
-    engine keeps its pool open until it is collected, and Postgres takes 100 clients."""
+    """Close what the tests left open on Postgres and let go of each database's
+    connections; an engine keeps its pool open until it is collected, and Postgres
+    takes 100 clients. SQLite in memory has nothing to let go of."""
+    if not _made:
+        return
     from sqlalchemy.orm import close_all_sessions
 
     close_all_sessions()
