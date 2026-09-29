@@ -10,7 +10,7 @@ import pytest
 
 from tests.test_interpreter import make
 from wf.activities import ModelResponse, ScriptedModel
-from wf.activities.base import ToolCallRecord
+from wf.activities.base import ToolCallRecord, Usage
 from wf.audit.question import answer_definition
 from wf.interpret import Interpreter
 from wf.interpret.interpreter import fingerprint
@@ -90,6 +90,8 @@ def script(asked: list[Any]):
             },
             decisions=[],
             tool_calls=[ToolCallRecord("search", {"query": "q"}, "s")] * searches,
+            usage=Usage(cost_usd=0.01 * searches),
+            model="claude-sonnet-5",
         )
 
     return answer
@@ -237,3 +239,44 @@ def test_changing_the_limits_starts_the_count_of_oks_again(scouting):
     del plain["spec"]["steps"][1]["input"]
     w = load_workflow_dict(plain)
     assert fingerprint(scouting, w, w.step("write")), "a step without it is fingerprinted as before"
+
+
+# -- what the step shows ------------------------------------------------------------
+
+
+def test_the_step_shows_what_all_its_rounds_spent_and_searched(scouting, tmp_path):
+    """Its own record stood for it with no cost, model or searches; a real dry run hid
+    about $0.31 of $0.51 that way (run 8979b2e2)."""
+    from wf.dryrun.runner import _parts_of
+
+    _, _, db = run(scouting, tmp_path)
+    with db.session() as s:
+        rows = s.query(StepRun).order_by(StepRun.seq).all()
+    parent, *rounds = [r for r in rows if r.step_id == "search"]
+    assert len(parent.tool_calls) == sum(len(r.tool_calls) for r in rounds) == 3 + 4 + 2 + 2 + 1
+    assert parent.cost_usd == pytest.approx(sum(r.cost_usd for r in rounds))
+    assert parent.model == rounds[0].model and parent.instruction_ref == rounds[0].instruction_ref
+    parts = _parts_of(parent, rows)
+    assert [(p["index"], p.get("topic"), p["searches"]) for p in parts] == [
+        (0, None, 3),
+        (1, "cells", 4),
+        (2, "sandboxes", 2),
+        (3, "costs", 2),
+        (4, "cell routers", 1),
+    ]
+    assert _parts_of(rows[-1], rows) == [], "a step that ran once has no parts"
+
+
+def test_a_fan_out_shows_what_its_items_did(sample_ws, tmp_path):
+    from tests.scripted import deep_research_script
+    from tests.test_interpreter import TOPIC
+
+    interp, db = make(sample_ws, tmp_path, ScriptedModel(deep_research_script("accept")))
+    interp.run(sample_ws.load_definition("deep-research"), TOPIC, "dry")
+    with db.session() as s:
+        parent, *items = (
+            s.query(StepRun).filter_by(step_id="check_support").order_by(StepRun.seq).all()
+        )
+    assert items and parent.fanout_index is None
+    assert parent.instruction_ref == "skills/claim-support.md@1" == items[0].instruction_ref
+    assert parent.cost_usd == pytest.approx(sum(i.cost_usd for i in items))

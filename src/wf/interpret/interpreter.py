@@ -597,11 +597,15 @@ class Interpreter:
                         "output": None,
                         "outputs": outputs,
                     }
-                    self.ledger.finish_step(parent, status=status, output=outputs)
+                    self.ledger.finish_step(
+                        parent, status=status, output=outputs, **self._rolled_up(ctx, parent)
+                    )
                     return status
                 outputs.append(out)
             ctx.state["steps"][step.id] = {"status": "done", "output": None, "outputs": outputs}
-            self.ledger.finish_step(parent, status="done", output=outputs)
+            self.ledger.finish_step(
+                parent, status="done", output=outputs, **self._rolled_up(ctx, parent)
+            )
             return "done"
 
         ctx.result.trace.append(TraceEvent(step.id, "run"))
@@ -635,7 +639,9 @@ class Interpreter:
                 "outputs": None,
                 "further": trail,
             }
-            self.ledger.finish_step(parent, status=status, output=out)
+            self.ledger.finish_step(
+                parent, status=status, output=out, **self._rolled_up(ctx, parent)
+            )
             return status, out
 
         status, first = self._execute(ctx, step, fanout_index=0, search_cap=sf.max_searches)
@@ -729,6 +735,33 @@ class Interpreter:
             )
         ctx.result.trace.append(TraceEvent(step.id, "further", rounds))
         return finish("done", merged, trail)
+
+    def _rolled_up(self, ctx: _Ctx, parent: StepRun) -> dict[str, Any]:
+        """What a step's parts did, on the one record that stands for the step: the
+        rounds of a step that searches further, the items of a fan-out. Their cost,
+        tool calls, models and instructions, so the step shows what it spent and did
+        rather than nothing, with each part still on its own record beneath it."""
+        parts = (
+            self.ledger.session.query(StepRun)
+            .filter(
+                StepRun.run_id == ctx.run.id,
+                StepRun.step_id == parent.step_id,
+                StepRun.fanout_index.isnot(None),
+                StepRun.seq > parent.seq,
+            )
+            .order_by(StepRun.seq)
+            .all()
+        )
+        models = list(dict.fromkeys(p.model for p in parts if p.model))
+        first = next((p for p in parts if p.instruction_ref), None)
+        return {
+            "cost_usd": sum(p.cost_usd or 0.0 for p in parts),
+            "tool_calls": [c for p in parts for c in (p.tool_calls or [])],
+            "model": ", ".join(models) or None,
+            "instruction_ref": first.instruction_ref if first else None,
+            "instruction_commit": first.instruction_commit if first else None,
+            "instruction_sha256": first.instruction_sha256 if first else None,
+        }
 
     def _execute(
         self,
