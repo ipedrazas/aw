@@ -215,7 +215,28 @@ def apply_answer(
         changes.append(Change(path=path, before=before, after=after, reason=reason))
 
     if finding.type == "assumption":
-        if isinstance(answer, dict) and isinstance(answer.get("set"), dict) and sid:
+        if isinstance(answer, dict) and answer.get("op") == "fold" and sid:
+            # a separate "go deeper" step becomes the searching step's own limits
+            from .fold import fold
+
+            gone = next((s for s in _steps(d) if s["id"] == answer["step"]), None)
+            if gone is None:
+                raise AnswerRejected("That step is not in the draft any more, so nothing changed.")
+            change(
+                "spec.steps",
+                fold(d, sid, answer["step"]),
+                f"“{gone.get('title') or gone['id']}” is now how far "
+                f"“{_step(d, sid).get('title') or sid}” searches further.",
+            )
+            change(field, answer["search_further"], "How far it searches further.")
+            for name in _get(d, f"steps.{sid}.tools") or {}:
+                if name.split(".")[-1] == "search":
+                    change(
+                        f"steps.{sid}.tools.{name}.max_calls",
+                        answer["round_searches"],
+                        "Each round leaves searches for the ones after it.",
+                    )
+        elif isinstance(answer, dict) and isinstance(answer.get("set"), dict) and sid:
             if key == "search_further":
                 # how far it searches further, and a round's share of it
                 picked = answer["set"]

@@ -36,6 +36,7 @@ from wf.audit.catalog import (
     skill_choices,
 )
 from wf.audit.chat import chat
+from wf.audit.fold import suggestions
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.audit.triage import triage
@@ -534,9 +535,11 @@ def create_app(state: AppState | None = None) -> FastAPI:
     @app.get("/api/audits/{audit_id}")
     def get_audit(audit_id: str) -> dict[str, Any]:
         result, _rec = _audit(st(), audit_id)
-        if st().auditor.restore_files(result):
-            # files the draft's steps name had gone; written again, the questions
-            # about them no longer apply
+        # files the draft's steps name had gone; written again, the questions about them
+        # no longer apply. A draft made before a suggestion existed is offered it now.
+        restored = st().auditor.restore_files(result)
+        known = {f.id for f in result.findings}
+        if restored or any(f.id not in known for f in suggestions(result.definition)):
             st().auditor.revalidate(result)
             st().audits.save(audit_id, result)
         return _audit_view(st(), audit_id)

@@ -170,8 +170,13 @@ class Auditor:
         explanations: list[dict[str, Any]] | None = None,
     ) -> AuditResult:
         wf = materialise(draft, self.ws)
+        from .fold import suggestions
+
         findings = self.validate(
-            wf, draft.provenance, passages, extra=[*draft.assumptions, *draft.branch_gaps]
+            wf,
+            draft.provenance,
+            passages,
+            extra=[*draft.assumptions, *draft.branch_gaps, *suggestions(draft.definition)],
         )
         return AuditResult(
             name=draft.name,
@@ -268,6 +273,12 @@ class Auditor:
             # "is this one of your workflows?" goes once the step starts one
             and not (f.field.endswith(".workflow") and _get(result.definition, f.field) is not None)
         ]
+        # a separate "go deeper" step is offered to the step it follows, while it is
+        # there; once answered, the answer is kept like any other
+        from .fold import is_suggestion, suggestions
+
+        still_relevant = [f for f in still_relevant if not is_suggestion(f)]
+        still_relevant += [f for f in suggestions(result.definition) if f.id not in answered]
         fresh = self.validate(wf, result.provenance, result.passages, extra=still_relevant)
         kept: list[Finding] = []
         for f in fresh:
