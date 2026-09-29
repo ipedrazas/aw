@@ -99,6 +99,28 @@ def test_deep_research_runs_end_to_end_and_records_everything(sample_ws, tmp_pat
     assert result.outputs and result.outputs["verdict"] == "accept"
 
 
+def test_a_steps_site_limit_reaches_the_search_call_in_a_dry_run(ws, tmp_path):
+    """The same limit a live Exa call would get is applied to the recorded fixtures, so
+    a dry run finds what a real run would."""
+    data = read_yaml(ws, DEF)
+    step(data, "research")["tools"]["search"]["include_domains"] = ["docs.temporal.io"]
+    write_yaml(ws, DEF, data)
+    wf = ws.load_definition("deep-research")
+    interp, db = make(ws, tmp_path, ScriptedModel(deep_research_script("accept")))
+    result = interp.run(wf, TOPIC, "dry")
+    assert result.status == "done", [d for d in result.decisions if d["kind"] == "control"]
+    with db.session() as s:
+        research_run = s.query(StepRun).filter(StepRun.step_id == "research").one()
+    searched = [c for c in research_run.tool_calls if c["name"] == "search"]
+    assert len(searched) == 3, "the step still made its searches"
+    fetched = [c["input"]["url"] for c in research_run.tool_calls if c["name"] == "get_contents"]
+    kept = [u for u in fetched if u.startswith("https://docs.temporal.io/")]
+    assert kept, "at least one search found something on the site it was limited to"
+    assert not [u for u in fetched if "docs.temporal.io" not in u and "vendor-notes" not in u], (
+        fetched  # the page with injected instructions is read regardless of the site limit
+    )
+
+
 def test_branches_follow_the_verdict(ws, tmp_path):
     wf = ws.load_definition("deep-research")
     interp, _ = make(ws, tmp_path, ScriptedModel(deep_research_script("revise")))

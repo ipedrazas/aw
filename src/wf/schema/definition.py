@@ -70,6 +70,10 @@ class Limits(Strict):
 
 class ToolPermission(Strict):
     max_calls: int = 10
+    # Where a search may look. At most one of these is set: a step either searches
+    # only these sites, or every site but these — never both at once.
+    include_domains: list[str] | None = None
+    exclude_domains: list[str] | None = None
 
 
 class MayRepeat(Strict):

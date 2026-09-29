@@ -131,7 +131,14 @@ class SearchResult:
 
 
 class SearchActivity(Protocol):
-    def search(self, query: str, max_results: int = 5) -> list[SearchResult]: ...
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        *,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> list[SearchResult]: ...
 
     def get_contents(self, url: str) -> dict[str, Any]: ...
 

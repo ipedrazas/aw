@@ -60,6 +60,18 @@
   </form>
 </div>
 
+{% for s in data.search_steps %}
+<div class="card">
+  <h2>Where “{{ s.title }}” searches</h2>
+  <p class="sub">Limit this step to certain sites, or keep it off certain sites — not both. One site per line, e.g. wikipedia.org. Leave both blank to search everywhere.</p>
+  <form data-domains="{{ s.id }}">
+    <p><label>Search only these sites<br><textarea name="include_domains" rows="3" placeholder="wikipedia.org" aria-label="Sites to search only">{{ s.include_domains | join('\n') }}</textarea></label></p>
+    <p><label>But not these sites<br><textarea name="exclude_domains" rows="3" placeholder="pinterest.com" aria-label="Sites to leave out">{{ s.exclude_domains | join('\n') }}</textarea></label></p>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+</div>
+{% endfor %}
+
 {% for f in data.followups %}
 <div class="card">
   <h2>Going deeper: “{{ f.title }}”</h2>

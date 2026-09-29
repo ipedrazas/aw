@@ -51,17 +51,26 @@ class ExaSearch:
             raise RuntimeError(f"Exa {path} answered {r.status_code}: {r.text[:300]}")
         return r.json()
 
-    def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        *,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+    ) -> list[SearchResult]:
         self.calls.append({"op": "search", "query": query})
-        data = self._post(
-            "/search",
-            {
-                "query": query,
-                "numResults": max(1, min(int(max_results), 10)),
-                "type": "auto",
-                "contents": {"text": {"maxCharacters": self.snippet_chars}},
-            },
-        )
+        body: dict[str, Any] = {
+            "query": query,
+            "numResults": max(1, min(int(max_results), 10)),
+            "type": "auto",
+            "contents": {"text": {"maxCharacters": self.snippet_chars}},
+        }
+        if include_domains:
+            body["includeDomains"] = list(include_domains)
+        if exclude_domains:
+            body["excludeDomains"] = list(exclude_domains)
+        data = self._post("/search", body)
         return [
             SearchResult(
                 url=str(r.get("url", "")),

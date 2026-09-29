@@ -156,6 +156,7 @@
         {% set tcs = c.tool_calls or [] %}
         {% if tcs %}
         <details style="margin-top:8px"{% if loop.first %} open{% endif %}><summary>What it searched and read{% if s.calls | length > 1 %} (call {{ loop.index }} of {{ s.calls | length }}){% endif %} · {{ tcs | selectattr("name", "equalto", "search") | list | length }} searches, {{ tcs | rejectattr("name", "equalto", "search") | list | length }} pages</summary>
+          {% if s.search_limits %}<p class="small muted" style="margin:4px 0 0">{% if s.search_limits.include_domains %}Searched only {{ s.search_limits.include_domains | join(", ") }}{% elif s.search_limits.exclude_domains %}Searched everywhere except {{ s.search_limits.exclude_domains | join(", ") }}{% endif %}</p>{% endif %}
           <ol class="toollog">{% for t in tcs %}
             <li>{% if t.name == "search" %}
               <div><span class="pill pill-blue">search</span> <strong>“{{ t.input.query }}”</strong> <span class="small muted">{{ t.summary }}</span></div>
