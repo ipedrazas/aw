@@ -161,25 +161,30 @@ function wireAnswers(base, reload) {
   wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => location.reload());
 })();
 
-/* Workflow page: the model each step runs on, and the default for the rest. */
+/* Workflow page: the model each step runs on and the default for the rest, and the
+   instructions each step follows. */
 (function () {
   const root = document.querySelector("[data-models]"); if (!root) return;
-  const url = "/api/workflows/" + encodeURIComponent(root.dataset.models) + "/model";
+  const base = "/api/workflows/" + encodeURIComponent(root.dataset.models);
   const msg = root.querySelector("[data-msg]");
-  const choose = async (sel, step) => {
-    if (sel.dataset.resets && !confirm("Changing the model of “" + sel.dataset.title + "” starts its count of accepted runs again, so it asks you before running on its own.")) {
+  const choose = async (sel, what, body) => {
+    if (sel.dataset.resets && !confirm("Changing the " + what + " of “" + sel.dataset.title + "” starts its count of accepted runs again, so it asks you before running on its own.")) {
       sel.value = sel.dataset.was; return;
     }
     say(msg, "Saving…");
-    try { await postJSON(url, {step: step, model: sel.value || null}); location.reload(); }
+    try { await postJSON(base + "/" + (what === "model" ? "model" : "skill"), body); location.reload(); }
     catch (err) { sel.value = sel.dataset.was; say(msg, err.message, true); }
   };
-  root.querySelector("[data-model-default]").addEventListener("change", e => choose(e.target, null));
+  const d = root.querySelector("[data-model-default]"); d.dataset.was = d.value;
+  d.addEventListener("change", () => choose(d, "model", {step: null, model: d.value || null}));
   document.querySelectorAll("[data-model-step]").forEach(sel => {
     sel.dataset.was = sel.value;
-    sel.addEventListener("change", () => choose(sel, sel.dataset.modelStep));
+    sel.addEventListener("change", () => choose(sel, "model", {step: sel.dataset.modelStep, model: sel.value || null}));
   });
-  const d = root.querySelector("[data-model-default]"); d.dataset.was = d.value;
+  document.querySelectorAll("[data-skill-step]").forEach(sel => {
+    sel.dataset.was = sel.value;
+    sel.addEventListener("change", () => choose(sel, "instructions", {step: sel.dataset.skillStep, skill: sel.value}));
+  });
 })();
 
 /* Audit page: chat, answers, undo, save, dry run. */
