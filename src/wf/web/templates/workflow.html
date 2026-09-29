@@ -106,7 +106,7 @@
   {{ questions_summary(data.questions) }}
   {% for g in data.questions %}
     <h3 class="small muted" style="margin:14px 0 4px">{{ g.title }}</h3>
-    {% for f in g.findings %}{{ question(f, name, chat=False) }}{% if f.step_id %}<div class="small muted" style="margin:-4px 0 10px">Step: {{ f.step_id }}</div>{% endif %}{% endfor %}
+    {% for f in g.findings %}{{ question(f, name, chat=False) }}{% if f.step_id %}<div class="small muted" style="margin:-4px 0 10px">Step: {{ f.step_title or f.step_id }}</div>{% endif %}{% endfor %}
   {% endfor %}
 </div>
 {% endif %}

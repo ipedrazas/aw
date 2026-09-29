@@ -97,7 +97,7 @@
     {% if open_f %}
     <div class="card">
       <div class="card-head"><h2>Open questions</h2><span class="muted">{{ open_f | length }}</span></div>
-      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{{ f.step_id or 'the whole workflow' }}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
+      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
     </div>
     {% endif %}
 
