@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import os
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -103,6 +104,9 @@ class AppState:
             acts.policy = ActivityPolicy(retries=0)
         self.runner = DryRunner(ws, acts, db, RunConfig(artifacts_dir=artifacts_dir))
         self.audits = AuditStore(db)
+        # drafts being made in the background, by job id: the stage each is at, and
+        # the draft or the error it ended with (one process; lost on a restart)
+        self.jobs: dict[str, dict[str, Any]] = {}
         self.chat_model = chat_model()
         self.author = (
             os.environ.get("WF_AUTHOR_NAME", "Workflow UI"),
@@ -552,30 +556,75 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def list_audits() -> list[dict[str, Any]]:
         return st().audits.list()
 
-    @app.post("/api/audits")
-    def create_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def _document(body: dict[str, Any]) -> tuple[str, str | None]:
         document = str(body.get("document") or "").strip()
         if len(document) < 20:
             raise HTTPException(
                 400, "Describe the process in a few sentences, or paste the document."
             )
-        name = body.get("name") or None
+        return document, body.get("name") or None
+
+    @app.post("/api/audits")
+    def create_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        document, name = _document(body)
         try:
-            result = st().auditor.audit(document, name=name)
+            audit_id = _make_audit(document, name)
         except Exception as e:  # noqa: BLE001 - surface the reason to the UI
             raise HTTPException(502, f"The draft could not be made: {e}") from e
-        plan, settled, changes = _triage(st(), result, document)
-        audit_id = st().audits.create(result, document, plan=plan, settled=settled)
+        return _audit_view(st(), audit_id)
+
+    @app.post("/api/audits/jobs")
+    def start_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Make a draft in the background, and say how far it has got at
+        ``/api/audits/jobs/{id}``: the page shows each stage instead of a spinner."""
+        document, name = _document(body)
+        job_id = uuid.uuid4().hex
+        job: dict[str, Any] = {"id": job_id, "stage": "read", "audit_id": None, "error": None}
+        st().jobs[job_id] = job
+        state = st()
+
+        def work() -> None:
+            try:
+                job["audit_id"] = _make_audit(
+                    document, name, progress=lambda stage: job.update(stage=stage), state=state
+                )
+                job["stage"] = "done"
+            except Exception as e:  # noqa: BLE001 - said on the page
+                logger.exception("drafting failed")
+                job.update(stage="failed", error=f"The draft could not be made: {e}")
+
+        threading.Thread(target=work, daemon=True, name=f"draft-{job_id[:8]}").start()
+        return job
+
+    @app.get("/api/audits/jobs/{job_id}")
+    def audit_job(job_id: str) -> dict[str, Any]:
+        job = st().jobs.get(job_id)
+        if job is None:
+            raise HTTPException(
+                404, "No such draft being made. It may have been lost on a restart."
+            )
+        return job
+
+    def _make_audit(
+        document: str, name: str | None, progress: Any = None, state: AppState | None = None
+    ) -> str:
+        """Read a document into a draft, have the chat sort its questions, and keep it."""
+        state = state or st()
+        result = state.auditor.audit(document, name=name, progress=progress)
+        if progress:
+            progress("triage")
+        plan, settled, changes = _triage(state, result, document)
+        audit_id = state.audits.create(result, document, plan=plan, settled=settled)
         if changes:
-            st().audits.save(audit_id, result, changes, by="assistant")
-        st().sessions.link_audit(result.session_id, audit_id)
+            state.audits.save(audit_id, result, changes, by="assistant")
+        state.sessions.link_audit(result.session_id, audit_id)
         logger.info(
             "drafted %s from a document of %d characters",
             result.name,
             len(document),
             extra={"fields": {"event": "audit.created", "audit": audit_id, "name": result.name}},
         )
-        return _audit_view(st(), audit_id)
+        return audit_id
 
     @app.get("/api/audits/{audit_id}")
     def get_audit(audit_id: str) -> dict[str, Any]:

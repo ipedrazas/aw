@@ -113,17 +113,38 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
     const src = document.getElementById(b.dataset.sample); if (src) ta.value = src.value;
     const nm = f.querySelector("[name=name]"); if (nm && !nm.value) nm.value = "deep-research-process";
   }));
+  /* The draft is made in the background; each stage shows as it starts, ticked once
+     the next one has, with the time it has taken so far. */
+  const stages = f.querySelector("[data-stages]");
+  const show = (stage, secs) => {
+    const items = Array.from(stages.querySelectorAll("[data-stage]"));
+    const at = items.findIndex(li => li.dataset.stage === stage);
+    items.forEach((li, i) => { li.classList.toggle("done", i < at); li.classList.toggle("now", i === at); });
+    say(msg, secs >= 5 ? secs + "s so far. It can take a minute or two." : "");
+  };
   f.addEventListener("submit", async e => {
     e.preventDefault();
-    say(msg, "Reading your process and drafting the steps. This can take a minute…");
-    submit.disabled = true;
-    if (spinner) spinner.classList.remove("hidden");
-    try { const d = await postJSON("/api/audits", {document: ta.value, name: (f.querySelector("[name=name]") || {}).value || null}); location.href = "/audits/" + d.id; }
-    catch (err) {
-      say(msg, err.message, true);
-      submit.disabled = false;
+    const failed = (text) => {
+      say(msg, text, true);
+      submit.disabled = false; ta.readOnly = false;
       if (spinner) spinner.classList.add("hidden");
-    }
+    };
+    submit.disabled = true; ta.readOnly = true;
+    if (spinner) spinner.classList.remove("hidden");
+    stages.classList.remove("hidden"); show("read", 0);
+    let job;
+    try { job = await postJSON("/api/audits/jobs", {document: ta.value, name: (f.querySelector("[name=name]") || {}).value || null}); }
+    catch (err) { stages.classList.add("hidden"); return failed(err.message); }
+    const started = Date.now();
+    const tick = async () => {
+      try { job = await (await fetch("/api/audits/jobs/" + job.id)).json(); }
+      catch (err) { /* try again next tick */ }
+      if (job.stage === "done") return void (location.href = "/audits/" + job.audit_id);
+      if (job.stage === "failed" || !job.stage) return failed(job.error || job.detail || "The draft could not be made.");
+      show(job.stage, Math.round((Date.now() - started) / 1000));
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 600);
   });
 })();
 
@@ -300,9 +321,15 @@ function wireAnswers(base, reload) {
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
       box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true; kept.drop(keyChat);
-      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; location.reload(); }
+      /* a slow answer says how long it has been, so waiting does not look like nothing */
+      const began = Date.now();
+      const clock = setInterval(() => {
+        const secs = Math.round((Date.now() - began) / 1000);
+        if (secs >= 8) say(msg, "Still thinking… " + secs + "s");
+      }, 1000);
+      try { await postJSON(base + "/chat", {message: text, about: about}).finally(() => clearInterval(clock)); chatting = false; location.reload(); }
       catch (err) {
-        chatting = false;
+        chatting = false; clearInterval(clock);
         typing.remove(); box.value = text; grow(); box.readOnly = false; keep();
         say(msg, err.message, true);
       }
