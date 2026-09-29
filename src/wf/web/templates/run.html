@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_pill, step_word, tech_switch %}
 {% set rep = run.report %}
+{% set result_first = run.status == "done" and run.mode != "dry" %}
+{#- what the run made; first on a finished real run, since it is what the run was for -#}
+{% macro artefacts_card(run, rep) -%}
+    <div class="card" id="artefacts">
+      <h2>{{ "What it made" if run.status == "done" else "Artefacts" }}</h2>
+      {% if not rep.artifacts %}<p class="muted" style="margin:0">Nothing produced{{ ' yet' if run.status == 'running' else '' }}.</p>{% endif %}
+      {% for a in rep.artifacts %}
+        <div class="change"><span>{% if a.simulated %}<span class="sim">SIMULATED</span> {% endif %}<a href="/api/runs/{{ run.id }}/artifacts/{{ a.id }}">{{ a.name }}</a></span><span class="mono small muted">{{ a.sha256[:12] }}</span></div>
+      {% endfor %}
+      {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
+    </div>
+{%- endmacro %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
 {% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
@@ -60,8 +72,13 @@
     {% elif run.status == "stopped" %}
       <div class="banner banner-grey"><span>You stopped this run. The steps that finished keep their results.</span><span>{{ status_pill(run.status) }}</span></div>
     {% else %}
-      <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Guess points first, then what you expected, then the result.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% if result_first %}
+      <div class="banner banner-grey"><span>Finished. What it made is first, then every step it took.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% else %}
+      <div class="banner banner-grey"><span>{{ 'Dry run finished.' if run.mode == 'dry' else 'Finished.' }} Where it had to guess comes first, then what you expected, then <a href="#artefacts">what it made</a>.</span><span>{{ status_pill(run.status) }}</span></div>
+      {% endif %}
     {% endif %}
+    {% if result_first %}{{ artefacts_card(run, rep) }}{% endif %}
 
     <div class="card">
       <div class="card-head"><h2>Where it had to guess</h2><span class="muted">{{ rep.guesses | length }}</span></div>
@@ -182,14 +199,7 @@
     </div>
     {% endfor %}
 
-    <div class="card">
-      <h2>Artefacts</h2>
-      {% if not rep.artifacts %}<p class="muted" style="margin:0">Nothing produced{{ ' yet' if run.status == 'running' else '' }}.</p>{% endif %}
-      {% for a in rep.artifacts %}
-        <div class="change"><span>{% if a.simulated %}<span class="sim">SIMULATED</span> {% endif %}<a href="/api/runs/{{ run.id }}/artifacts/{{ a.id }}">{{ a.name }}</a></span><span class="mono small muted">{{ a.sha256[:12] }}</span></div>
-      {% endfor %}
-      {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
-    </div>
+    {% if not result_first %}{{ artefacts_card(run, rep) }}{% endif %}
   </section>
 </div>
 {% endblock %}
