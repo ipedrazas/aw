@@ -17,7 +17,16 @@ class AuditStore:
     def __init__(self, db: Database):
         self.db = db
 
-    def create(self, result: AuditResult, document: str) -> str:
+    def create(
+        self,
+        result: AuditResult,
+        document: str,
+        plan: dict[str, Any] | None = None,
+        settled: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """``plan`` is how the chat means to ask the open questions and ``settled`` the
+        ones it answered itself (``wf.audit.triage``); without them it asks them all, in
+        the list's order."""
         with self.db.session() as s:
             rec = Audit(
                 name=result.name,
@@ -30,13 +39,16 @@ class AuditStore:
                 chat=[
                     {
                         "role": "assistant",
-                        "text": _opening_line(result),
+                        "text": _opening_line(result, plan, settled),
                         "changes": [],
                         "point_to_finding": None,
+                        "settled": settled or [],
                     }
                 ],
             )
             rec.chat[0]["explanations"] = result.explanations
+            if plan:
+                rec.chat[0]["plan"] = plan
             # and the chat asks the first question
             rec.chat = move_on(result.findings, rec.chat)
             s.add(rec)
@@ -199,21 +211,50 @@ class AuditStore:
             ]
 
 
-def _opening_line(result: AuditResult) -> str:
+def _count(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many.format(n=n)
+
+
+def _opening_line(
+    result: AuditResult,
+    plan: dict[str, Any] | None = None,
+    settled: list[dict[str, Any]] | None = None,
+) -> str:
     n = len(result.definition["spec"]["steps"])
     added = [e for e in result.explanations]
-    open_n = len(result.open_findings())
+    open_ids = {f.id for f in result.open_findings()}
+    later = len(open_ids & set((plan or {}).get("later", {})))
+    ask_n = len(open_ids) - later
     parts = [f"That’s {n} steps, on the right."]
     if added:
         parts.append(" ".join(e.get("decision", "") for e in added[:2]))
-    parts.append(
-        (
-            "I have one question for you."
-            if open_n == 1
-            else f"I have {open_n} questions for you. I will ask them one at a time, the "
-            "ones that matter most first; you can also answer them on the right."
+    if settled:
+        parts.append(
+            _count(
+                len(settled),
+                "One question I could answer from what you wrote and what the system already does; it is below, and you can change it on the right.",
+                "{n} questions I could answer from what you wrote and what the system already does; they are below, and you can change any of them on the right.",
+            )
         )
-        if open_n
-        else "No questions left; you can try it on a topic."
-    )
+    if ask_n:
+        parts.append(
+            _count(
+                ask_n,
+                "I have one question for you.",
+                "I have {n} questions for you. I will ask them one at a time, the ones that "
+                "matter most first; you can also answer them on the right.",
+            )
+        )
+    if later:
+        parts.append(
+            _count(
+                later,
+                "One more can wait until you have tried it.",
+                "{n} more can wait until you have tried it.",
+            )
+        )
+    if not open_ids:
+        parts.append("No questions left; you can try it on a topic.")
+    elif not ask_n:
+        parts.append("Nothing needs you before you try it on a topic.")
     return " ".join(p for p in parts if p)

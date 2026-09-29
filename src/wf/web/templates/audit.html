@@ -55,9 +55,9 @@
             {% if q %}
             <div class="msg msg-assistant msg-ask">
               {% if q.status == "open" and not m.asks.skipped and audit.asking == q.id %}
-                {{ question(q, audit.id, chat=False, where="chat-") }}
+                {{ question(q, audit.id, chat=False, where="chat-", lead=m.text) }}
               {% else %}
-                <div class="qtext">{{ q.question }}</div>
+                <div class="qtext">{{ m.text or q.question }}</div>
                 <div class="small muted">
                   {%- if q.status == "answered" %}Answered: {{ q.said if q.said is string else (q.said | tojson) }}
                   {%- elif q.status == "dismissed" %}Doesn't apply: {{ q.answer }}
@@ -71,6 +71,7 @@
           <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
           {% endif %}
           {% for ch in m.changes or [] %}<div class="msg-change"><strong>Changed:</strong> {{ ch.reason }} <span class="mono muted small">{{ ch.path }}</span></div>{% endfor %}
+          {% for c in m.settled or [] %}<div class="msg-change"><strong>Answered for you:</strong> {{ c.question }} <strong>{{ c.said }}.</strong> <span class="muted">{{ c.reason }}</span></div>{% endfor %}
           {% for c in m.closed or [] %}<div class="msg-change"><strong>Closed:</strong> {{ c.question }} <span class="muted">{{ c.reason }}</span></div>{% endfor %}
           {% if m.point_to_finding %}<a class="small" href="#q-{{ m.point_to_finding }}" data-goto="q-{{ m.point_to_finding }}">Take me to that question</a>{% endif %}
         {% endfor %}
@@ -134,7 +135,7 @@
         <details style="margin-top:14px"><summary>Answered or closed ({{ audit.answered | length }})</summary>
           {% for f in audit.answered %}
             <div class="q answered"><div class="qtext">{{ f.question }}</div>
-              <div class="small">{% if f.status == "dismissed" %}Doesn't apply: {{ f.answer }}{% else %}You answered: <span class="mono">{{ f.answer if f.answer is string else (f.answer | tojson) }}</span>{% endif %}
+              <div class="small">{% if f.status == "dismissed" %}Doesn't apply: {{ f.answer }}{% elif audit.settled.get(f.id) %}The chat answered: {{ audit.settled[f.id].said }}. <span class="muted">{{ audit.settled[f.id].reason }}</span>{% else %}You answered: <span class="mono">{{ f.answer if f.answer is string else (f.answer | tojson) }}</span>{% endif %}
                 <button class="btn btn-sm" type="button" data-reopen="re-{{ f.id }}">Change</button></div>
               <div id="re-{{ f.id }}" class="hidden">{{ question(f, audit.id) }}</div>
             </div>

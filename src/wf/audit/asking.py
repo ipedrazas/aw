@@ -8,6 +8,12 @@ question as it is now, so a question answered on the right shows as answered her
 After anything that can close a question — an answer, a chat turn, an undo — the chat
 moves on if the question it asked is no longer open. It does not ask again while its
 question is still open: the person may be talking about something else.
+
+Which question comes next, and how it is put, is the chat's to decide
+(``wf.audit.triage``). Its plan is kept on the chat's first message: the order to ask
+in, how it puts each one, and the ones that can wait until the draft has been tried.
+A question the plan does not know, raised by an answer since, comes after the ones
+it ordered; with no plan at all, the order is the list's.
 """
 
 from __future__ import annotations
@@ -32,20 +38,50 @@ def _asked(chat: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [m["asks"] for m in chat if m.get("asks")]
 
 
+def plan_of(chat: list[dict[str, Any]]) -> dict[str, Any]:
+    """The chat's plan for its questions, or an empty one."""
+    return (chat[0].get("plan") if chat else None) or {}
+
+
+def with_plan(chat: list[dict[str, Any]], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    out = [dict(m) for m in chat]
+    if out:
+        out[0]["plan"] = plan
+    return out
+
+
+def ask_first(chat: list[dict[str, Any]], finding_id: str, text: str) -> list[dict[str, Any]]:
+    """The chat with its plan changed to ask this question next, put this way."""
+    plan = plan_of(chat)
+    return with_plan(
+        chat,
+        {
+            "order": [finding_id, *(i for i in plan.get("order", []) if i != finding_id)],
+            "lead": {**plan.get("lead", {}), **({finding_id: text} if text else {})},
+            "later": {k: v for k, v in plan.get("later", {}).items() if k != finding_id},
+        },
+    )
+
+
 def next_question(
     findings: list[Finding], chat: list[dict[str, Any]]
 ) -> tuple[Finding, list[Finding]] | None:
-    """The first open question the person has not put aside; a question they skipped
-    comes round again only once there is nothing else."""
-    skipped = {a["finding_id"] for a in _asked(chat) if a.get("skipped")}
+    """The first open question in the chat's order that nobody has put aside: not
+    skipped by the person, not left by the chat until the draft has been tried."""
+    plan = plan_of(chat)
+    aside = {a["finding_id"] for a in _asked(chat) if a.get("skipped")} | set(plan.get("later", {}))
+    rank = {fid: n for n, fid in enumerate(plan.get("order", []))}
     queue = ordered(findings)
-    return next((q for q in queue if q[0].id not in skipped), None)
+    # a question asked of several steps goes where the chat put any of them
+    queue.sort(key=lambda q: min(rank.get(f.id, len(rank)) for f in [q[0], *q[1]]))
+    return next((q for q in queue if q[0].id not in aside), None)
 
 
-def ask(f: Finding, similar: list[Finding]) -> dict[str, Any]:
+def ask(f: Finding, similar: list[Finding], text: str = "") -> dict[str, Any]:
+    """``text`` is how the chat puts it; without it the page shows the question as written."""
     return {
         "role": "assistant",
-        "text": "",
+        "text": text,
         "changes": [],
         "point_to_finding": None,
         "asks": {"finding_id": f.id, "similar": [o.id for o in similar]},
@@ -56,6 +92,11 @@ DONE = "That was the last question. You can try it on a topic, or keep changing 
 DONE_BUT_SKIPPED = (
     "That is everything except the questions you skipped. They are still on the right, "
     "and a dry run guesses them and says where."
+)
+DONE_BUT_LATER = (
+    "That is all I need from you to try it. The questions left can wait until you have: "
+    "they are on the right, a dry run guesses them and says where, and a real run needs "
+    "them answered."
 )
 
 
@@ -71,15 +112,19 @@ def move_on(findings: list[Finding], chat: list[dict[str, Any]]) -> list[dict[st
     nxt = next_question(findings, chat)
     if nxt is not None:
         # a skipped question comes round again as a new message, not the old one
-        return [*chat, ask(*nxt)]
+        # how the chat put it, for whichever of the steps it put it for
+        lead = plan_of(chat).get("lead", {})
+        text = next((lead[f.id] for f in [nxt[0], *nxt[1]] if lead.get(f.id)), "")
+        return [*chat, ask(*nxt, text=text)]
     if not asked or chat[-1].get("done"):
         return chat
-    left = any(f.status == "open" for f in findings)
+    left = {f.id for f in findings if f.status == "open"}
+    skipped = {a["finding_id"] for a in asked if a.get("skipped")}
     return [
         *chat,
         {
             "role": "assistant",
-            "text": DONE_BUT_SKIPPED if left else DONE,
+            "text": (DONE_BUT_SKIPPED if left & skipped else DONE_BUT_LATER) if left else DONE,
             "changes": [],
             "point_to_finding": None,
             "done": True,
