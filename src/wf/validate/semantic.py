@@ -147,6 +147,133 @@ def validate_semantic(wf: Workflow, ws: Workspace | None) -> list[Finding]:
                 )
 
     findings.extend(_unread_inputs(wf))
+    if ws is not None:
+        for step in wf.spec.steps:
+            child = (
+                ws.resolve_workflow_ref(step.workflow, current=wf)
+                if step.kind == "subworkflow" and step.workflow
+                else None
+            )
+            if child is not None:
+                findings.extend(_what_it_is_given(step, child, resolver))
+    return findings
+
+
+#: An input's type as a person says it.
+TYPE_WORDS = {
+    "string": "text",
+    "integer": "a whole number",
+    "number": "a number",
+    "boolean": "a yes or no",
+    "list": "a list",
+    "object": "a set of fields",
+}
+#: A JSON schema type, as an input's type.
+AS_INPUT = {
+    "array": "list",
+    "string": "string",
+    "integer": "integer",
+    "number": "number",
+    "boolean": "boolean",
+    "object": "object",
+}
+
+
+def _given_type(value: Any, step: Step, resolver: SchemaResolver) -> str | None:
+    """The input type of what a step passes, when it can be told before a run: a plain
+    value, or one reference to something whose shape is declared."""
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, list):
+        return "list"
+    if isinstance(value, dict):
+        return "object"
+    if not isinstance(value, str):
+        return None
+    srcs = expressions_in(value)
+    if not srcs:
+        return "string"
+    if len(srcs) != 1 or value.strip() != f"${{{srcs[0]}}}":
+        return "string" if srcs else None  # text with a value put in it is text
+    try:
+        expr = parse(srcs[0])
+    except ExprError:
+        return None
+    if not isinstance(expr, Path):
+        return None  # a sum or a comparison: its type is not declared anywhere
+    r = resolver.resolve(expr, step_for_each=step.for_each)
+    if not r.ok or r.unknown or r.schema is None:
+        return None
+    t = r.schema.get("type")
+    return AS_INPUT.get(t) if isinstance(t, str) else None
+
+
+def _what_it_is_given(step: Step, child: Workflow, resolver: SchemaResolver) -> list[Finding]:
+    """What a step passes the workflow it starts: only inputs that workflow has, each of
+    the kind it takes. A name it does not have is dropped without a word at run time,
+    and a value of the wrong kind stops the run it starts; both are said here instead."""
+    findings: list[Finding] = []
+    name = child.metadata.name
+    who = step.title or step.id
+    theirs = {k: v for k, v in child.spec.inputs.items() if not v.internal}
+    not_given = [k for k in theirs if k not in (step.with_ or {})]
+    for key, value in (step.with_ or {}).items():
+        spec = child.spec.inputs.get(key)
+        if spec is None:
+            findings.append(
+                make_finding(
+                    "conflict",
+                    f"steps.{step.id}.with.{key}",
+                    step=step,
+                    detail=f"“{who}” gives “{name}” a “{key}”, but “{name}” takes no input "
+                    "by that name, so it would never see it.",
+                    answer_kind="choice",
+                    options=[
+                        *(
+                            Option(
+                                value={"op": "rename", "to": k},
+                                label=f"It is “{name}”'s “{k}”",
+                            )
+                            for k in not_given
+                        ),
+                        Option(value={"op": "leave_out"}, label="Leave it out"),
+                    ],
+                )
+            )
+            continue
+        if spec.internal:
+            continue
+        given = _given_type(value, step, resolver)
+        fits = given is None or given == spec.type or (given == "integer" and spec.type == "number")
+        if not fits:
+            findings.append(
+                make_finding(
+                    "conflict",
+                    f"steps.{step.id}.with.{key}",
+                    step=step,
+                    detail=f"“{name}” takes {TYPE_WORDS[spec.type]} as its “{key}”, and “{who}” "
+                    f"gives it {TYPE_WORDS.get(given or '', 'something else')}, so the run it "
+                    "starts would stop at once.",
+                    answer_kind="text",
+                )
+            )
+        elif spec.enum and isinstance(value, str) and not expressions_in(value):
+            if value not in spec.enum:
+                findings.append(
+                    make_finding(
+                        "conflict",
+                        f"steps.{step.id}.with.{key}",
+                        step=step,
+                        detail=f"“{name}” takes one of {_join(spec.enum)} as its “{key}”, not "
+                        f"“{value}”.",
+                        answer_kind="choice",
+                        options=[Option(value=v, label=plain_value(v)) for v in spec.enum],
+                    )
+                )
     return findings
 
 

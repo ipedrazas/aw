@@ -55,6 +55,10 @@ Settled without asking, open to change:
 
 ## Pieces, each a PR
 
+Done: 1 is #59, 2 is #60, 3 is #61, 4 is the PR after them. Piece 4 also fixed a
+false conflict from #41: a step handed to another workflow was told its `with` needed
+a list to run over.
+
 1. **Runtime and schema.** The field, the loop, the caps, merging, `further[*]`, the
    instruction section, validator checks, the run's trail. Hand-written definitions can
    use it; drafts do not produce it yet. The "when is a topic worth following?"
