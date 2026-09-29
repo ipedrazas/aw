@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, literal, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -55,6 +55,34 @@ def make_engine(url: str | None = None) -> Engine:
 
 def init_db(engine: Engine) -> None:
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """create_all makes missing tables but leaves existing ones as they are, so a column
+    added since a database was made is added here, with its default for the rows it
+    already has. Only columns that are nullable or have a plain default can be."""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                ddl = f"ALTER TABLE {table.name} ADD COLUMN {col.name} "
+                ddl += col.type.compile(dialect=engine.dialect)
+                default = col.default.arg if col.default is not None else None
+                if default is not None and not callable(default):
+                    value = literal(default, col.type).compile(
+                        dialect=engine.dialect, compile_kwargs={"literal_binds": True}
+                    )
+                    ddl += f" NOT NULL DEFAULT {value}"
+                elif not col.nullable:
+                    raise RuntimeError(
+                        f"{table.name}.{col.name} is missing and cannot be added without "
+                        "a default; this database needs making again."
+                    )
+                conn.execute(text(ddl))
 
 
 class Database:

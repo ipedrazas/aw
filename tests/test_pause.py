@@ -105,6 +105,7 @@ def test_only_a_paused_run_can_be_carried_on(sample_ws, tmp_path):
     run = interp.ledger.session.get(Run, done.run_id)
     with pytest.raises(ValueError, match="not paused"):
         interp.carry_on_paused(run, wf)
+    interp.ledger.close()
 
 
 def test_a_run_that_hit_the_spending_limit_can_be_carried_on(ws, tmp_path):
@@ -265,3 +266,7 @@ def test_a_paused_budget_run_can_be_carried_on_through_the_api(ws, tmp_path):
     assert client.post(f"/api/runs/{run['id']}/carry-on").status_code == 200
     done = wait_for(client, run["id"])
     assert done["status"] == "done", done["error"]
+    said = [d["text"] + " " + d["reason"] for st in done["steps"] for d in st["decisions"]]
+    assert any(t.startswith("Carried on from") and "at the spending limit" in t for t in said), (
+        "it says it paused at the spending limit, not that you paused it"
+    )

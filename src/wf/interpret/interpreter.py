@@ -1345,16 +1345,17 @@ class Interpreter:
                 ),
             )
 
-    def carry_on_paused(self, run: Run, wf: Workflow, *, claimed: bool = False) -> RunResult:
+    def carry_on_paused(self, run: Run, wf: Workflow, *, paused_as: str | None = None) -> RunResult:
         """Carry a paused run on, from the step it paused before: the steps that
         finished are not run again, as after a gate. A run pauses because someone
         asked it to, or because it hit its spending limit; either carries on the same
         way, on the definition as it is now.
 
-        ``claimed`` says the caller has already marked the run as running, so two
-        requests cannot both carry it on.
+        ``paused_as`` is how the run had paused, when the caller has already marked it
+        as running so two requests cannot both carry it on.
         """
-        if run.status not in ("paused", "paused_budget") and not claimed:
+        paused_as = paused_as or run.status
+        if paused_as not in ("paused", "paused_budget"):
             raise ValueError("This run is not paused, so there is nothing to carry on.")
         rows = (
             self.ledger.session.query(StepRun).filter_by(run_id=run.id).order_by(StepRun.seq).all()
@@ -1380,7 +1381,7 @@ class Interpreter:
         said = f"Carried on from “{step.title or step.id}”."
         why = (
             "It paused there at the spending limit."
-            if run.status == "paused_budget"
+            if paused_as == "paused_budget"
             else "You paused it there."
         ) + " The steps before it were not run again."
 

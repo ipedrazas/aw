@@ -59,6 +59,11 @@ def make_db():
     url = os.environ.get("WF_TEST_DATABASE_URL", "sqlite://")
     db = Database(url)
     if not url.startswith("sqlite"):
+        # a session an earlier test left in a transaction holds a lock that would
+        # keep the drop waiting for ever
+        from sqlalchemy.orm import close_all_sessions
+
+        close_all_sessions()
         Base.metadata.drop_all(db.engine)
         Base.metadata.create_all(db.engine)
     return db

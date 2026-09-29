@@ -1525,12 +1525,13 @@ def _carry_on_paused_in_background(state: AppState, run_id: str, wf: Any) -> Non
     if run.status not in ("paused", "paused_budget"):
         ledger.close()
         raise HTTPException(409, "This run is already being carried on.")
+    paused_as = run.status
     run.status = "running"  # before the request returns, so the page that reloads sees it
     ledger._commit()
 
     def work() -> None:
         try:
-            result = interp.carry_on_paused(run, wf, claimed=True)
+            result = interp.carry_on_paused(run, wf, paused_as=paused_as)
             state.runner.rescore_expectations(ledger, result)
         except Exception as e:  # noqa: BLE001
             ledger.finish_run(
