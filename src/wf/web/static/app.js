@@ -555,3 +555,18 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     } catch (err) { say(msg, err.message, true); b.disabled = false; }
   });
 });
+
+/* Narrow screens: the nav folds behind "Menu", and a table's rows stack, each cell
+   labelled with its column's heading (copied here, so no template has to say it). */
+document.querySelectorAll("[data-nav-toggle]").forEach(b => b.addEventListener("click", () => {
+  const open = document.querySelector(".topbar").classList.toggle("nav-open");
+  b.setAttribute("aria-expanded", open ? "true" : "false");
+}));
+document.querySelectorAll(".tbl table, .card table").forEach(t => {
+  const heads = Array.from(t.querySelectorAll("thead th")).map(th => th.textContent.trim());
+  if (!heads.length) return;
+  t.classList.add("stackable");
+  t.querySelectorAll("tbody tr").forEach(tr => Array.from(tr.children).forEach((td, i) => {
+    if (heads[i] && !td.hasAttribute("colspan")) td.dataset.label = heads[i];
+  }));
+});

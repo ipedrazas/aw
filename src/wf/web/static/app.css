@@ -196,3 +196,25 @@ td select[data-model-step]{width:auto;min-width:170px}
 .dg-out-person{fill:var(--yellow-bg);stroke:#e7c77f}.dg-out-question{fill:var(--red-bg);stroke:var(--red-ink);stroke-dasharray:4 3}
 .dg-question-line{stroke:var(--red-ink);stroke-dasharray:4 3}
 .flow-desc{max-width:760px}
+/* narrow screens: a 16px gutter, the nav behind "Menu", tables as stacked rows */
+.nav-toggle{display:none;background:transparent;color:#fff;border:1px solid #5a605d;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+@media(max-width:760px){
+  .page{padding:16px 16px 48px}
+  .topbar{flex-wrap:wrap;padding:10px 16px;gap:8px}
+  .topbar-left{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden}
+  .topbar-title{margin-left:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nav-toggle{display:block}
+  .topbar-nav{display:none;order:3;flex-basis:100%;flex-direction:column;align-items:flex-start;gap:10px;padding:8px 0 4px}
+  .topbar.nav-open .topbar-nav{display:flex}
+  .card-head{flex-wrap:wrap}
+  h1{font-size:24px}
+  .card{padding:14px 14px}
+  table.stackable thead{display:none}
+  table.stackable,table.stackable tbody,table.stackable tr,table.stackable td{display:block;width:100%}
+  table.stackable tr{border-bottom:1px solid var(--line);padding:6px 0}
+  table.stackable td{border-bottom:none;padding:6px 12px;text-align:left !important}
+  table.stackable td[data-label]::before{content:attr(data-label);display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:2px}
+  table.stackable td select{width:100% !important;min-width:0 !important}
+  .legend{flex-wrap:wrap;gap:10px}
+  .msg{max-width:100%}
+}
