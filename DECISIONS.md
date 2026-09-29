@@ -566,3 +566,22 @@ result, so it is the person's choice, made knowing the cost. The list compares f
 names only: a field both results have with different values (`verdict`) is not named
 beforehand, and the branches on values that are gone are raised by the validator once
 the change is made.
+
+**Going deeper is searching further, in the same run.** A searching agent step may say
+`search_further: {follow, levels, max_searches, max_topics}`. It runs once, names the
+topics worth following in its `follow` list (`{topic, why}`), and the runtime runs it
+again on each, round by round: at most `max_topics` a round, `levels` rounds past the
+first, `max_searches` searches in all (each round's search limit is lowered to what is
+left). Every round's result is joined into one (lists joined, each address or topic
+once, single values from the first round), so the steps that read it are unchanged;
+each round is also kept as `steps.<id>.further[*]`. A follow-up round gets its usual
+input plus a `further` block, and a fixed section in its instructions says how to use
+it. Recorded like a fan-out, one record holding the joined result and one per round,
+so a resumed run reads the same. The rule for what is worth following is the
+description of the `follow` list, asked as its own question, never mixed into how the
+step searches. No stop for approval: the limits bound it and every topic followed or
+left out is said. Dry runs search further too. Alternative: a nested run of the whole
+workflow per topic (kept, for separate follow-up reports), or `may_repeat` (goes back
+only to an earlier step, and a rerun replaces the result it had). Why: a user's
+"go deeper, 25 searches, 2 levels" became prose nothing enforced, and their answer to
+"how should it be done?" said when. The full reasoning is in `plans/search-further.md`.

@@ -138,6 +138,20 @@ class SchemaResolver:
                 if schema is None:
                     return Resolution(None, unknown=True)
                 return self._descend(schema, segs[3:], str(path))
+            if what == "further":
+                if step.search_further is None:
+                    return Resolution(None, f"“{step.id}” does not search further")
+                round_ = {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "why": {"type": "string"},
+                        "from": {"type": ["string", "null"]},
+                        "level": {"type": "integer"},
+                        "output": self.step_output_schema(step) or {},
+                    },
+                }
+                return self._descend({"type": "array", "items": round_}, segs[3:], str(path))
             if what == "outputs":
                 if step.for_each is None:
                     return Resolution(None, f"“{step.id}” runs once; read its result with output")
@@ -157,7 +171,7 @@ class SchemaResolver:
                 if item is None:
                     return Resolution(None, unknown=True)
                 return self._descend({"type": "array", "items": item}, segs[3:], str(path))
-            return Resolution(None, f"a step has output, outputs and status, not “{what}”")
+            return Resolution(None, f"a step has output, outputs, further and status, not “{what}”")
         return Resolution(None, f"“{root}” is not something a step can read")
 
     def _descend(self, node: dict[str, Any], segs: list[str | int], full: str) -> Resolution:

@@ -20,6 +20,7 @@ from .templates import (
     WEB_TOOLS,
     everything_before,
     follows_the_answer,
+    holds_topics,
     holds_urls,
     says_it_searches,
 )
@@ -86,6 +87,46 @@ def _check_decisions_model(wf: Workflow, step: Step, ws: Workspace | None) -> li
                 options=[Option(value=["output"], label="Its result")],
             )
         )
+    return findings
+
+
+def _check_search_further(step: Step, ws: Workspace | None) -> list[Finding]:
+    """A step that searches further searches, runs once per run, has limits that let
+    it, and names in its result the topics worth following."""
+    sf = step.search_further
+    assert sf is not None
+    who = f"“{step.title or step.id}”"
+    field = f"steps.{step.id}.search_further"
+    findings: list[Finding] = []
+
+    def conflict(where: str, detail: str, kind: str = "text") -> None:
+        findings.append(make_finding("conflict", where, step=step, detail=detail, answer_kind=kind))
+
+    if step.kind != "agent":
+        conflict(field, f"Only a step that uses judgement can search further, and {who} does not.")
+        return findings
+    search = next((p for t, p in (step.tools or {}).items() if t.split(".")[-1] == "search"), None)
+    if search is None:
+        conflict(field, f"{who} is set to search further, but it cannot search.")
+    if step.for_each is not None:
+        conflict(
+            field,
+            f"{who} runs once per item, and searching further needs a single run to follow.",
+        )
+    for name, value, least in (("levels", sf.levels, 1), ("max_topics", sf.max_topics, 1)):
+        if value < least:
+            conflict(f"{field}.{name}", "Below 1, it would never search further.", "number")
+    if search is not None and sf.max_searches < search.max_calls:
+        conflict(
+            f"{field}.max_searches",
+            f"{who} may search {search.max_calls} times in one round, but only "
+            f"{sf.max_searches} times in all, so it could never go further.",
+            "number",
+        )
+    rel = step.output.schema_ if step.output else None
+    shape = ws.load_schema(rel) if (ws is not None and rel) else None
+    if shape is not None and not holds_topics(shape, sf.follow):
+        findings.append(make_finding("gap", f"{field}.follow", step=step, answer_kind="text"))
     return findings
 
 
@@ -158,6 +199,8 @@ def validate_structural(wf: Workflow, ws: Workspace | None = None) -> list[Findi
         if _bad_model_name(step.model):
             findings.append(_model_finding(f"steps.{step.id}.model", str(step.model), step))
         findings.extend(_check_decisions_model(wf, step, ws))
+        if step.search_further is not None:
+            findings.extend(_check_search_further(step, ws))
         if step.id in seen:
             findings.append(
                 make_finding(

@@ -32,6 +32,7 @@ from wf.store.sessions import session_span, step_span
 from wf.validate import Finding, validate
 
 from .context import BudgetTracker, OpenFindings, TraceEvent
+from .further import FURTHER_SECTION, merge, topics_in, urls_in
 from .registry import CHECKS, TOOLS, RunnerContext
 
 logger = get_logger(f"{ROOT}.interpret")
@@ -359,7 +360,16 @@ class Interpreter:
         """The run's state for these step records, as the walk that made them left it.
         The last record of a step is the one that counts."""
         steps: dict[str, Any] = {}
+        further = {s.id for s in wf.spec.steps if s.search_further is not None}
+        trails: dict[str, list[dict[str, Any]]] = {}
         for r in rows:
+            if r.step_id in further and r.fanout_index and r.status == "done":
+                block = (r.input or {}).get("further") if isinstance(r.input, dict) else None
+                if isinstance(block, dict):
+                    trails.setdefault(r.step_id, []).append(
+                        {k: v for k, v in block.items() if k != "already_found"}
+                        | {"output": r.output}
+                    )
             if r.fanout_index is not None:
                 continue
             fans_out = any(s.id == r.step_id and s.for_each for s in wf.spec.steps)
@@ -368,6 +378,9 @@ class Interpreter:
                 if fans_out
                 else {"status": r.status, "output": r.output, "outputs": None}
             )
+        for sid, trail in trails.items():
+            if sid in steps:
+                steps[sid]["further"] = trail
         return steps
 
     def _walk(
@@ -592,13 +605,140 @@ class Interpreter:
             return "done"
 
         ctx.result.trace.append(TraceEvent(step.id, "run"))
-        status, out = self._execute(ctx, step, fanout_index=None)
-        ctx.state["steps"][step.id] = {"status": status, "output": out, "outputs": None}
+        if step.search_further is not None and step.kind == "agent":
+            status, out = self._search_further(ctx, step)
+        else:
+            status, out = self._execute(ctx, step, fanout_index=None)
+            ctx.state["steps"][step.id] = {"status": status, "output": out, "outputs": None}
         if status == "done":
             self._check_unhandled_outcomes(ctx, step, out)
         return status
 
-    def _execute(self, ctx: _Ctx, step: Step, *, fanout_index: int | None) -> tuple[str, Any]:
+    def _search_further(self, ctx: _Ctx, step: Step) -> tuple[str, Any]:
+        """Run a step that searches further: once as usual, then round by round on the
+        topics it names, within its limits, as one result.
+
+        Recorded like a fan-out: one record for the step, holding the joined result
+        (what later steps and a resumed run read), and one per round beneath it, the
+        first round numbered 0. A follow-up that breaks is said and left out; what the
+        other rounds found is kept."""
+        sf = step.search_further
+        assert sf is not None
+        name = step.title or step.id
+        parent = self.ledger.start_step(ctx.run, step, fanout_index=None, input=None)
+        ctx.searches[step.id] = 0
+
+        def finish(status: str, out: Any, trail: list[dict[str, Any]]) -> tuple[str, Any]:
+            ctx.state["steps"][step.id] = {
+                "status": status,
+                "output": out,
+                "outputs": None,
+                "further": trail,
+            }
+            self.ledger.finish_step(parent, status=status, output=out)
+            return status, out
+
+        status, first = self._execute(ctx, step, fanout_index=0, search_cap=sf.max_searches)
+        if status != "done":
+            return finish(status, None, [])
+        merged, trail = first, []
+        frontier = [{**t, "from": None} for t in topics_in(first, sf.follow)]
+        seen: set[str] = set()
+        rounds, out_of_searches = 0, False
+        for level in range(1, sf.levels + 1):
+            todo = []
+            for t in frontier:
+                if t["topic"].casefold() not in seen and t["topic"].casefold() not in {
+                    x["topic"].casefold() for x in todo
+                }:
+                    todo.append(t)
+            if not todo:
+                frontier = []
+                break
+            if len(todo) > sf.max_topics:
+                left_out = todo[sf.max_topics :]
+                self._decide(
+                    ctx,
+                    parent,
+                    step.id,
+                    kind="control",
+                    text=f"Did not follow {_names(left_out)} (round {level}).",
+                    reason=f"“{name}” follows at most {sf.max_topics} topics a round.",
+                )
+            nxt: list[dict[str, Any]] = []
+            for t in todo[: sf.max_topics]:
+                left = sf.max_searches - ctx.searches.get(step.id, 0)
+                if left <= 0:
+                    out_of_searches = True
+                    break
+                seen.add(t["topic"].casefold())
+                self._decide(
+                    ctx,
+                    parent,
+                    step.id,
+                    kind="control",
+                    text=f"Searched further on “{t['topic']}” (round {level}).",
+                    reason=t["why"] or "The step named it as worth following.",
+                )
+                block = {
+                    "topic": t["topic"],
+                    "why": t["why"],
+                    "from": t["from"],
+                    "level": level,
+                    "already_found": urls_in(merged),
+                }
+                rounds += 1
+                st, out = self._execute(
+                    ctx, step, fanout_index=rounds, extra_input={"further": block}, search_cap=left
+                )
+                if st != "done":
+                    self._decide(
+                        ctx,
+                        parent,
+                        step.id,
+                        kind="control",
+                        text=f"Left out what “{t['topic']}” would have added.",
+                        reason="Searching further on it broke; what the other rounds found is kept.",
+                    )
+                    continue
+                trail.append(
+                    {k: v for k, v in block.items() if k != "already_found"} | {"output": out}
+                )
+                merged = merge(merged, out)
+                nxt += [{**x, "from": t["topic"]} for x in topics_in(out, sf.follow)]
+            frontier = nxt
+            if out_of_searches:
+                break
+        if out_of_searches:
+            self._decide(
+                ctx,
+                parent,
+                step.id,
+                kind="control",
+                text=f"Stopped searching further after {ctx.searches.get(step.id, 0)} searches.",
+                reason=f"“{name}” may make {sf.max_searches} searches in all.",
+            )
+        elif frontier:
+            self._decide(
+                ctx,
+                parent,
+                step.id,
+                kind="control",
+                text=f"Did not follow {_names(frontier)}.",
+                reason=f"“{name}” goes at most {sf.levels} round{'s' if sf.levels != 1 else ''} further.",
+            )
+        ctx.result.trace.append(TraceEvent(step.id, "further", rounds))
+        return finish("done", merged, trail)
+
+    def _execute(
+        self,
+        ctx: _Ctx,
+        step: Step,
+        *,
+        fanout_index: int | None,
+        extra_input: dict[str, Any] | None = None,
+        search_cap: int | None = None,
+    ) -> tuple[str, Any]:
         try:
             rendered_input = render(step.input, ctx.state) if step.input is not None else None
         except (ExprError, EvalError) as e:
@@ -611,9 +751,14 @@ class Interpreter:
                 text=f"Could not read part of the input for “{step.title or step.id}”.",
                 reason=str(e),
             )
+        if extra_input:
+            rendered_input = {
+                **(rendered_input if isinstance(rendered_input, dict) else {}),
+                **extra_input,
+            }
         sr = self.ledger.start_step(ctx.run, step, fanout_index=fanout_index, input=rendered_input)
         with step_span(step_run_id=sr.id, step_id=step.id, fanout_index=fanout_index):
-            return self._execute_body(ctx, step, sr, rendered_input, fanout_index)
+            return self._execute_body(ctx, step, sr, rendered_input, fanout_index, search_cap)
 
     def _execute_body(
         self,
@@ -622,10 +767,13 @@ class Interpreter:
         sr: StepRun,
         rendered_input: Any,
         fanout_index: int | None,
+        search_cap: int | None = None,
     ) -> tuple[str, Any]:
         try:
             if step.kind == "agent":
-                out, meta = self._agent(ctx, step, sr, rendered_input or {}, fanout_index)
+                out, meta = self._agent(
+                    ctx, step, sr, rendered_input or {}, fanout_index, search_cap=search_cap
+                )
             elif step.kind == "check":
                 out, meta = self._check(ctx, step, sr, rendered_input or {})
             elif step.kind == "tool":
@@ -658,7 +806,14 @@ class Interpreter:
     # -- kinds -------------------------------------------------------------
 
     def _agent(
-        self, ctx: _Ctx, step: Step, sr: StepRun, input: dict[str, Any], fanout_index: int | None
+        self,
+        ctx: _Ctx,
+        step: Step,
+        sr: StepRun,
+        input: dict[str, Any],
+        fanout_index: int | None,
+        *,
+        search_cap: int | None = None,
     ) -> tuple[Any, dict[str, Any]]:
         skill = self.ws.load_skill(step.skill) if step.skill else None
         if skill is None:
@@ -668,6 +823,8 @@ class Interpreter:
             system = f"# {step.title or step.id}\n\n{step.description or ''}\n\nDo what the title says, and no more."
         else:
             system = skill.body
+        if step.search_further is not None:
+            system += FURTHER_SECTION.format(follow=step.search_further.follow)
         model = ctx.wf.model_for(step)
         origin = "the step names it" if step.model else "the workflow's default"
         if model is None:
@@ -707,7 +864,7 @@ class Interpreter:
                 "additionalProperties": False,
             }
 
-        tools = self._tools_for(step)
+        tools = self._tools_for(step, search_cap)
         tag = step.id if fanout_index is None else f"{step.id}[{fanout_index}]"
         req = ModelRequest(
             tag=tag,
@@ -757,6 +914,8 @@ class Interpreter:
                     reason=f"The page contained text addressed to the model: “{call.injection}”. It was read as data only.",
                 )
 
+        searched = sum(1 for c in resp.tool_calls if c.name == SEARCH_TOOL.name)
+        ctx.searches[step.id] = ctx.searches.get(step.id, 0) + searched
         cost = resp.usage.cost_usd
         ctx.spend(cost)
         self.ledger.update_spend(ctx.run, ctx.own_spend, ctx.budget.spent_minutes)
@@ -774,7 +933,9 @@ class Interpreter:
         }
         return resp.output, meta
 
-    def _tools_for(self, step: Step) -> list[ToolSpec]:
+    def _tools_for(self, step: Step, search_cap: int | None = None) -> list[ToolSpec]:
+        """The tools a step may call. ``search_cap`` lowers its search limit for this
+        call, to what is left of the total a step that searches further may make."""
         out: list[ToolSpec] = []
         for name, perm in (step.tools or {}).items():
             base = name.split(".")[-1]
@@ -793,7 +954,7 @@ class Interpreter:
                                 exclude_domains=perm.exclude_domains,
                             )
                         ],
-                        perm.max_calls,
+                        perm.max_calls if search_cap is None else min(perm.max_calls, search_cap),
                     )
                 )
             elif base in ("get_contents", "fetch"):
@@ -1453,6 +1614,14 @@ class Interpreter:
         return out
 
 
+def _names(topics: list[dict[str, Any]]) -> str:
+    """Topics as a person reads them in a list: “a”, “b” and 2 more."""
+    names = [f"“{t['topic']}”" for t in topics]
+    if len(names) > 3:
+        return ", ".join(names[:3]) + f" and {len(names) - 3} more"
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def why_it_stopped(result: RunResult) -> str:
     """Why a run that did not finish stopped, in the words its own record uses: the step
     that broke and why, or the limit it reached. A follow-up that fails is only as
@@ -1529,7 +1698,9 @@ def fingerprint(ws: Workspace, wf: Workflow, step: Step) -> str:
     seen = {
         "skill": [step.skill, hashlib.sha256((skill.body if skill else "").encode()).hexdigest()],
         "model": wf.model_for(step),
-        "tools": sorted(step.tools or {}),
+        "tools": sorted(step.tools or {})
+        if step.search_further is None
+        else [sorted(step.tools or {}), step.search_further.model_dump()],
         "input_schema": step.input,
         "output_schema": step.output.schema_ if step.output else None,
     }
@@ -1573,6 +1744,9 @@ class _Ctx:
     depth: int
     own_spend: float = 0.0
     approved: str | None = None
+    # searches made by each step in this run, so a step that searches further stays
+    # within the total it is allowed across rounds
+    searches: dict[str, int] = field(default_factory=dict)
 
     def spend(self, usd: float) -> None:
         self.own_spend += usd
