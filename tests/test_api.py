@@ -111,6 +111,23 @@ def client(ws, tmp_path: Path):
                         "point_to_finding": None,
                     }
                 )
+            if req.input["message"] == "how did the last run go?":
+                # the chat is not sent the runs on every turn; it fetches one through a tool
+                assert "runs" not in req.input, "runs are fetched, not sent on every turn"
+                tools = {t.name: t for t in req.tools}
+                recent = tools["recent_runs"].executor({})
+                detail = (
+                    tools["run_details"].executor({"run_id": recent[0]["id"]}) if recent else None
+                )
+                return ModelResponse(
+                    output={
+                        "reply": f"status={detail['status']}" if detail else "No runs yet.",
+                        "edits": [],
+                        "answers": [],
+                        "dismiss": [],
+                        "point_to_finding": None,
+                    }
+                )
             if req.input["message"] == "what did I write?":
                 # the chat is sent what the person first wrote, and can quote it
                 return ModelResponse(

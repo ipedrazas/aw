@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question, questions_summary %}
+{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
 {% set s = data.summary %}
 {% block title %}{{ s.name }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
@@ -15,18 +15,14 @@
     {{ delete_button("/api/workflows/" ~ name,
         "Delete “" ~ s.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.",
         label="Delete workflow", cls="btn btn-danger") }}
-    <button class="btn btn-primary" data-toggle="runform">Run with a topic</button>
+    <button class="btn btn-primary" data-toggle="runform">Run it</button>
   </div>
 </div>
 
 <div id="runform" class="card hidden">
-  <form data-run-workflow="{{ name }}">
-    <div class="grid2">
-      <div><label class="small muted">A topic</label><input type="text" name="topic" placeholder="What should it research? At least ten characters."></div>
-      <div><label class="small muted">Or a past case with a known outcome</label>
-        <select name="case"><option value="">Pick a case</option>{% for c in data.cases %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></div>
-    </div>
-    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit" value="dry">Start a dry run</button><button class="btn" type="submit" value="live">Run it for real</button><span class="small muted">Real judgement, {{ 'live web search (Exa)' if search_live else 'recorded sources' }}, nothing sent anywhere. A real run also starts the follow-up research and marks nothing as simulated.</span><span data-msg class="small"></span></div>
+  <form data-run-workflow="{{ name }}"{% if data.starts_more_work %} data-more-work{% endif %}{% if data.sends_outside %} data-sends{% endif %}>
+    {{ run_inputs(data.run_fields, cases) }}
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit" value="dry">Start a dry run</button><button class="btn" type="submit" value="live">Run it for real</button><span class="small muted">A dry run guesses where the workflow is silent and marks what it makes as simulated. A real run uses real judgement and {{ 'live web search (Exa)' if search_live else 'recorded sources' }}{% if data.sends_outside %}, and sends what the workflow sends{% else %}; nothing is sent anywhere{% endif %}.</span><span data-msg class="small"></span></div>
   </form>
 </div>
 <pre id="yaml" class="hidden">{{ data.yaml }}</pre>
@@ -106,7 +102,7 @@
   {{ questions_summary(data.questions) }}
   {% for g in data.questions %}
     <h3 class="small muted" style="margin:14px 0 4px">{{ g.title }}</h3>
-    {% for f in g.findings %}{{ question(f, name, chat=False) }}{% if f.step_id %}<div class="small muted" style="margin:-4px 0 10px">Step: {{ f.step_id }}</div>{% endif %}{% endfor %}
+    {% for f in g.findings %}{{ question(f, name, chat=False) }}{% if f.step_id %}<div class="small muted" style="margin:-4px 0 10px">Step: {{ f.step_title or f.step_id }}</div>{% endif %}{% endfor %}
   {% endfor %}
 </div>
 {% endif %}

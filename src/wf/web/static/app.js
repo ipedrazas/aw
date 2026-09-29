@@ -57,18 +57,49 @@ document.querySelectorAll("[data-toggle]").forEach(b => {
   b.addEventListener("click", () => { const t = document.getElementById(b.dataset.toggle); if (t) t.classList.toggle("hidden"); });
 });
 
+/* The inputs a run starts with, read from the fields the workflow declares. A past case
+   brings its own inputs, so with one picked only what was filled in is sent, on top.
+   Returns {body} to post, or {error} to say beside the button. */
+function readRun(f) {
+  const caseName = (f.querySelector("[name=case]") || {}).value || "";
+  const inputs = {};
+  for (const el of f.querySelectorAll("[data-input]")) {
+    const name = el.dataset.input, type = el.dataset.type, label = el.dataset.label || name;
+    let v;
+    if (type === "boolean") v = el.checked;
+    else if (el.value.trim() === "") v = undefined;
+    else if (type === "integer" || type === "number") v = Number(el.value);
+    else if (type === "list") v = el.value.split("\n").map(x => x.trim()).filter(Boolean);
+    else if (type === "object") { try { v = JSON.parse(el.value); } catch (e) { return {error: label + " is not valid JSON."}; } }
+    else v = el.value.trim();
+    if (v === undefined) {
+      if ("required" in el.dataset && !caseName) return {error: "Fill in " + label.toLowerCase() + ", or pick a past case."};
+      continue;
+    }
+    const min = Number(el.dataset.minLength || 0);
+    if (min && typeof v === "string" && v.length < min) return {error: label + " needs at least " + min + " characters."};
+    inputs[name] = v;
+  }
+  return {body: caseName ? {case: caseName, inputs: inputs} : {inputs: inputs}};
+}
+
 /* Start a run of a saved workflow. */
 document.querySelectorAll("form[data-run-workflow]").forEach(f => {
   f.addEventListener("submit", async e => {
     e.preventDefault();
     const name = f.dataset.runWorkflow, msg = f.querySelector("[data-msg]");
-    const topic = (f.querySelector("[name=topic]") || {}).value || "", caseName = (f.querySelector("[name=case]") || {}).value || "";
     const mode = (e.submitter && e.submitter.value) || "dry";
-    const body = caseName ? {case: caseName, mode: mode} : {inputs: {topic: topic}, mode: mode};
-    if (!caseName && topic.trim().length < 10) return say(msg, "Give a topic of at least ten characters, or pick a past case.", true);
-    if (mode === "live" && !confirm("Run it for real? Follow-up research starts if the reviewer asks for it, so this can cost up to the workflow's budget. Nothing is sent anywhere.")) return;
+    const read = readRun(f);
+    if (read.error) return say(msg, read.error, true);
+    if (mode === "live") {
+      const more = "moreWork" in f.dataset
+        ? "It can start more work as it goes, so it can cost up to the workflow's spending limit."
+        : "Every step uses real models, and costs what they cost.";
+      const sends = "sends" in f.dataset ? " It sends what the workflow sends." : " Nothing is sent anywhere.";
+      if (!confirm("Run it for real? " + more + sends)) return;
+    }
     say(msg, mode === "live" ? "Starting the real run…" : "Starting…");
-    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(name) + "/runs", body); location.href = "/runs/" + d.run_id; }
+    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(name) + "/runs", {...read.body, mode: mode}); location.href = "/runs/" + d.run_id; }
     catch (err) { say(msg, err.message, true); }
   });
 });
@@ -300,12 +331,12 @@ function wireAnswers(base, reload) {
   if (tryForm) tryForm.addEventListener("submit", async e => {
     e.preventDefault();
     const msg = tryForm.querySelector("[data-msg]");
-    const caseName = (tryForm.querySelector("[name=case]") || {}).value || "", topic = (tryForm.querySelector("[name=topic]") || {}).value || "";
-    if (!caseName && topic.trim().length < 10) return say(msg, "Give a topic of at least ten characters, or pick a past case.", true);
+    const read = readRun(tryForm);
+    if (read.error) return say(msg, read.error, true);
     say(msg, "Saving and starting a dry run…");
     try {
       await postJSON(base + "/save", {});
-      const d = await postJSON(base + "/dry-run", caseName ? {case: caseName} : {topic: topic});
+      const d = await postJSON(base + "/dry-run", read.body);
       location.href = "/runs/" + d.run_id;
     } catch (err) { say(msg, err.message, true); }
   });
