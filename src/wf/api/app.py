@@ -28,6 +28,7 @@ from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
 from wf.audit.asking import ask_first, asking, skip
 from wf.audit.catalog import (
+    answered_by_decisions,
     capabilities,
     own_instructions,
     resolve_skill,
@@ -38,6 +39,7 @@ from wf.audit.chat import chat
 from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.audit.triage import triage
+from wf.decisions import is_decisions_model
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
 from wf.interpret.interpreter import fingerprint, stops_for_ok
@@ -163,6 +165,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
             "steps": plain_steps(wf),
             **_picture(wf, result.findings, st().ws),
             "models": model_choices(wf),
+            # the models a step, or the default, cannot be put on, and why, by label:
+            # still listed, so the page can say why rather than leave them out
+            "model_limits": _with_a_way_out(wf, models_steps_cannot_use(wf, st().ws), st().ws),
+            "default_limits": {
+                c["label"]: why
+                for c in model_choices(wf)
+                if (why := default_model_problem(wf, c["value"], st().ws))
+            },
             "skill_choices": {
                 s.id: skill_choices(st().ws, wf, s) for s in wf.spec.steps if s.kind == "agent"
             },
@@ -1065,6 +1075,32 @@ def _load(state: AppState, name: str):
         return state.ws.load_definition(name)
     except WorkspaceError as e:
         raise HTTPException(404, str(e)) from e
+
+
+def _with_a_way_out(
+    wf: Workflow, limits: dict[str, dict[str, str]], ws: Workspace
+) -> dict[str, dict[str, str]]:
+    """The reasons a step cannot run on a decisions model, with what would let it: the
+    instructions whose result such a model answers. Not for a step that searches, which
+    no instructions change."""
+    titles = answered_by_decisions(ws)
+    if not titles:
+        return limits
+    hint = (
+        " Choose instructions that come with such a result first, such as "
+        + ", ".join(f"“{t}”" for t in titles)
+        + "."
+    )
+    decisions = {c["label"] for c in model_choices(wf) if is_decisions_model(c["value"])}
+    out: dict[str, dict[str, str]] = {}
+    for sid, cannot in limits.items():
+        step = wf.step(sid)
+        can_move = step is not None and not step.tools
+        out[sid] = {
+            label: why + (hint if can_move and label in decisions else "")
+            for label, why in cannot.items()
+        }
+    return out
 
 
 def _commit_settings(

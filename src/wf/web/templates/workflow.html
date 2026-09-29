@@ -35,7 +35,7 @@
   <label class="small muted" for="default-model">Steps that do not choose their own model run on</label>
   <select id="default-model" data-model-default>
     {% if not s.default_model %}<option value="" selected>No default: each step names its own</option>{% endif %}
-    {% for m in data.models %}<option value="{{ m.value }}"{% if m.value == s.default_model %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+    {% for m in data.models %}{% set why = data.default_limits.get(m.label) if m.value != s.default_model else None %}<option value="{{ m.value }}"{% if why %} data-cannot="{{ why }}"{% endif %}{% if m.value == s.default_model %} selected{% endif %}>{{ m.label }}{% if why %} (not for every step){% endif %}</option>{% endfor %}
   </select>
   <span class="tech small muted mono">{{ s.default_model or "" }}</span>
   <span data-msg class="small"></span>
@@ -66,8 +66,10 @@
         {% if s.default_model %}<option value=""{% if st.technical.model_inherited %} selected{% endif %}>Default ({{ s.default_model_label }})</option>
         {% elif not st.technical.model_own %}<option value="" selected>Not chosen yet</option>{% endif %}
         {# the default is already the first option; it is listed again only when the step names it itself #}
-        {% for m in data.models if not (s.default_model and m.value == s.default_model and m.value != st.technical.model_own) %}<option value="{{ m.value }}"{% if m.value == st.technical.model_own %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+        {# a model the step cannot run on is still listed, so picking it says why #}
+        {% for m in data.models if not (s.default_model and m.value == s.default_model and m.value != st.technical.model_own) %}{% set why = data.model_limits.get(st.id, {}).get(m.label) if m.value != st.technical.model_own else None %}<option value="{{ m.value }}"{% if why %} data-cannot="{{ why }}"{% endif %}{% if m.value == st.technical.model_own %} selected{% endif %}>{{ m.label }}{% if why %} (not for this step){% endif %}</option>{% endfor %}
       </select>
+      <div data-msg class="small"></div>
       <div class="tech small muted mono">{{ st.technical.model or "" }}</div>
       {% else %}<span class="muted">None</span>{% endif %}
     </td>
@@ -77,6 +79,7 @@
         {% if not st.technical.skill %}<option value="" selected>Not chosen yet</option>{% endif %}
         {% for c in data.skill_choices[st.id] %}<option value="{{ c.value }}"{% if c.result %} data-result="{{ c.result }}" data-loses="{{ c.loses | join('\n') }}"{% endif %}{% if c.value == st.technical.skill %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
       </select>
+      <div data-msg class="small"></div>
       {% if st.technical.skill %}<div class="tech small mono"><a href="{{ skill_url(st.technical.skill, workflow=name, step=st.id) }}" title="Read, compare or edit these instructions">{{ st.technical.skill }}</a></div>{% endif %}
       {% else %}<span class="muted">None</span>{% if st.technical.run or st.technical.workflow %}<div class="tech small mono">{{ st.technical.run or st.technical.workflow }}</div>{% endif %}{% endif %}
     </td>
