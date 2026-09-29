@@ -215,7 +215,22 @@ def apply_answer(
         changes.append(Change(path=path, before=before, after=after, reason=reason))
 
     if finding.type == "assumption":
-        if isinstance(answer, dict) and answer.get("op") == "use_workflow" and sid and ws:
+        if isinstance(answer, dict) and isinstance(answer.get("set"), dict) and sid:
+            if key == "search_further":
+                # how far it searches further, and a round's share of it
+                picked = answer["set"]
+                change(field, picked["search_further"], "How far it searches further.")
+                tools = _get(d, f"steps.{sid}.tools") or {}
+                for name in tools:
+                    if name.split(".")[-1] == "search":
+                        change(
+                            f"steps.{sid}.tools.{name}.max_calls",
+                            picked["round_searches"],
+                            "Each round leaves searches for the ones after it.",
+                        )
+            else:
+                change(field, answer["set"], "Your answer.")
+        elif isinstance(answer, dict) and answer.get("op") == "use_workflow" and sid and ws:
             steps = hand_to_workflow(d, sid, str(answer.get("workflow")), ws)
             change(
                 "spec.steps",

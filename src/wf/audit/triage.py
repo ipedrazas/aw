@@ -45,6 +45,7 @@ PROTECTED = frozenset(
     {
         "budget",
         "limits",
+        "search_further",
         "requires_approval",
         "side_effects",
         "trust",

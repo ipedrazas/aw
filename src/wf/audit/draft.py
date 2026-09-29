@@ -11,16 +11,19 @@ from wf.interpret.registry import RUNNER_OUTPUT_SCHEMAS
 from wf.schema import Workflow, Workspace, load_workflow_dict
 from wf.settings import careful_model, quick_model
 from wf.validate import (
+    FURTHER_DEFAULT,
     PRODUCES,
     WEB_TOOLS,
     Finding,
     Option,
     everything_before,
     follows_the_answer,
+    further_limits,
     holds_urls,
     is_workflow_input,
     says_it_searches,
     with_sources,
+    with_topics,
 )
 from wf.validate.findings import plain_value
 
@@ -375,11 +378,20 @@ def build_draft(
                     f"“{s['title']}” sounded like it searches the web, so I let it.",
                     "Without search it can only answer from what the model already knows.",
                 )
+            # going deeper is searching further, on the step that searches
+            sf = s.get("search_further")
+            if sf:
+                _search_further(step, sf, s, assume, passage_text)
+                if sf.get("passage"):
+                    prov[f"steps.{sid}.search_further"] = sf["passage"]
             # what it found is what the next step cites and the link check opens
             rel = (step.get("output") or {}).get("schema")
             searches = any(t.split(".")[-1] == "search" for t in step.get("tools") or {})
             if searches and rel in schemas and not holds_urls(schemas[rel]):
                 schemas[rel] = with_sources(schemas[rel])
+            if sf and sf.get("when") and rel in schemas:
+                # the document's rule for what is worth following; without one it is asked
+                schemas[rel] = with_topics(schemas[rel], "new_topics", str(sf["when"]))
             skill_briefs[skill_rel] = _brief(
                 s, step, schemas.get(rel or ""), instr, steps_in, set(inputs), based_on
             )
@@ -553,6 +565,55 @@ def build_draft(
         schemas=schemas,
         notes=notes,
     )
+
+
+def further_options() -> list[Option]:
+    """How far a step may search further, as a choice: the numbers are the answer."""
+    return [
+        Option(
+            value={"set": further_limits(levels, total)},
+            label=f"{levels} level{'s' if levels > 1 else ''} deeper, {total} searches in all",
+            consequence=consequence,
+        )
+        for levels, total, consequence in (
+            (1, 15, "Quick and cheap: it follows what it finds once."),
+            (2, 25, "Follows what it finds, and what those turn up."),
+            (3, 50, "The most thorough, and the slowest and costliest."),
+        )
+    ]
+
+
+def _search_further(
+    step: dict[str, Any],
+    sf: dict[str, Any],
+    s: dict[str, Any],
+    assume: Any,
+    passage_text: Any,
+) -> None:
+    """Give a searching step the limits the document set for going deeper, and ask how
+    far when it set none. Each round's own search limit leaves room for the rest."""
+    given = {k: int(sf[k]) for k in ("levels", "max_searches", "max_topics") if sf.get(k)}
+    limits = further_limits(**{**FURTHER_DEFAULT, **given})
+    step["search_further"] = limits["search_further"]
+    if not step.get("tools"):
+        step["tools"] = {k: dict(v) for k, v in WEB_TOOLS.items()}
+    search = next((k for k in step["tools"] if k.split(".")[-1] == "search"), None)
+    if search is not None:
+        step["tools"][search]["max_calls"] = min(
+            step["tools"][search].get("max_calls", 25), limits["round_searches"]
+        )
+    if "levels" not in given or "max_searches" not in given:
+        f = limits["search_further"]
+        assume(
+            f"steps.{step['id']}.search_further",
+            s,
+            "",
+            f"I let it go {f['levels']} levels deeper with {f['max_searches']} searches in all, "
+            f"following up to {f['max_topics']} topics at each level.",
+            options=further_options(),
+            source=passage_text(sf.get("passage")),
+            question=f"How far may “{s['title']}” go when it searches further?",
+        )
 
 
 def _readers(sid: str, steps: list[dict[str, Any]]) -> int:

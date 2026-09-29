@@ -44,7 +44,9 @@ Settled without asking, open to change:
 - A document that gives no numbers is asked "how far may it go?" as a choice (1/2/3
   levels, 15/25/50 searches, 3 topics per level). Numbers it gives are taken.
 - `tools.search.max_calls` still caps each run of the step; `max_searches` caps them
-  all. The validator asks when the total is below one run's cap. No money budget is
+  all. A draft sets a round's cap to the total shared between the first round and each
+  level (25 searches over 2 levels: 9 a round, never below 5), so the first round
+  cannot spend it all. The validator asks when the total is below one run's cap. No money budget is
   required: the caps bound the cost.
 - The validator requires the `follow` field (a list of `{topic, why}`) and sources with
   addresses in the step's result, and adds them the way it adds `sources` today.

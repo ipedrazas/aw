@@ -61,8 +61,9 @@ guesses and says so. A real run needs every question answered.
   something out of the system needs someone to approve it first.
 - A wait: the run stops until a person does something.
 - Handing work to another workflow: the step starts a whole workflow, gives it what
-  it needs, and uses what it produces. A workflow can start itself again, which is how
-  "go deeper" research works, up to a set depth.
+  it needs, and uses what it produces. A workflow can start itself again, for a
+  separate report on each follow-up topic, up to a set depth. That is not what "go
+  deeper" usually means: see Search.
 
 ## Conditions, repeats and order
 
@@ -72,9 +73,8 @@ guesses and says so. A real run needs every question answered.
   becomes a question.
 - A step can run once for each item in a list, such as once per follow-up topic, with
   a limit on how many. The items run one after another, not at the same time.
-- Steps run in the order they are listed. Going back to an earlier step when a
-  condition is not met (a loop) is not possible yet; the usual way round it today is a
-  step that fixes the work, followed by another check.
+- Steps run in the order they are listed. A step can send the run back to an earlier
+  step when a condition about its result is met, a limited number of times.
 - Steps do not run in parallel yet.
 
 ## Models
@@ -146,6 +146,16 @@ Search looks at recent web pages and news. A step that searches can be limited t
 particular sites, or kept off particular sites, from the workflow's settings page —
 not both at once. A dry run honours the same limits: recorded fixtures are filtered
 the same way a live search would be, so it finds what a real run would.
+
+A step that searches can also search further, which is what "go deeper" means: it
+names the related topics worth following, and searches each of them in turn, in the
+same run, then what those turn up, up to a number of levels. Three things are set
+separately: how it searches (its instructions), when a topic is worth following (a
+rule of yours, such as "closely related and not already covered"), and how far it may
+go (levels, searches in all, topics per level). The limits are kept by the system, not
+by the model. Everything it finds ends up in the one result, so the report cites it
+all, and the run shows each topic it followed or left out, and why. Dry runs search
+further too.
 
 ## Connecting to your own systems
 

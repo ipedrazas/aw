@@ -14,12 +14,14 @@ from .findings import QUESTIONS, Finding, Option, make_finding, question_for
 from .semantic import validate_semantic
 from .structural import KNOWN_RUNNERS, validate_structural
 from .templates import (
+    FURTHER_DEFAULT,
     PRODUCES,
     STEP_TEMPLATES,
     WEB_TOOLS,
     StepTemplate,
     everything_before,
     follows_the_answer,
+    further_limits,
     holds_topics,
     holds_urls,
     is_workflow_input,
@@ -63,6 +65,8 @@ def validate(wf: Workflow, ws: Workspace | None = None) -> ValidationResult:
 
 
 __all__ = [
+    "FURTHER_DEFAULT",
+    "further_limits",
     "KNOWN_RUNNERS",
     "PRODUCES",
     "WEB_TOOLS",
