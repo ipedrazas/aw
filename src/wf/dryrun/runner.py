@@ -324,6 +324,7 @@ class DryRunner:
                         "error": st.error,
                         "attempts": attempts.get(st.step_id, 1),
                         "follow_ups": follow_ups.get(st.step_id, []),
+                        "parts": _parts_of(st, steps),
                         "decisions": by_step.get(st.step_id, []),
                     }
                 )
@@ -540,6 +541,33 @@ def _gate_view(
         "text": asked[-1]["text"] if asked else "",
         "reason": asked[-1]["reason"] if asked else "",
     }
+
+
+def _parts_of(parent: StepRun, steps: list[StepRun]) -> list[dict[str, Any]]:
+    """The records beneath a step's own: the items of a fan-out, or the rounds of a step
+    that searches further (with the topic each followed), each with what it spent and
+    how many searches it made. Its cost and calls are also added up on the step."""
+    if parent.fanout_index is not None:
+        return []
+    out = []
+    for st in steps:
+        if st.step_id != parent.step_id or st.fanout_index is None or st.seq <= parent.seq:
+            continue
+        further = st.input.get("further") if isinstance(st.input, dict) else None
+        out.append(
+            {
+                "index": st.fanout_index,
+                "status": st.status,
+                "cost_usd": st.cost_usd,
+                "searches": sum(1 for c in st.tool_calls or [] if c.get("name") == "search"),
+                **(
+                    {"topic": further.get("topic"), "level": further.get("level")}
+                    if isinstance(further, dict)
+                    else {}
+                ),
+            }
+        )
+    return out
 
 
 def _latest_attempts(steps: list[StepRun]) -> list[StepRun]:
