@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_pill, step_squares %}
 {% block title %}Runs{% endblock %}
-{% block bar_title %}Runs{% endblock %}
+{% block bar_title %}Runs{% if workflow %} of <span class="mono">{{ workflow }}</span> <a class="small" href="/runs">Show every run</a>{% endif %}{% endblock %}
 {% block bar_right %}<span class="muted">Spent in total: ${{ "%.2f" | format(runs | sum(attribute="cost")) }}</span>{% endblock %}
 {% block content %}
 {% set needs = runs | selectattr("status", "equalto", "waiting") | list | length %}
