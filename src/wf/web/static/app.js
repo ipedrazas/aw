@@ -398,26 +398,56 @@ function wireAnswers(base, reload) {
   });
 })();
 
-/* Run page: refresh while running, only when something changed, and never while you
-   are typing. */
+/* Run page, while it runs: the steps, the rail and what it has spent are swapped in
+   place as they change, keeping what you opened and where you are. When the run stops
+   running (done, waiting for you, paused, broken) the page is loaded again, since what
+   it offers changes; never while you are typing. */
 (function () {
   const el = document.querySelector("[data-run-refresh]"); if (!el) return;
   const id = el.dataset.runRefresh;
   const shape = d => d.status + "|" + (d.steps || []).map(s =>
-    s.step_id + ":" + s.status + ":" + (s.decisions || []).length).join(",");
+    s.step_id + ":" + s.status + ":" + (s.decisions || []).length + ":" + (s.parts || []).length).join(",");
   let seen = null;
+  const typing = () => document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+  const swap = async () => {
+    const html = await (await fetch(location.pathname)).text();
+    const next = new DOMParser().parseFromString(html, "text/html");
+    document.querySelectorAll("[data-live]").forEach(old => {
+      const fresh = next.querySelector('[data-live="' + old.dataset.live + '"]'); if (!fresh) return;
+      /* what was opened stays open: each <details> by the card it is in and its place there */
+      const key = d => (d.closest("[id]") || {}).id + "#" + Array.from((d.closest("[id]") || old).querySelectorAll("details")).indexOf(d);
+      const open = new Set(Array.from(old.querySelectorAll("details[open]")).map(key));
+      old.replaceWith(fresh);
+      fresh.querySelectorAll("details").forEach(d => { if (open.has(key(d))) d.open = true; });
+    });
+    since();
+  };
   const tick = async () => {
     try {
       const d = await (await fetch("/api/runs/" + id)).json();
       const now = shape(d);
       if (seen === null) seen = now;
-      const typing = document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-      if (now !== seen && !typing) reloadHere();
+      if (now === seen || typing()) return;
+      seen = now;
+      if (d.status !== "running") return reloadHere();
+      await swap();
     } catch (e) { /* try again next tick */ }
   };
   tick();
   setInterval(tick, 3000);
 })();
+
+/* "for 1m 12s" beside a step that is running, counted here from when it started. */
+function since() {
+  document.querySelectorAll("[data-since]").forEach(t => {
+    const iso = t.dataset.since;
+    const from = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+    const secs = Math.max(0, Math.round((Date.now() - from) / 1000));
+    t.textContent = "for " + (secs >= 60 ? Math.floor(secs / 60) + "m " : "") + (secs % 60) + "s";
+  });
+}
+since();
+setInterval(since, 1000);
 
 /* Run page: answer the step a real run is waiting at, and carry on. */
 document.querySelectorAll("form[data-answer-wait]").forEach(f => {

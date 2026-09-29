@@ -15,16 +15,16 @@
 {%- endmacro %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
-{% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
+{% block bar_right %}<span class="muted spend" data-live="spend">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }} <progress class="bar spend-bar" value="{{ [run.cost or 0, run.budget_usd] | min }}" max="{{ run.budget_usd }}" aria-label="Spent of the spending limit"></progress>{% endif %}{% if run.depth %} · follow-up, level {{ run.depth }}{% endif %}</span>{% endblock %}
 {% block content %}
 {% if run.status == "running" %}<div data-run-refresh="{{ run.id }}"></div>{% endif %}
 <div class="rail">
   <aside>
-    <ol class="railsteps">
+    <ol class="railsteps" data-live="rail">
       {% for s in run.steps %}
       <li class="{{ 'active' if s.status in ('running', 'waiting') }}">
         <span class="dot dot-{{ s.status }}">{{ '✓' if s.status == 'done' else loop.index }}</span>
-        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
+        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.status == "running" and s.started_at %} <span data-since="{{ s.started_at }}"></span>{% endif %}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
       </li>
       {% endfor %}
     </ol>
@@ -37,12 +37,10 @@
 
   <section>
     {% if run.status == "running" %}
-      <div class="banner"><span>Still running. This page refreshes on its own.</span><span>{{ status_pill(run.status) }}</span></div>
-      {% if run.mode != "dry" %}
+      <div class="banner"><span>Still running. This page updates as it goes.</span><span>{{ status_pill(run.status) }}</span></div>
       <div class="card" data-pause="{{ run.id }}">
-        <div class="actions"><button class="btn" type="button" data-then="pause">Pause</button><span data-msg class="small muted"></span></div>
+        <div class="actions"><button class="btn" type="button" data-then="pause">{{ "Stop after this step" if run.mode == "dry" else "Pause" }}</button><span class="small muted">It finishes the step it is on, then waits; you can carry it on from there.</span><span data-msg class="small muted"></span></div>
       </div>
-      {% endif %}
     {% elif run.status == "failed" %}
       <div class="banner banner-red"><span>The run stopped: {{ run.error or "a step could not finish. See the step below." }}</span><span>{{ status_pill(run.status) }}</span></div>
       <div class="card" data-retry="{{ run.id }}">
@@ -119,6 +117,7 @@
     </div>
     {% endif %}
 
+    <div data-live="steps">
     {% for s in run.steps %}
     <div class="card" id="step-{{ s.step_id }}">
       <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
@@ -200,6 +199,7 @@
     </div>
     {% endfor %}
 
+    </div>
     {% if not result_first %}{{ artefacts_card(run, rep) }}{% endif %}
   </section>
 </div>
