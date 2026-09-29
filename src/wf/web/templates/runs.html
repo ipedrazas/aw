@@ -6,12 +6,12 @@
 {% block content %}
 {% set needs = runs | selectattr("status", "equalto", "waiting") | list | length %}
 <div class="card-head">
-  <div class="tabs">
-    <button class="active" data-filter="all">All</button>
-    <button data-filter="needs">Needs you{% if needs %} {{ needs }}{% endif %}</button>
-    <button data-filter="running">Running</button>
-    <button data-filter="done">Done</button>
-    <button data-filter="stopped">Stopped</button>
+  <div class="tabs" role="tablist" aria-label="Show runs">
+    <button type="button" role="tab" aria-selected="true" class="active" data-filter="all">All</button>
+    <button type="button" role="tab" aria-selected="false" data-filter="needs">Needs you{% if needs %} {{ needs }}{% endif %}</button>
+    <button type="button" role="tab" aria-selected="false" data-filter="running">Running</button>
+    <button type="button" role="tab" aria-selected="false" data-filter="done">Done</button>
+    <button type="button" role="tab" aria-selected="false" data-filter="stopped">Stopped</button>
   </div>
   <a class="btn btn-primary" href="/workflows">Start a run</a>
 </div>

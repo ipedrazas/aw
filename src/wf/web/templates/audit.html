@@ -43,7 +43,7 @@
         {% endfor %}
       </form>
     {% else %}
-      <div class="chat" data-chat-log>
+      <div class="chat" data-chat-log role="log" aria-live="polite" aria-label="Chat about the draft">
         {% if audit.document %}<div class="msg msg-user msg-doc" title="What you first wrote">{{ audit.document }}</div>{% endif %}
         {% for m in audit.chat %}
           {% if m.asks %}
