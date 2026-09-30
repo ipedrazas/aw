@@ -129,3 +129,9 @@
     {% if not fields and not cases %}<p class="small muted" style="margin:0">This workflow takes nothing to start: it runs as it is.</p>{% endif %}
   </div>
 {%- endmacro %}
+
+{#- a moment, as "12 min ago" with the full local time on hover (app.js); the UTC time
+    stands until the script runs -#}
+{% macro when(iso) -%}
+  {%- if iso %}<time datetime="{{ iso }}" data-ago>{{ iso[:16] | replace('T', ' ') }} UTC</time>{% endif -%}
+{%- endmacro %}
