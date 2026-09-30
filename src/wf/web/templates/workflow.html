@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
+{% from "_macros.html" import status_pill, trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
 {% set s = data.summary %}
 {% block title %}{{ s.name }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
 {% block bar_right %}<span class="muted">{{ s.step_count }} steps, {{ s.model_count }} models, {{ s.skill_count }} instruction files</span>{% endblock %}
 {% block content %}
 <div class="card-head" style="margin-bottom:14px">
-  <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}</div>
+  <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}
+    {% if draft %}<p class="small" style="margin:4px 0 0"><a href="/audits/{{ draft.id }}">Edit it in the chat</a> <span class="muted">— the draft it was made from, where every change has a reason and can be undone.</span></p>{% endif %}</div>
   <div class="actions">
     {{ tech_switch() }}
     <a class="btn" href="/workflows/{{ name }}/settings">Settings</a>
@@ -90,6 +91,17 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Recent runs</h2>{% if recent %}<a class="small" href="/runs?workflow={{ name }}">All runs of this workflow</a>{% endif %}</div>
+  {% if not recent %}<p class="muted" style="margin:0">Not run yet. Try it as a dry run first: where your process is silent, it guesses, and says so.</p>{% endif %}
+  {% for r in recent %}
+  <div class="change">
+    <span><a href="/runs/{{ r.id }}">{{ r.title }}</a> <span class="small muted">{{ 'dry run' if r.mode == 'dry' else 'real run' }}{% if r.case_name %} · case: {{ r.case_name }}{% endif %}</span></span>
+    <span>{{ status_pill(r.status) }} <span class="muted small">${{ "%.2f" | format(r.total_cost) }}</span>{% if not loop.first %} <a class="small" href="/runs/{{ recent[0].id }}/diff/{{ r.id }}" title="Compare with the latest run">Compare</a>{% endif %}</span>
+  </div>
+  {% endfor %}
 </div>
 
 <div class="grid3">
