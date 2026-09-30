@@ -4,11 +4,17 @@
 {% block bar_title %}{{ audit.title if audit else "New workflow" }} <span class="muted small">{{ ("Saved" if audit.status == "saved" else "Draft, not saved") if audit else "Not started" }}</span>{% if audit and saved_as %} <a class="small" href="/workflows/{{ saved_as }}">Open the workflow</a>{% endif %}{% endblock %}
 {% block bar_right %}
   {% if audit %}
-    {{ delete_button("/api/audits/" ~ audit.id,
-        "Delete this draft? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if audit.status == "saved" else ""),
-        label="Delete draft", cls="btn btn-danger") }}
-    <button class="btn" data-save>Save draft</button>
+    {% if audit.status == "saved" %}{% if unsaved %}<span class="pill pill-yellow">Changed since it was saved</span>{% else %}<span class="small muted">Every change saved</span>{% endif %}{% endif %}
+    <button class="btn" data-save title="Commit the draft as the workflow “{{ audit.name }}”">{{ "Update the workflow" if audit.status == "saved" else "Save as a workflow" }}</button>
     <button class="btn btn-primary" data-toggle="tryform">Save and try it</button>
+    <details class="menu">
+      <summary class="btn" aria-label="More actions">More</summary>
+      <div class="menu-list">
+        {{ delete_button("/api/audits/" ~ audit.id,
+            "Delete this draft? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if audit.status == "saved" else ""),
+            label="Delete draft", cls="btn btn-danger") }}
+      </div>
+    </details>
   {% endif %}
 {% endblock %}
 {% block content %}
@@ -96,9 +102,9 @@
     <div class="card">
       <div class="card-head">
         <div><h2>What will happen</h2><p class="sub" style="margin:0">{{ audit.summary.step_count }} steps, in your words.{% if audit.summary.system_step_count %} {{ audit.summary.system_step_count }} of them {{ 'is' if audit.summary.system_step_count == 1 else 'are' }} mine, marked.{% endif %}</p></div>
-        <div class="actions"><button class="btn btn-sm" type="button" data-toggle="flowpic">Picture</button>{{ tech_switch() }}</div>
+        <div class="actions"><button class="btn btn-sm" type="button" data-toggle="flowpic" data-toggle-label="Show the picture|Hide the picture">Hide the picture</button>{{ tech_switch() }}</div>
       </div>
-      <div id="flowpic" class="hidden" style="margin-bottom:12px">
+      <div id="flowpic" style="margin-bottom:12px">
         {{ audit.diagram | safe }}
         <details class="flow-desc small"><summary>The same, in words</summary><p>{{ audit.diagram_text }}</p></details>
       </div>
@@ -126,7 +132,19 @@
       {% else %}{{ questions_summary(audit.questions) }}{% endif %}
       {% for g in audit.questions %}
         <h3 style="margin-top:14px">{{ g.title }}</h3>
-        {% for f in g.findings %}{{ question(f, audit.id) }}{% endfor %}
+        {% for f in g.findings %}
+        {# one line per question; the chat asks it, or the form opens here #}
+        <div class="q-row" id="q-{{ f.id }}">
+          <div class="qtext">{{ f.question }}</div>
+          <div class="small muted">{% if f.step_title %}{{ f.step_title }}{% endif %}{% if f.similar %}{{ " · " if f.step_title }}and {{ f.similar | length }} more step{{ "s" if f.similar | length != 1 }}{% endif %}</div>
+          <div class="actions">
+            {% if audit.asking == f.id %}<span class="pill pill-blue">The chat is asking this now</span>
+            {% else %}<button class="btn btn-sm btn-primary" type="button" data-ask-in-chat="{{ f.id }}">Ask me in the chat</button>{% endif %}
+            <details class="q-here"><summary class="small">Answer here instead</summary>{{ question(f, audit.id, chat=False, prefix="list-") }}</details>
+            <span data-msg class="small muted"></span>
+          </div>
+        </div>
+        {% endfor %}
       {% endfor %}
       {% if audit.answered %}
         <details style="margin-top:14px"><summary>Answered or closed ({{ audit.answered | length }})</summary>
