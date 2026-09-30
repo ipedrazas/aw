@@ -6,6 +6,7 @@ import copy
 import os
 import threading
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -1181,7 +1182,25 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request) -> Any:
-        return RedirectResponse("/workflows")
+        """What needs you: runs waiting on you, drafts with questions left, the latest
+        runs and what this week has cost. Straight to the workflows when there is none."""
+        runs = st().runner.list_runs(None, limit=200)
+        audits = st().audits.list()
+        if not runs and not audits:
+            return RedirectResponse("/workflows")
+        week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        this_week = [
+            r for r in runs if not r["parent_run_id"] and (r["started_at"] or "") >= week_ago[:19]
+        ]
+        return page(
+            request,
+            "home",
+            waiting=[r for r in runs if r["status"] in ("waiting", "paused", "paused_budget")],
+            drafts=[a for a in audits if a["open"] and a["status"] != "saved"],
+            recent=[r for r in runs if not r["parent_run_id"]][:6],
+            week_cost=sum(r["total_cost"] for r in this_week),
+            week_runs=len(this_week),
+        )
 
     @app.get("/workflows", response_class=HTMLResponse)
     def workflows_page(request: Request) -> Any:
@@ -1359,7 +1378,7 @@ def _section(path: str) -> str:
     """Which part of the nav a page belongs to: a workflow's settings are the workflow's,
     a draft is a workflow being made, one instruction file is among the instructions."""
     first = path.strip("/").split("/")[0]
-    return {"audits": "workflows", "skill": "skills", "": "workflows"}.get(first, first)
+    return {"audits": "workflows", "skill": "skills", "": "home"}.get(first, first)
 
 
 def _needs_you(state: AppState) -> int:

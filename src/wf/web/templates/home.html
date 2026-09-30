@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, step_squares %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>What needs you</h1>
+<p class="sub">Runs waiting on you first, then drafts with questions left, then what ran lately.</p>
+
+<div class="grid3">
+  <div class="card"><h3>Waiting on you</h3><p class="stat">{{ waiting | length }}</p><p class="small muted" style="margin:0">{{ "run is" if waiting | length == 1 else "runs are" }} stopped for your OK, an answer, or to be carried on.</p></div>
+  <div class="card"><h3>Drafts with questions</h3><p class="stat">{{ drafts | length }}</p><p class="small muted" style="margin:0">{{ drafts | sum(attribute="open") }} question{{ "s" if drafts | sum(attribute="open") != 1 }} left between them.</p></div>
+  <div class="card"><h3>This week</h3><p class="stat">${{ "%.2f" | format(week_cost) }}</p><p class="small muted" style="margin:0">spent on {{ week_runs }} run{{ "s" if week_runs != 1 }}, follow-ups included.</p></div>
+</div>
+
+{% if waiting %}
+<div class="card">
+  <h2>Waiting on you</h2>
+  {% for r in waiting %}
+  <div class="change"><span><a href="/runs/{{ r.id }}"><strong>{{ r.title }}</strong></a> <span class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else 'real run' }}</span></span><span>{{ status_pill(r.status) }}</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if drafts %}
+<div class="card">
+  <h2>Drafts with questions left</h2>
+  {% for a in drafts %}
+  <div class="change"><span><a href="/audits/{{ a.id }}"><strong>{{ a.title or a.name }}</strong></a> <span class="small muted">{{ a.steps }} steps</span></span><span class="pill pill-yellow">{{ a.open }} question{{ "s" if a.open != 1 }}</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h2>Lately</h2><a class="small" href="/runs">Every run</a></div>
+  {% if not recent %}<p class="muted" style="margin:0">Nothing has run yet. <a href="/workflows">Open a workflow</a> and try it as a dry run.</p>{% endif %}
+  {% for r in recent %}
+  <div class="change"><span><a href="/runs/{{ r.id }}">{{ r.title }}</a> <span class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else 'real run' }}</span></span><span>{{ step_squares(r.steps) }} {{ status_pill(r.status) }} <span class="small muted">${{ "%.2f" | format(r.total_cost) }}</span></span></div>
+  {% endfor %}
+</div>
+{% endblock %}
