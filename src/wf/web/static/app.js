@@ -545,42 +545,46 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   });
 });
 
-/* Workflow settings: each form saves one setting, and the page shows the result. */
+/* Workflow settings: each form saves one setting, and says what happened beside the
+   button that was pressed (the page's own line is off screen by the spending limit). */
 (function () {
   const root = document.querySelector("[data-settings]"); if (!root) return;
   const url = "/api/workflows/" + encodeURIComponent(root.dataset.settings) + "/settings";
   const msg = root.querySelector("[data-msg]");
-  const save = async (body) => {
-    say(msg, "Saving…");
-    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
+  const save = async (body, near) => {
+    const at = (near && (near.querySelector("[data-msg]") || near.closest("form, td, p")?.querySelector("[data-msg]"))) || msg;
+    say(at, "Saving…");
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(at, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
   trust.addEventListener("submit", e => {
     e.preventDefault();
     const c = trust.querySelector("input[name=policy]:checked");
-    if (!c) return say(msg, "Pick one first.", true);
-    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}});
+    if (!c) return say(trust.querySelector("[data-msg]"), "Pick one first.", true);
+    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}}, trust);
   });
   root.querySelectorAll("select[data-step-trust]").forEach(sel => sel.addEventListener("change", () =>
-    save({step: sel.dataset.stepTrust, trust: sel.value ? {policy: sel.value} : null})));
+    save({step: sel.dataset.stepTrust, trust: sel.value ? {policy: sel.value} : null}, sel.closest("td"))));
   const reset = root.querySelector("[data-reset-steps]");
   if (reset) reset.addEventListener("click", () => save({reset_steps: true}));
+  /* "Use that here": the setting new workflows start from, for this one */
+  root.querySelectorAll("[data-use-app]").forEach(b => b.addEventListener("click", () => save(JSON.parse(b.dataset.useApp), b.closest(".card").querySelector("form"))));
   const budget = root.querySelector("form[data-budget]");
-  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}); });
+  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}, budget); });
   root.querySelectorAll("form[data-who-decides]").forEach(f => f.addEventListener("submit", e => {
     e.preventDefault();
     const c = f.querySelector("input[name=asks]:checked");
-    if (!c) return say(msg, "Pick one first.", true);
-    save({step: f.dataset.whoDecides, trust: {policy: c.value}});
+    if (!c) return say(f.querySelector("[data-msg]"), "Pick one first.", true);
+    save({step: f.dataset.whoDecides, trust: {policy: c.value}}, f);
   }));
   root.querySelectorAll("form[data-limits]").forEach(f => f.addEventListener("submit", e => {
-    e.preventDefault(); save({step: f.dataset.limits, limits: {max_fanout: num(f, "max_fanout"), max_depth: num(f, "max_depth")}});
+    e.preventDefault(); save({step: f.dataset.limits, limits: {max_fanout: num(f, "max_fanout"), max_depth: num(f, "max_depth")}}, f);
   }));
   const lines = (form, name) => form.querySelector("[name=" + name + "]").value.split("\n").map(s => s.trim()).filter(Boolean);
   root.querySelectorAll("form[data-domains]").forEach(f => f.addEventListener("submit", e => {
     e.preventDefault();
-    save({step: f.dataset.domains, domains: {include_domains: lines(f, "include_domains"), exclude_domains: lines(f, "exclude_domains")}});
+    save({step: f.dataset.domains, domains: {include_domains: lines(f, "include_domains"), exclude_domains: lines(f, "exclude_domains")}}, f);
   }));
 })();
 
@@ -589,22 +593,23 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   const root = document.querySelector("[data-app-settings]"); if (!root) return;
   const url = "/api/settings";
   const msg = root.querySelector("[data-msg]");
-  const save = async (body) => {
-    say(msg, "Saving…");
-    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
+  const save = async (body, form) => {
+    const at = (form && form.querySelector("[data-msg]")) || msg;
+    say(at, "Saving…");
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(at, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
   trust.addEventListener("submit", e => {
     e.preventDefault();
     const c = trust.querySelector("input[name=policy]:checked");
-    if (!c) return say(msg, "Pick one first.", true);
-    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}});
+    if (!c) return say(trust.querySelector("[data-msg]"), "Pick one first.", true);
+    save({trust: {policy: c.value, promote_after: num(trust, "promote_after")}}, trust);
   });
   const model = root.querySelector("form[data-model-default]");
-  model.addEventListener("submit", e => { e.preventDefault(); save({model: model.querySelector("[name=model]").value || null}); });
+  model.addEventListener("submit", e => { e.preventDefault(); save({model: model.querySelector("[name=model]").value || null}, model); });
   const budget = root.querySelector("form[data-budget]");
-  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}); });
+  budget.addEventListener("submit", e => { e.preventDefault(); save({budget: {max_usd: num(budget, "max_usd"), max_minutes: num(budget, "max_minutes")}}, budget); });
 })();
 
 /* Run page: say OK to the step a real run stopped after, or stop it there. */

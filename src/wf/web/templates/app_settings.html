@@ -20,7 +20,7 @@
         <div class="cons">{{ c.consequence }}</div></span></label>
       {% endfor %}
     </div>
-    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button><span data-msg class="small"></span></div>
   </form>
 </div>
 
@@ -33,16 +33,18 @@
       {% for m in data.models %}<option value="{{ m.value }}"{% if m.value == data.model %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
     </select>
     <button class="btn btn-primary" type="submit">Save</button>
+    <span data-msg class="small"></span>
   </form>
 </div>
 
 <div class="card">
   <h2>Spending limit</h2>
-  <p class="sub">The most one run of a new workflow may spend, follow-up research included, unless its own settings say otherwise.</p>
+  <p class="sub">The most one run of a new workflow may spend, follow-up research included, unless its own settings say otherwise. Leave a box blank for no limit on it.</p>
   <form data-budget class="actions">
     <label>$ <input type="number" name="max_usd" min="0.5" step="0.5" style="width:6em" value="{{ data.budget.max_usd if data.budget and data.budget.max_usd }}" aria-label="Money"></label>
     <label>and <input type="number" name="max_minutes" min="1" step="1" style="width:6em" value="{{ data.budget.max_minutes if data.budget and data.budget.max_minutes }}" aria-label="Minutes"> minutes</label>
     <button class="btn btn-primary" type="submit">Save</button>
+    <span data-msg class="small"></span>
   </form>
 </div>
 </div>

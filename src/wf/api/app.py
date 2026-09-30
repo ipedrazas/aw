@@ -1489,6 +1489,8 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
         "steps": steps,
         "own_count": sum(1 for s in steps if s["own"] and s["stops"]),
         "budget": wf.spec.budget.model_dump(exclude_none=True) if wf.spec.budget else None,
+        # what a new workflow starts from, to set this one back to it
+        "app": _app_settings_view(state),
         "followups": [
             {
                 "id": s.id,

@@ -22,7 +22,12 @@
         <div class="cons">{{ c.consequence }}</div></span></label>
       {% endfor %}
     </div>
-    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button><span data-msg class="small"></span></div>
+    {% set app_trust = data.app.trust %}
+    {% set app_label = (data.choices | selectattr("policy", "equalto", app_trust.policy) | first).label %}
+    <p class="small muted" style="margin:8px 0 0">New workflows start from “{{ app_label }}”{% if app_trust.policy == "earned" %}, after {{ app_trust.promote_after or 3 }} OKs{% endif %}.
+    {% if not data.trust or data.trust.policy != app_trust.policy or (app_trust.policy == "earned" and data.trust.promote_after != app_trust.promote_after) %}<button class="btn btn-sm" type="button" data-use-app='{{ {"trust": {"policy": app_trust.policy, "promote_after": app_trust.promote_after if app_trust.policy == "earned" else none}} | tojson }}'>Use that here</button>{% endif %}
+    <a href="/settings">Change it for new workflows</a></p>
   </form>
 
   <h3 style="margin-top:18px">Step by step</h3>
@@ -40,6 +45,7 @@
           <option value=""{% if not st.own %} selected{% endif %}>As the workflow</option>
           {% for c in data.choices %}<option value="{{ c.policy }}"{% if st.own == c.policy %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
         </select>
+        <div data-msg class="small"></div>
         <div class="small muted">{{ st.detail }}</div>
         {% else %}{{ trust_pill(st.label) }}<div class="small muted">{{ st.detail }}</div>{% endif %}
       </td>
@@ -52,12 +58,17 @@
 
 <div class="card">
   <h2>Spending limit</h2>
-  <p class="sub">The most one run may spend, follow-up research included. A run that reaches it stops there.</p>
+  <p class="sub">The most one run may spend, follow-up research included. A run that reaches it stops there. Leave a box blank for no limit on it.</p>
   <form data-budget class="actions">
     <label>$ <input type="number" name="max_usd" min="0.5" step="0.5" style="width:6em" value="{{ data.budget.max_usd if data.budget and data.budget.max_usd }}" aria-label="Money"></label>
     <label>and <input type="number" name="max_minutes" min="1" step="1" style="width:6em" value="{{ data.budget.max_minutes if data.budget and data.budget.max_minutes }}" aria-label="Minutes"> minutes</label>
     <button class="btn btn-primary" type="submit">Save</button>
+    <span data-msg class="small"></span>
   </form>
+  {% set ab = data.app.budget or {} %}
+  {% set wb = data.budget or {} %}
+  <p class="small muted" style="margin:8px 0 0">New workflows start with {% if ab.max_usd or ab.max_minutes %}{% if ab.max_usd %}${{ ab.max_usd }}{% else %}no money limit{% endif %} and {% if ab.max_minutes %}{{ ab.max_minutes }} minutes{% else %}no time limit{% endif %}{% else %}no limit{% endif %}.
+  {% if (ab.max_usd, ab.max_minutes) != (wb.max_usd, wb.max_minutes) and (ab.max_usd or ab.max_minutes) %}<button class="btn btn-sm" type="button" data-use-app='{{ {"budget": {"max_usd": ab.max_usd, "max_minutes": ab.max_minutes}} | tojson }}'>Use that here</button>{% endif %}</p>
 </div>
 
 {% for s in data.search_steps %}
@@ -67,7 +78,7 @@
   <form data-domains="{{ s.id }}">
     <p><label>Search only these sites<br><textarea name="include_domains" rows="3" placeholder="wikipedia.org" aria-label="Sites to search only">{{ s.include_domains | join('\n') }}</textarea></label></p>
     <p><label>But not these sites<br><textarea name="exclude_domains" rows="3" placeholder="pinterest.com" aria-label="Sites to leave out">{{ s.exclude_domains | join('\n') }}</textarea></label></p>
-    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button><span data-msg class="small"></span></div>
   </form>
 </div>
 {% endfor %}
@@ -86,13 +97,14 @@
     </div>
     {% if f.asks == "earned" %}<p class="small muted">Now: it asks until you have said yes enough times in a row, then decides by itself.</p>{% endif %}
     {% if f.wait %}<p class="small muted">This workflow also asks you at “{{ f.wait }}” whether to go deeper and into what. That is a step of its own: to stop being asked there, ask the chat on its draft to remove that step.</p>{% endif %}
-    <div class="actions"><button class="btn btn-primary" type="submit">Save</button></div>
+    <div class="actions"><button class="btn btn-primary" type="submit">Save</button><span data-msg class="small"></span></div>
   </form>
   <h3 style="margin-top:14px">How far it can go</h3>
   <form data-limits="{{ f.id }}" class="actions">
     <label>Up to <input type="number" name="max_fanout" min="1" max="10" style="width:4.5em" value="{{ f.max_fanout or '' }}" aria-label="Follow-ups"> follow-ups</label>
     <label>, <input type="number" name="max_depth" min="1" max="5" style="width:4.5em" value="{{ f.max_depth or '' }}" aria-label="Levels"> level(s) deep</label>
     <button class="btn btn-primary" type="submit">Save</button>
+    <span data-msg class="small"></span>
   </form>
   <p class="small muted" style="margin:6px 0 0">One level: follow-ups cannot start follow-ups of their own. Two: each can start its own, within the same limits.</p>
 </div>
