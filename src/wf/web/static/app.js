@@ -19,7 +19,10 @@ const kept = {
 };
 function say(el, text, isError) {
   if (!el) { if (isError) toast(text); return; }
-  el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
+  el.textContent = text;
+  el.classList.add("small");
+  el.classList.toggle("muted", !isError);
+  el.classList.toggle("msg-error", !!isError);
 }
 
 /* A question in the page, in place of the browser's confirm/prompt: each button says
@@ -78,6 +81,42 @@ function toast(text) {
   setTimeout(() => t.remove(), 6000);
   t.addEventListener("click", () => t.remove());
 }
+
+/* Reload the page and come back to where you were. Not by pixels, which the browser
+   does already and which go wrong when what is above you changes (an answered question
+   leaves the list): by the element at the top of the window and how far down it sat,
+   with the next few as fallbacks, for when that one has gone. */
+function reloadHere() {
+  const marks = Array.from(document.querySelectorAll("main [id]")).filter(el => el.offsetParent !== null);
+  /* the first that starts inside the window: a card holding it starts above, so the
+     question itself is chosen, not the card around it */
+  let at = marks.findIndex(el => el.getBoundingClientRect().top >= 0);
+  if (at < 0) at = marks.map(el => el.getBoundingClientRect().bottom > 0).lastIndexOf(true);
+  if (at >= 0 && window.scrollY > 0) {
+    const place = {ids: marks.slice(at, at + 8).map(el => el.id), top: marks[at].getBoundingClientRect().top};
+    try { sessionStorage.setItem("place:" + location.pathname, JSON.stringify(place)); } catch (e) { /* private mode */ }
+  }
+  location.reload();
+}
+(function () {
+  const key = "place:" + location.pathname;
+  let place = null;
+  try { place = JSON.parse(sessionStorage.getItem(key) || "null"); sessionStorage.removeItem(key); } catch (e) { return; }
+  if (!place || location.hash) return;
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  const back = () => {
+    const el = place.ids.map(id => document.getElementById(id)).find(x => x && x.offsetParent !== null);
+    if (el) window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - place.top);
+  };
+  back();
+  window.addEventListener("load", back, {once: true});
+})();
+/* Every place a page says what happened ("Saving…", an error) is read out when it
+   changes, without taking the focus from where you are. */
+document.querySelectorAll("[data-msg]").forEach(el => {
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+});
 
 /* Technical details switch, remembered per browser. */
 (function () {
@@ -258,7 +297,7 @@ function wireAnswers(base, reload) {
 /* Workflow page: answer the questions still open on a saved workflow. */
 (function () {
   const root = document.querySelector("[data-workflow-answers]"); if (!root) return;
-  wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => location.reload());
+  wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => reloadHere());
 })();
 
 /* Workflow page: the model each step runs on and the default for the rest, and the
@@ -277,7 +316,7 @@ function wireAnswers(base, reload) {
       sel.value = sel.dataset.was; return;
     }
     say(msg, "Saving…");
-    try { await postJSON(base + "/" + (what === "model" ? "model" : "skill"), body); location.reload(); }
+    try { await postJSON(base + "/" + (what === "model" ? "model" : "skill"), body); reloadHere(); }
     catch (err) { sel.value = sel.dataset.was; say(msg, err.message, true); }
   };
   const d = root.querySelector("[data-model-default]"); d.dataset.was = d.value;
@@ -318,7 +357,7 @@ function wireAnswers(base, reload) {
      save are kept on the server at once, and the page refreshes when the chat is done. */
   let chatting = false;
   const reload = (msg) => {
-    if (!chatting) return location.reload();
+    if (!chatting) return reloadHere();
     say(msg, "Saved. The page updates when the chat answers.");
   };
 
@@ -381,7 +420,7 @@ function wireAnswers(base, reload) {
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
       box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true; kept.drop(keyChat);
-      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; location.reload(); }
+      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; reloadHere(); }
       catch (err) {
         chatting = false;
         typing.remove(); box.value = text; grow(); box.readOnly = false; keep();
@@ -463,7 +502,7 @@ function wireAnswers(base, reload) {
       const now = shape(d);
       if (seen === null) seen = now;
       const typing = document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-      if (now !== seen && !typing) location.reload();
+      if (now !== seen && !typing) reloadHere();
     } catch (e) { /* try again next tick */ }
   };
   tick();
@@ -488,7 +527,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
     try {
       await postJSON("/api/runs/" + f.dataset.answerWait + "/answer",
         {go_deeper: deeper, topics: list, note: (f.querySelector("[name=note]") || {}).value || ""});
-      location.reload();
+      reloadHere();
     } catch (err) { say(msg, err.message, true); }
   });
 });
@@ -500,7 +539,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   const msg = root.querySelector("[data-msg]");
   const save = async (body) => {
     say(msg, "Saving…");
-    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
@@ -539,7 +578,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   const msg = root.querySelector("[data-msg]");
   const save = async (body) => {
     say(msg, "Saving…");
-    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
@@ -564,7 +603,7 @@ document.querySelectorAll("form[data-ok]").forEach(f => {
     say(msg, ok ? "Carrying on…" : "Stopping…");
     try {
       await postJSON("/api/runs/" + f.dataset.ok + "/ok", {ok: ok, note: (f.querySelector("[name=note]") || {}).value || ""});
-      location.reload();
+      reloadHere();
     } catch (err) { f.querySelectorAll("button").forEach(b => b.disabled = false); say(msg, err.message, true); }
   });
 });
@@ -576,7 +615,7 @@ document.querySelectorAll("[data-retry]").forEach(box => {
     const then = btn.dataset.then;
     btns.forEach(b => b.disabled = true);
     say(msg, then === "skip" ? "Carrying on without it…" : "Picking it up…");
-    try { await postJSON("/api/runs/" + box.dataset.retry + "/" + then, {}); location.reload(); }
+    try { await postJSON("/api/runs/" + box.dataset.retry + "/" + then, {}); reloadHere(); }
     catch (err) { btns.forEach(b => b.disabled = false); say(msg, err.message, true); }
   }));
 });
@@ -588,22 +627,32 @@ document.querySelectorAll("[data-pause]").forEach(box => {
     const then = btn.dataset.then;
     btns.forEach(b => b.disabled = true);
     say(msg, then === "carry-on" ? "Carrying on…" : "Pausing…");
-    try { await postJSON("/api/runs/" + box.dataset.pause + "/" + then, {}); location.reload(); }
+    try { await postJSON("/api/runs/" + box.dataset.pause + "/" + then, {}); reloadHere(); }
     catch (err) { btns.forEach(b => b.disabled = false); say(msg, err.message, true); }
   }));
 });
 
-/* Runs list: filter tabs and compare. */
+/* Runs list: filter tabs and compare. The filter is kept in the address (?status=), so
+   a reload or a shared link shows the same runs. */
 (function () {
   const tabs = document.querySelectorAll("[data-filter]"); if (!tabs.length) return;
-  tabs.forEach(t => t.addEventListener("click", () => {
-    tabs.forEach(x => x.classList.remove("active")); t.classList.add("active");
+  const show = (t) => {
+    tabs.forEach(x => { x.classList.toggle("active", x === t); x.setAttribute("aria-selected", x === t ? "true" : "false"); });
     const want = t.dataset.filter;
     document.querySelectorAll("tr[data-status]").forEach(row => {
       const s = row.dataset.status, group = s === "done" ? "done" : s === "running" ? "running" : s === "waiting" ? "needs" : "stopped";
       row.classList.toggle("hidden", want !== "all" && group !== want);
     });
+  };
+  tabs.forEach(t => t.addEventListener("click", () => {
+    show(t);
+    const url = new URL(location.href);
+    if (t.dataset.filter === "all") url.searchParams.delete("status"); else url.searchParams.set("status", t.dataset.filter);
+    history.replaceState(null, "", url);
   }));
+  const asked = new URLSearchParams(location.search).get("status");
+  const first = Array.from(tabs).find(t => t.dataset.filter === asked);
+  if (first) show(first);
   const cmp = document.querySelector("form[data-compare]");
   if (cmp) cmp.addEventListener("submit", e => {
     e.preventDefault();
@@ -636,3 +685,43 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     } catch (err) { say(msg, err.message, true); b.disabled = false; }
   });
 });
+
+/* Times: "12 min ago", with the full time where you are on hover. A time stored without
+   a zone (SQLite drops it) is UTC, as every time here is written. */
+(function () {
+  const ago = new Intl.RelativeTimeFormat(undefined, {numeric: "auto"});
+  const full = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+  const steps = [[60, "second"], [60, "minute"], [24, "hour"], [7, "day"], [4.35, "week"], [12, "month"], [Infinity, "year"]];
+  document.querySelectorAll("time[data-ago]").forEach(t => {
+    const iso = t.getAttribute("datetime");
+    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+    if (isNaN(d)) return;
+    let n = (d - Date.now()) / 1000, unit = "second";
+    for (const [size, name] of steps) { unit = name; if (Math.abs(n) < size) break; n /= size; }
+    t.textContent = Math.abs(n) < 45 && unit === "second" ? "just now" : ago.format(Math.round(n), unit);
+    t.title = full.format(d);
+  });
+})();
+
+/* Run page: run it again as a dry run, with the same case or inputs, to see whether the
+   questions answered since closed the gaps it guessed at. */
+document.querySelectorAll("[data-rerun]").forEach(box => {
+  const btn = box.querySelector("button"), msg = box.querySelector("[data-msg]");
+  btn.addEventListener("click", async () => {
+    const was = JSON.parse(box.dataset.rerunBody);
+    const body = was.case ? {case: was.case, mode: "dry"} : {inputs: was.inputs, mode: "dry"};
+    btn.disabled = true; say(msg, "Starting…");
+    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(box.dataset.rerun) + "/runs", body); location.href = "/runs/" + d.run_id; }
+    catch (err) { btn.disabled = false; say(msg, err.message, true); }
+  });
+});
+
+/* Arriving at a question by its link (#q-…): show which one. A question answered together
+   with another has no place of its own, so fall back to the list it would be in. */
+(function () {
+  if (!location.hash.startsWith("#q-")) return;
+  const t = document.getElementById(location.hash.slice(1)) || document.getElementById("questions");
+  if (!t) return;
+  t.scrollIntoView({block: "center"});
+  t.classList.add("q-target"); setTimeout(() => t.classList.remove("q-target"), 2500);
+})();
