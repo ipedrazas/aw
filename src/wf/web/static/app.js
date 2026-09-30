@@ -479,10 +479,10 @@ function wireAnswers(base, reload) {
   };
   let open = [];
   try { open = JSON.parse(sessionStorage.getItem(key) || "[]"); } catch (e) { open = []; }
-  document.querySelectorAll("details").forEach(d => {
+  document.querySelectorAll("details:not(.menu)").forEach(d => {
     if (open.includes(id(d))) d.open = true;
     d.addEventListener("toggle", () => {
-      const now = Array.from(document.querySelectorAll("details")).filter(x => x.open).map(id);
+      const now = Array.from(document.querySelectorAll("details:not(.menu)")).filter(x => x.open).map(id);
       try { sessionStorage.setItem(key, JSON.stringify(now)); } catch (e) { /* private mode */ }
     });
   });
@@ -684,6 +684,14 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
       location.href = f.dataset.after;
     } catch (err) { say(msg, err.message, true); b.disabled = false; }
   });
+});
+
+/* "More" menus: close on a click anywhere else, on Escape, and once something in them
+   is chosen. */
+document.querySelectorAll("details.menu").forEach(m => {
+  document.addEventListener("click", e => { if (m.open && !m.contains(e.target)) m.open = false; });
+  m.addEventListener("keydown", e => { if (e.key === "Escape" && m.open) { m.open = false; m.querySelector("summary").focus(); } });
+  m.querySelectorAll(".menu-list button").forEach(b => b.addEventListener("click", () => { m.open = false; }));
 });
 
 /* Times: "12 min ago", with the full time where you are on hover. A time stored without
