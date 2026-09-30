@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -134,12 +135,21 @@ class Auditor:
 
     # -- the audit path ------------------------------------------------------
 
-    def audit(self, document: str, name: str | None = None) -> AuditResult:
+    def audit(
+        self,
+        document: str,
+        name: str | None = None,
+        progress: Callable[[str], None] | None = None,
+    ) -> AuditResult:
+        """``progress`` is told each stage as it starts ("extract", "skills", "check"),
+        for a page to say what is happening during the minute this can take."""
+        said = progress or (lambda stage: None)
         passages = ingest(document)
         caps = capabilities(self.ws, exclude=name)
         workflows = caps["workflows"]
         req = extraction_request(passages, self.extraction_model, name_hint=name, capabilities=caps)
         with session_span("audit", name=name or "", title=_first_line(document)) as span:
+            said("extract")
             resp = run_with_policy(self.policy, lambda: self.model.complete(req))
             extracted = normalise(resp, name)
             draft = build_draft(
@@ -150,6 +160,7 @@ class Auditor:
                 app_settings=self.ws.load_app_settings(),
             )
             if self.writes_skills:
+                said("skills")
                 # one step at a time: the calls land in this session in the order of the steps
                 write_skills(
                     draft,
@@ -160,6 +171,7 @@ class Auditor:
                     shown=examples(self.ws),
                 )
             session_id = span.id
+        said("check")
         result = self.finish(draft, passages, explanations=list(resp.decisions))
         result.session_id = session_id
         return result

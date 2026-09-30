@@ -43,6 +43,13 @@
           {% for d in docs %}{% if loop.first %}<button class="btn" type="button" data-sample="doc-{{ loop.index }}">Use the sample document</button>{% endif %}{% endfor %}
           <span data-msg class="small muted"></span>
         </div>
+        <ol class="stages hidden" data-stages aria-live="polite">
+          <li data-stage="read">Reading what you wrote</li>
+          <li data-stage="extract">Drafting the steps</li>
+          <li data-stage="skills">Writing each step's instructions</li>
+          <li data-stage="check">Finding what it leaves unsaid</li>
+          <li data-stage="triage">Sorting the questions to ask you</li>
+        </ol>
         {% for d in docs %}
           {% if loop.first and d.constructed %}<p class="small muted">The sample is a constructed example for the demo, not a customer document.</p>{% endif %}
           <textarea class="hidden" id="doc-{{ loop.index }}">{{ d.text }}</textarea>
