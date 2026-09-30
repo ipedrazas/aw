@@ -68,3 +68,24 @@ def test_a_finished_run_says_done_not_that_a_pdf_is_ready(client):  # noqa: F811
     r = client.post("/api/workflows/deep-research/runs", json={"case": "durable-execution"})
     wait_for(client, r.json()["run_id"])
     assert "PDF ready" not in client.get("/runs").text
+
+
+def test_a_real_run_cannot_be_started_while_questions_are_open(client):  # noqa: F811
+    from tests.test_audit import DOC
+
+    audit = client.post(
+        "/api/audits", json={"document": DOC.read_text(), "name": "client-research"}
+    ).json()
+    client.post(f"/api/audits/{audit['id']}/save")
+    page = client.get("/workflows/client-research").text
+    assert 'value="live" disabled aria-describedby="live-why"' in page
+    assert 'href="#questions" data-goto="questions"' in page
+    ready = client.get("/workflows/deep-research").text
+    assert 'value="live">Run it for real' in ready, "nothing open, so nothing stops it"
+
+
+def test_rarely_used_actions_are_in_a_menu(client):  # noqa: F811
+    page = client.get("/workflows/deep-research").text
+    menu = page[page.index('<details class="menu">') : page.index("</details>")]
+    assert "Delete workflow" in menu and "Rename" in menu and "Show the YAML" in menu
+    assert page.index("How it flows") < page.index("data-model-default")
