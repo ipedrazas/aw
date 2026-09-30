@@ -504,6 +504,9 @@ class Interpreter:
         result.error = error
         result.spent_usd = budget.spent_usd if depth == 0 else ctx.own_spend
         result.spent_minutes = budget.spent_minutes
+        # scored before the run says it has finished, so a page that sees it finished
+        # sees how it went against what was expected too; again on a run carried on
+        self._score_expectations(run, state)
         self.ledger.finish_run(
             run,
             status=status,
@@ -514,6 +517,24 @@ class Interpreter:
         )
         self.last_result = result
         return result
+
+    def _score_expectations(self, run: Run, state: dict[str, Any]) -> None:
+        """Mark each thing the case expected as matched or not, from where the run is."""
+        from wf.dryrun.divergence import evaluate_expectations  # wf.dryrun imports this module
+        from wf.store.records import Expectation
+
+        for row in self.ledger.session.query(Expectation).filter_by(run_id=run.id).all():
+            (res,) = evaluate_expectations(
+                state,
+                [
+                    {
+                        "step": row.step_id,
+                        "field": row.field,
+                        "equals": (row.equals or {}).get("value"),
+                    }
+                ],
+            )
+            self.ledger.set_expectation_result(row, res.matched, res.actual)
 
     # -- steps -------------------------------------------------------------
 

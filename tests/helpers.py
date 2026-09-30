@@ -82,6 +82,21 @@ def make_db():
     return db
 
 
+#: The threads the app starts for work in the background (wf.api.app).
+BACKGROUND = ("run-", "carry-on-", "retry-", "resume-", "ok-", "draft-")
+
+
+def wait_for_background(timeout: float = 20.0) -> None:
+    """Let the app's background work finish. A run says it is done a moment before its
+    thread has stopped writing; closing every session under it then breaks a commit
+    in flight (IllegalStateChangeError at teardown)."""
+    import threading
+
+    for t in threading.enumerate():
+        if t is not threading.current_thread() and t.name.startswith(BACKGROUND):
+            t.join(timeout)
+
+
 def close_dbs() -> None:
     """Close what a test left open and let go of its databases' connections: an engine
     keeps its pool open until it is collected, and Postgres takes 100 clients."""
@@ -89,6 +104,7 @@ def close_dbs() -> None:
         return
     from sqlalchemy.orm import close_all_sessions
 
+    wait_for_background()
     close_all_sessions()
     while _made:
         db, folder = _made.pop()

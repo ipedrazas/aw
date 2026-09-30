@@ -25,7 +25,7 @@ from wf.store.ledger import Ledger
 from wf.validate import Finding, validate
 
 from .diff import RunDiff, diff_runs
-from .divergence import ExpectationResult, evaluate_expectations, first_divergence
+from .divergence import ExpectationResult, first_divergence
 
 
 class DryRunReport(BaseModel):
@@ -167,7 +167,6 @@ class DryRunner:
                 case_name=case_name,
                 title=title,
             )
-            self._record_expectations(ledger, result, expectation or [])
         finally:
             ledger.close()
         return self.report(result.run_id, findings=findings, result=result)
@@ -183,7 +182,6 @@ class DryRunner:
             wf = self.ws.load_definition(run.workflow_name)
             interp = Interpreter(self.ws, self.activities, ledger, self.config)
             result = interp.skip(run, wf) if skip else interp.retry(run, wf)
-            self.rescore_expectations(ledger, result)
         finally:
             ledger.close()
         return self.report(run_id, result=result)
@@ -221,36 +219,9 @@ class DryRunner:
             wf = self.ws.load_definition(run.workflow_name)
             interp = Interpreter(self.ws, self.activities, ledger, self.config)
             result = interp.carry_on_paused(run, wf)
-            self.rescore_expectations(ledger, result)
         finally:
             ledger.close()
         return self.report(run_id, result=result)
-
-    def rescore_expectations(self, ledger: Ledger, result: RunResult) -> None:
-        """Score a run's expectations again, against where it ended this time."""
-        rows = ledger.session.query(Expectation).filter_by(run_id=result.run_id).all()
-        for row in rows:
-            (res,) = evaluate_expectations(
-                result.state,
-                [
-                    {
-                        "step": row.step_id,
-                        "field": row.field,
-                        "equals": (row.equals or {}).get("value"),
-                    }
-                ],
-            )
-            ledger.set_expectation_result(row, res.matched, res.actual)
-
-    def _record_expectations(
-        self, ledger: Ledger, result: RunResult, expectation: list[dict[str, Any]]
-    ) -> None:
-        if not expectation:
-            return
-        results = evaluate_expectations(result.state, expectation)
-        rows = ledger.session.query(Expectation).filter_by(run_id=result.run_id).all()
-        for row, res in zip(rows, results, strict=False):
-            ledger.set_expectation_result(row, res.matched, res.actual)
 
     # -- reading back ----------------------------------------------------------------
 
