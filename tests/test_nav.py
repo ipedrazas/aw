@@ -13,7 +13,7 @@ def test_each_page_marks_its_part_of_the_nav(client):  # noqa: F811
     assert 'href="/workflows" class="active"' in page, "a workflow's settings are the workflow's"
     assert 'href="/settings" class="active"' not in page
     assert [_section(p) for p in ("/", "/audits/new", "/skill", "/settings")] == [
-        "workflows",
+        "home",
         "workflows",
         "skills",
         "settings",

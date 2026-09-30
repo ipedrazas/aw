@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}History: {{ name }}{% endblock %}
+{% block bar_title %}<a href="/workflows/{{ name }}">{{ name }}</a> <span class="muted">history</span>{% endblock %}
+{% block content %}
+<div class="card-head" style="margin-bottom:14px">
+  <div><h1>What changed in “{{ name }}”</h1>
+  <p class="sub" style="margin:0">Every saved version of the workflow, newest first. Putting an earlier one back makes it the newest: nothing here is lost, including what you undo. Past runs keep the version they ran.</p></div>
+</div>
+{% if not data.git %}<div class="card muted">This workspace is not kept in git, so there is no history to show.</div>{% endif %}
+{% if data.dirty %}<div class="banner"><span>The workflow has changes that are not saved as a version yet. Putting an earlier version back would lose them.</span></div>{% endif %}
+<div data-history="{{ name }}">
+{% for v in data.versions %}
+<details class="card"{% if loop.first %} open{% endif %}>
+  <summary><strong>{{ v.subject }}</strong> <span class="small muted">{{ v.when[:16] | replace('T', ' ') }} · {{ v.who }} · <span class="mono">{{ v.commit[:10] }}</span></span>{% if v.latest %} <span class="pill pill-green">Now</span>{% endif %}</summary>
+  {% if not v.rows %}<p class="muted">No change to the definition's text.</p>
+  {% else %}<pre class="textdiff">{% for r in v.rows %}<span class="{{ {'+': 'add', '-': 'del', '@': 'gap'}.get(r.op, '') }}">{{ r.op if r.op in '+-' else ' ' }} {{ r.text }}</span>{% endfor %}</pre>{% endif %}
+  {% if not v.latest %}<div class="actions"><button class="btn btn-sm" type="button" data-restore="{{ v.commit }}">Put this version back</button><span data-msg class="small"></span></div>{% endif %}
+</details>
+{% endfor %}
+</div>
+{% endblock %}

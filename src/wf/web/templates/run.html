@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_pill, step_word, tech_switch %}
+{% from "_macros.html" import status_pill, step_word, tech_switch, when %}
 {% set rep = run.report %}
 {% set result_first = run.status == "done" and run.mode != "dry" %}
 {#- what the run made; first on a finished real run, since it is what the run was for -#}
@@ -13,18 +13,23 @@
       {% if run.mode == "dry" %}<p class="small muted" style="margin:10px 0 0">Nothing produced in a dry run can be mistaken for real work. The marking is in the filename, on every page and in the document itself.</p>{% endif %}
     </div>
 {%- endmacro %}
+{#- where a question the run met can be answered now, or that it has been since -#}
+{% macro answer_now(fid) -%}
+  {%- if fid and answer_at.get(fid) %} <a class="btn btn-sm" href="{{ answer_at[fid] }}">Answer this now</a>
+  {%- elif fid and can_tell %} <span class="small muted">Answered since this run.</span>{% endif -%}
+{%- endmacro %}
 {% block title %}Run: {{ run.title }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ run.workflow }}</span> · {{ run.title }} {% if run.mode == "dry" %}<span class="pill pill-yellow">Dry run</span>{% else %}<span class="pill pill-blue">Real run</span>{% endif %}{% endblock %}
-{% block bar_right %}<span class="muted">Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }}{% endif %} · Depth {{ run.depth }}</span>{% endblock %}
+{% block bar_right %}<span class="muted spend" data-live="spend">{% if run.started_at %}Started {{ when(run.started_at) }} · {% endif %}Spent ${{ "%.2f" | format(run.cost or 0) }}{% if run.budget_usd %} of ${{ "%.2f" | format(run.budget_usd) }} <progress class="bar spend-bar" value="{{ [run.cost or 0, run.budget_usd] | min }}" max="{{ run.budget_usd }}" aria-label="Spent of the spending limit"></progress>{% endif %}{% if run.depth %} · follow-up, level {{ run.depth }}{% endif %}</span>{% endblock %}
 {% block content %}
 {% if run.status == "running" %}<div data-run-refresh="{{ run.id }}"></div>{% endif %}
 <div class="rail">
   <aside>
-    <ol class="railsteps">
+    <ol class="railsteps" data-live="rail">
       {% for s in run.steps %}
       <li class="{{ 'active' if s.status in ('running', 'waiting') }}">
         <span class="dot dot-{{ s.status }}">{{ '✓' if s.status == 'done' else loop.index }}</span>
-        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
+        <a class="railstep-link" href="#step-{{ s.step_id }}"><div><strong>{{ s.title }}</strong></div><div class="small muted">{{ step_word(s.status) }}{% if s.status == "running" and s.started_at %} <span data-since="{{ s.started_at }}"></span>{% endif %}{% if s.cost_usd %} · ${{ "%.2f" | format(s.cost_usd) }}{% endif %}</div></a>
       </li>
       {% endfor %}
     </ol>
@@ -37,12 +42,10 @@
 
   <section>
     {% if run.status == "running" %}
-      <div class="banner"><span>Still running. This page refreshes on its own.</span><span>{{ status_pill(run.status) }}</span></div>
-      {% if run.mode != "dry" %}
+      <div class="banner"><span>Still running. This page updates as it goes.</span><span>{{ status_pill(run.status) }}</span></div>
       <div class="card" data-pause="{{ run.id }}">
-        <div class="actions"><button class="btn" type="button" data-then="pause">Pause</button><span data-msg class="small muted"></span></div>
+        <div class="actions"><button class="btn" type="button" data-then="pause">{{ "Stop after this step" if run.mode == "dry" else "Pause" }}</button><span class="small muted">It finishes the step it is on, then waits; you can carry it on from there.</span><span data-msg class="small muted"></span></div>
       </div>
-      {% endif %}
     {% elif run.status == "failed" %}
       <div class="banner banner-red"><span>The run stopped: {{ run.error or "a step could not finish. See the step below." }}</span><span>{{ status_pill(run.status) }}</span></div>
       <div class="card" data-retry="{{ run.id }}">
@@ -83,17 +86,26 @@
 
     <div class="card">
       <div class="card-head"><h2>Where it had to guess</h2><span class="muted">{{ rep.guesses | length }}</span></div>
-      <p class="sub">Each guess is a place your process is silent, found by running it rather than reading it.</p>
+      <p class="sub">Each guess is a place your process is silent, found by running it rather than reading it. Answer it, then run it again to see the gap closed.</p>
       {% if not rep.guesses %}<p style="margin:0">It never had to guess. Every required field was answered.</p>{% endif %}
       {% for g in rep.guesses %}
         <div class="guess">
           <div class="small muted">{{ g.step_title }}</div>
           <div><strong>{{ g.text }}</strong></div>
           <div>{{ g.reason }}</div>
-          {% if g.question %}<div class="small" style="margin-top:4px">The question: <em>{{ g.question }}</em></div>{% endif %}
+          {% if g.question %}<div class="small" style="margin-top:4px">The question: <em>{{ g.question }}</em>{{ answer_now(g.finding_id) }}</div>{% endif %}
           {% if g.alternatives %}<div class="chips">{% for a in g.alternatives %}<span class="chip">{{ a }}</span>{% endfor %}</div>{% endif %}
         </div>
       {% endfor %}
+      {% set asked = (rep.guesses | map(attribute="finding_id") | select | list) + (rep.findings | selectattr("status", "equalto", "open") | map(attribute="id") | list) %}
+      {% if asked and run.depth == 0 and run.status not in ("running", "waiting") %}
+      {% set since = asked | reject("in", answer_at) | unique | list | length if can_tell else 0 %}
+      <div class="actions" data-rerun="{{ run.workflow }}" data-rerun-body='{{ {"case": run.case_name, "inputs": run.inputs} | tojson }}' style="margin-top:10px">
+        <button class="btn" type="button">Run it again, as a dry run</button>
+        <span class="small muted">{% if since %}{{ since }} of the questions it met {{ "has" if since == 1 else "have" }} been answered since. {% endif %}Same {{ "case" if run.case_name else "inputs" }}; compare the two runs afterwards.</span>
+        <span data-msg class="small"></span>
+      </div>
+      {% endif %}
     </div>
 
     {% if rep.expectations %}
@@ -115,10 +127,11 @@
     {% if open_f %}
     <div class="card">
       <div class="card-head"><h2>Open questions</h2><span class="muted">{{ open_f | length }}</span></div>
-      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
+      {% for f in open_f %}<div class="q"><div class="qtext">{{ f.question }}{{ answer_now(f.id) }}</div><div class="small muted">{% if f.step_id %}{% set on = run.steps | selectattr("step_id", "equalto", f.step_id) | first %}{{ on.title if on else f.step_id }}{% else %}The whole workflow{% endif %}{% if f.detail %} · {{ f.detail }}{% endif %}</div></div>{% endfor %}
     </div>
     {% endif %}
 
+    <div data-live="steps">
     {% for s in run.steps %}
     <div class="card" id="step-{{ s.step_id }}">
       <div class="card-head"><h3>{{ loop.index }}. {{ s.title }}</h3><span>{{ status_pill(s.status) if s.status in ('done', 'failed', 'waiting', 'running', 'skipped') else s.status }}</span></div>
@@ -126,6 +139,20 @@
       {% if s.follow_ups %}
       <div style="margin-top:8px"><h4 class="small muted" style="margin:0 0 4px">Follow-up runs it started</h4>
         {% for c in s.follow_ups %}<div class="dec"><a href="/runs/{{ c.id }}">{{ c.title }}</a> {{ status_pill(c.status) }}{% if c.error %}<div class="small">{{ c.error }}</div>{% endif %}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% set rounds = (s.parts or []) | selectattr("level") | list %}
+      {% if rounds %}
+      {% set first = (s.parts or []) | selectattr("index", "equalto", 0) | first %}
+      <div style="margin-top:8px"><h4 class="small muted" style="margin:0 0 4px">Searching further · {{ rounds | length }} topic{{ "s" if rounds | length != 1 }} followed, {{ rounds | map(attribute="level") | max }} round{{ "s" if (rounds | map(attribute="level") | max) != 1 }} deep</h4>
+        <ol class="rounds">
+          {% if first %}<li><span class="muted">First search</span> <span class="small muted">· {{ first.searches }} search{{ "es" if first.searches != 1 }}{% if first.cost_usd %} · ${{ "%.2f" | format(first.cost_usd) }}{% endif %}</span></li>{% endif %}
+          {% for r in rounds | sort(attribute="index") %}
+          <li style="--level:{{ r.level }}"><strong>{{ r.topic }}</strong> <span class="small muted">· round {{ r.level }}{% if r["from"] %}, found under “{{ r["from"] }}”{% endif %} · {{ r.searches }} search{{ "es" if r.searches != 1 }}{% if r.cost_usd %} · ${{ "%.2f" | format(r.cost_usd) }}{% endif %}{% if r.status != "done" %} · {{ step_word(r.status) | lower }}{% endif %}</span>
+            {% if r.why %}<div class="small">{{ r.why }}</div>{% endif %}</li>
+          {% endfor %}
+        </ol>
+        <p class="small muted" style="margin:4px 0 0">What it chose not to follow is said below. <a href="/workflows/{{ run.workflow }}/settings">Change how far it goes</a>.</p>
       </div>
       {% endif %}
       {% if s.attempts and s.attempts > 1 %}<div class="small muted">Run {{ s.attempts }} times: it broke, and was picked up again. What happened each time is below.</div>{% endif %}
@@ -200,6 +227,7 @@
     </div>
     {% endfor %}
 
+    </div>
     {% if not result_first %}{{ artefacts_card(run, rep) }}{% endif %}
   </section>
 </div>
