@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delete_button, rename_button %}
+{% from "_macros.html" import delete_button, rename_button, when %}
 {% block title %}Workflows{% endblock %}
 {% block content %}
 <div class="card-head"><h1>Workflows</h1><a class="btn btn-primary" href="/audits/new">New workflow</a></div>
@@ -43,7 +43,7 @@
       {{ delete_button("/api/audits/" ~ a.id, "Delete the draft “" ~ (a.title or a.name) ~ "”? Its questions, answers and changes go with it." ~ (" The workflow it was saved as stays." if a.status == 'saved' else "")) }}
     </div>
   </div>
-  <p class="small muted" style="margin:0">{{ a.steps }} steps, {{ a.open }} question{{ '' if a.open == 1 else 's' }} open.</p>
+  <p class="small muted" style="margin:0">{{ a.steps }} steps, {{ a.open }} question{{ '' if a.open == 1 else 's' }} open.{% if a.updated_at %} Changed {{ when(a.updated_at) }}.{% endif %}</p>
 </div>
 {% endfor %}
 {% endblock %}

@@ -19,7 +19,10 @@ const kept = {
 };
 function say(el, text, isError) {
   if (!el) { if (isError) alert(text); return; }
-  el.textContent = text; el.className = isError ? "small" : "small muted"; if (isError) el.style.color = "#9b2a1f"; else el.style.color = "";
+  el.textContent = text;
+  el.classList.add("small");
+  el.classList.toggle("muted", !isError);
+  el.classList.toggle("msg-error", !!isError);
 }
 
 /* Reload the page and come back to where you were. Not by pixels, which the browser
@@ -51,6 +54,12 @@ function reloadHere() {
   back();
   window.addEventListener("load", back, {once: true});
 })();
+/* Every place a page says what happened ("Saving…", an error) is read out when it
+   changes, without taking the focus from where you are. */
+document.querySelectorAll("[data-msg]").forEach(el => {
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+});
 
 /* Technical details switch, remembered per browser. */
 (function () {
@@ -542,17 +551,27 @@ document.querySelectorAll("[data-pause]").forEach(box => {
   }));
 });
 
-/* Runs list: filter tabs and compare. */
+/* Runs list: filter tabs and compare. The filter is kept in the address (?status=), so
+   a reload or a shared link shows the same runs. */
 (function () {
   const tabs = document.querySelectorAll("[data-filter]"); if (!tabs.length) return;
-  tabs.forEach(t => t.addEventListener("click", () => {
-    tabs.forEach(x => x.classList.remove("active")); t.classList.add("active");
+  const show = (t) => {
+    tabs.forEach(x => { x.classList.toggle("active", x === t); x.setAttribute("aria-selected", x === t ? "true" : "false"); });
     const want = t.dataset.filter;
     document.querySelectorAll("tr[data-status]").forEach(row => {
       const s = row.dataset.status, group = s === "done" ? "done" : s === "running" ? "running" : s === "waiting" ? "needs" : "stopped";
       row.classList.toggle("hidden", want !== "all" && group !== want);
     });
+  };
+  tabs.forEach(t => t.addEventListener("click", () => {
+    show(t);
+    const url = new URL(location.href);
+    if (t.dataset.filter === "all") url.searchParams.delete("status"); else url.searchParams.set("status", t.dataset.filter);
+    history.replaceState(null, "", url);
   }));
+  const asked = new URLSearchParams(location.search).get("status");
+  const first = Array.from(tabs).find(t => t.dataset.filter === asked);
+  if (first) show(first);
   const cmp = document.querySelector("form[data-compare]");
   if (cmp) cmp.addEventListener("submit", e => {
     e.preventDefault();
@@ -585,3 +604,43 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     } catch (err) { say(msg, err.message, true); b.disabled = false; }
   });
 });
+
+/* Times: "12 min ago", with the full time where you are on hover. A time stored without
+   a zone (SQLite drops it) is UTC, as every time here is written. */
+(function () {
+  const ago = new Intl.RelativeTimeFormat(undefined, {numeric: "auto"});
+  const full = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+  const steps = [[60, "second"], [60, "minute"], [24, "hour"], [7, "day"], [4.35, "week"], [12, "month"], [Infinity, "year"]];
+  document.querySelectorAll("time[data-ago]").forEach(t => {
+    const iso = t.getAttribute("datetime");
+    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+    if (isNaN(d)) return;
+    let n = (d - Date.now()) / 1000, unit = "second";
+    for (const [size, name] of steps) { unit = name; if (Math.abs(n) < size) break; n /= size; }
+    t.textContent = Math.abs(n) < 45 && unit === "second" ? "just now" : ago.format(Math.round(n), unit);
+    t.title = full.format(d);
+  });
+})();
+
+/* Run page: run it again as a dry run, with the same case or inputs, to see whether the
+   questions answered since closed the gaps it guessed at. */
+document.querySelectorAll("[data-rerun]").forEach(box => {
+  const btn = box.querySelector("button"), msg = box.querySelector("[data-msg]");
+  btn.addEventListener("click", async () => {
+    const was = JSON.parse(box.dataset.rerunBody);
+    const body = was.case ? {case: was.case, mode: "dry"} : {inputs: was.inputs, mode: "dry"};
+    btn.disabled = true; say(msg, "Starting…");
+    try { const d = await postJSON("/api/workflows/" + encodeURIComponent(box.dataset.rerun) + "/runs", body); location.href = "/runs/" + d.run_id; }
+    catch (err) { btn.disabled = false; say(msg, err.message, true); }
+  });
+});
+
+/* Arriving at a question by its link (#q-…): show which one. A question answered together
+   with another has no place of its own, so fall back to the list it would be in. */
+(function () {
+  if (!location.hash.startsWith("#q-")) return;
+  const t = document.getElementById(location.hash.slice(1)) || document.getElementById("questions");
+  if (!t) return;
+  t.scrollIntoView({block: "center"});
+  t.classList.add("q-target"); setTimeout(() => t.classList.remove("q-target"), 2500);
+})();
