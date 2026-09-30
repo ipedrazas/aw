@@ -578,6 +578,10 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
     if (!c) return say(f.querySelector("[data-msg]"), "Pick one first.", true);
     save({step: f.dataset.whoDecides, trust: {policy: c.value}}, f);
   }));
+  root.querySelectorAll("form[data-further]").forEach(f => f.addEventListener("submit", e => {
+    e.preventDefault();
+    save({step: f.dataset.further, search_further: {levels: num(f, "levels"), max_topics: num(f, "max_topics"), max_searches: num(f, "max_searches")}});
+  }));
   root.querySelectorAll("form[data-limits]").forEach(f => f.addEventListener("submit", e => {
     e.preventDefault(); save({step: f.dataset.limits, limits: {max_fanout: num(f, "max_fanout"), max_depth: num(f, "max_depth")}}, f);
   }));

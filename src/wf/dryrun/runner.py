@@ -575,7 +575,7 @@ def _parts_of(parent: StepRun, steps: list[StepRun]) -> list[dict[str, Any]]:
                 "cost_usd": st.cost_usd,
                 "searches": sum(1 for c in st.tool_calls or [] if c.get("name") == "search"),
                 **(
-                    {"topic": further.get("topic"), "level": further.get("level")}
+                    {k: further.get(k) for k in ("topic", "level", "why", "from")}
                     if isinstance(further, dict)
                     else {}
                 ),

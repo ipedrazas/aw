@@ -142,6 +142,20 @@
         {% for c in s.follow_ups %}<div class="dec"><a href="/runs/{{ c.id }}">{{ c.title }}</a> {{ status_pill(c.status) }}{% if c.error %}<div class="small">{{ c.error }}</div>{% endif %}</div>{% endfor %}
       </div>
       {% endif %}
+      {% set rounds = (s.parts or []) | selectattr("level") | list %}
+      {% if rounds %}
+      {% set first = (s.parts or []) | selectattr("index", "equalto", 0) | first %}
+      <div style="margin-top:8px"><h4 class="small muted" style="margin:0 0 4px">Searching further · {{ rounds | length }} topic{{ "s" if rounds | length != 1 }} followed, {{ rounds | map(attribute="level") | max }} round{{ "s" if (rounds | map(attribute="level") | max) != 1 }} deep</h4>
+        <ol class="rounds">
+          {% if first %}<li><span class="muted">First search</span> <span class="small muted">· {{ first.searches }} search{{ "es" if first.searches != 1 }}{% if first.cost_usd %} · ${{ "%.2f" | format(first.cost_usd) }}{% endif %}</span></li>{% endif %}
+          {% for r in rounds | sort(attribute="index") %}
+          <li style="--level:{{ r.level }}"><strong>{{ r.topic }}</strong> <span class="small muted">· round {{ r.level }}{% if r["from"] %}, found under “{{ r["from"] }}”{% endif %} · {{ r.searches }} search{{ "es" if r.searches != 1 }}{% if r.cost_usd %} · ${{ "%.2f" | format(r.cost_usd) }}{% endif %}{% if r.status != "done" %} · {{ step_word(r.status) | lower }}{% endif %}</span>
+            {% if r.why %}<div class="small">{{ r.why }}</div>{% endif %}</li>
+          {% endfor %}
+        </ol>
+        <p class="small muted" style="margin:4px 0 0">What it chose not to follow is said below. <a href="/workflows/{{ run.workflow }}/settings">Change how far it goes</a>.</p>
+      </div>
+      {% endif %}
       {% if s.attempts and s.attempts > 1 %}<div class="small muted">Run {{ s.attempts }} times: it broke, and was picked up again. What happened each time is below.</div>{% endif %}
       {% set decs = s.decisions | selectattr("kind", "equalto", "decision") | list %}
       {% if decs %}<h4 class="small muted" style="margin:8px 0 4px">What it decided</h4>

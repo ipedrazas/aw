@@ -83,6 +83,21 @@
 </div>
 {% endfor %}
 
+{% for f in data.further_steps %}
+<div class="card">
+  <h2>Searching further: “{{ f.title }}”</h2>
+  <p class="sub">After its first search, “{{ f.title }}” names topics worth following and searches them too, in the same run, round by round. These are the limits; it stops at whichever it reaches first, and the run says what it did not follow.</p>
+  <form data-further="{{ f.id }}" class="actions">
+    <label>Up to <input type="number" name="levels" min="1" max="5" style="width:4.5em" value="{{ f.levels }}" aria-label="Rounds"> round(s) further,</label>
+    <label><input type="number" name="max_topics" min="1" max="10" style="width:4.5em" value="{{ f.max_topics }}" aria-label="Topics a round"> topic(s) a round,</label>
+    <label><input type="number" name="max_searches" min="1" max="200" style="width:5.5em" value="{{ f.max_searches }}" aria-label="Searches in all"> searches in all</label>
+    <button class="btn btn-primary" type="submit">Save</button>
+    <span data-msg class="small"></span>
+  </form>
+  <p class="small muted" style="margin:6px 0 0">Every round costs what its searches and reading cost, within the spending limit above. Dry runs search further the same way.</p>
+</div>
+{% endfor %}
+
 {% for f in data.followups %}
 <div class="card">
   <h2>Going deeper: “{{ f.title }}”</h2>
