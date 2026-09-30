@@ -969,16 +969,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.post("/api/runs/{run_id}/pause")
     def pause_run(run_id: str) -> dict[str, Any]:
-        """Ask a running real run to pause. It stops after the step it is on finishes,
-        never mid-step, and shows as paused."""
+        """Ask a running run to pause. It stops after the step it is on finishes, never
+        mid-step, and shows as paused. A dry run can be paused too: it can still spend
+        on the models, and it can be carried on the same way."""
         with st().db.session() as s:
             run = s.get(Run, run_id)
             if run is None:
                 raise HTTPException(404, "No such run.")
             if run.status != "running":
                 raise HTTPException(409, "This run is not running, so there is nothing to pause.")
-            if run.mode == "dry":
-                raise HTTPException(409, "This is a dry run; there is nothing real to pause.")
             run.pause_requested = True
         return {"run_id": run_id, "status": "running"}
 

@@ -329,6 +329,7 @@ class DryRunner:
                         "input": st.input,
                         "cost_usd": st.cost_usd,
                         "duration_s": st.duration_s,
+                        "started_at": st.started_at.isoformat() if st.started_at else None,
                         "model": st.model,
                         "instruction_ref": st.instruction_ref,
                         "instruction_commit": st.instruction_commit,
