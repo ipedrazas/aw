@@ -126,7 +126,19 @@
       {% else %}{{ questions_summary(audit.questions) }}{% endif %}
       {% for g in audit.questions %}
         <h3 style="margin-top:14px">{{ g.title }}</h3>
-        {% for f in g.findings %}{{ question(f, audit.id) }}{% endfor %}
+        {% for f in g.findings %}
+        {# one line per question; the chat asks it, or the form opens here #}
+        <div class="q-row" id="q-{{ f.id }}">
+          <div class="qtext">{{ f.question }}</div>
+          <div class="small muted">{% if f.step_title %}{{ f.step_title }}{% endif %}{% if f.similar %}{{ " · " if f.step_title }}and {{ f.similar | length }} more step{{ "s" if f.similar | length != 1 }}{% endif %}</div>
+          <div class="actions">
+            {% if audit.asking == f.id %}<span class="pill pill-blue">The chat is asking this now</span>
+            {% else %}<button class="btn btn-sm btn-primary" type="button" data-ask-in-chat="{{ f.id }}">Ask me in the chat</button>{% endif %}
+            <details class="q-here"><summary class="small">Answer here instead</summary>{{ question(f, audit.id, chat=False, prefix="list-") }}</details>
+            <span data-msg class="small muted"></span>
+          </div>
+        </div>
+        {% endfor %}
       {% endfor %}
       {% if audit.answered %}
         <details style="margin-top:14px"><summary>Answered or closed ({{ audit.answered | length }})</summary>

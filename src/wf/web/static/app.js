@@ -431,6 +431,14 @@ function wireAnswers(base, reload) {
 
   wireAnswers(base, reload);
 
+  /* "Ask me in the chat" on a question in the list: the chat asks it next, now. */
+  document.querySelectorAll("[data-ask-in-chat]").forEach(b => b.addEventListener("click", async () => {
+    const msg = b.parentElement.querySelector("[data-msg]");
+    b.disabled = true; say(msg, "Asking…");
+    try { await postJSON(base + "/ask", {finding_id: b.dataset.askInChat}); reload(msg); }
+    catch (err) { b.disabled = false; say(msg, err.message, true); }
+  }));
+
   document.querySelectorAll("[data-reopen]").forEach(b => b.addEventListener("click", () => {
     const t = document.getElementById(b.dataset.reopen); if (t) { t.classList.remove("hidden"); b.classList.add("hidden"); }
   }));

@@ -26,7 +26,7 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
-from wf.audit.asking import ask_first, asking, skip
+from wf.audit.asking import ask, ask_first, asking, ordered, plan_of, skip
 from wf.audit.catalog import (
     answered_by_decisions,
     capabilities,
@@ -636,6 +636,29 @@ def create_app(state: AppState | None = None) -> FastAPI:
         st().audits.save(
             audit_id, result, [], by="user", chat=skip(rec.chat or [], str(body.get("finding_id")))
         )
+        return _audit_view(st(), audit_id)
+
+    @app.post("/api/audits/{audit_id}/ask")
+    def ask_in_chat(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Ask this question in the chat now, from the list beside the draft. The one the
+        chat was waiting on is put aside for later, as if skipped; a question skipped
+        before is asked again, since the person chose it."""
+        result, rec = _audit(st(), audit_id)
+        fid = str(body.get("finding_id"))
+        chat = rec.chat or []
+        now = asking(result.findings, chat)
+        if now is not None and now.id == fid:
+            return _audit_view(st(), audit_id)
+        q = next(
+            (q for q in ordered(result.findings) if fid in {q[0].id, *(o.id for o in q[1])}), None
+        )
+        if q is None:
+            raise HTTPException(409, "That question is not open any more.")
+        if now is not None:
+            chat = skip(chat, now.id)
+        chat = ask_first(chat, q[0].id, "")
+        text = plan_of(chat).get("lead", {}).get(q[0].id, "")
+        st().audits.save(audit_id, result, [], by="user", chat=[*chat, ask(*q, text=text)])
         return _audit_view(st(), audit_id)
 
     @app.post("/api/audits/{audit_id}/edit")
