@@ -25,6 +25,35 @@ function say(el, text, isError) {
   el.classList.toggle("msg-error", !!isError);
 }
 
+/* Reload the page and come back to where you were. Not by pixels, which the browser
+   does already and which go wrong when what is above you changes (an answered question
+   leaves the list): by the element at the top of the window and how far down it sat,
+   with the next few as fallbacks, for when that one has gone. */
+function reloadHere() {
+  const marks = Array.from(document.querySelectorAll("main [id]")).filter(el => el.offsetParent !== null);
+  /* the first that starts inside the window: a card holding it starts above, so the
+     question itself is chosen, not the card around it */
+  let at = marks.findIndex(el => el.getBoundingClientRect().top >= 0);
+  if (at < 0) at = marks.map(el => el.getBoundingClientRect().bottom > 0).lastIndexOf(true);
+  if (at >= 0 && window.scrollY > 0) {
+    const place = {ids: marks.slice(at, at + 8).map(el => el.id), top: marks[at].getBoundingClientRect().top};
+    try { sessionStorage.setItem("place:" + location.pathname, JSON.stringify(place)); } catch (e) { /* private mode */ }
+  }
+  location.reload();
+}
+(function () {
+  const key = "place:" + location.pathname;
+  let place = null;
+  try { place = JSON.parse(sessionStorage.getItem(key) || "null"); sessionStorage.removeItem(key); } catch (e) { return; }
+  if (!place || location.hash) return;
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  const back = () => {
+    const el = place.ids.map(id => document.getElementById(id)).find(x => x && x.offsetParent !== null);
+    if (el) window.scrollTo(0, window.scrollY + el.getBoundingClientRect().top - place.top);
+  };
+  back();
+  window.addEventListener("load", back, {once: true});
+})();
 /* Every place a page says what happened ("Saving…", an error) is read out when it
    changes, without taking the focus from where you are. */
 document.querySelectorAll("[data-msg]").forEach(el => {
@@ -199,7 +228,7 @@ function wireAnswers(base, reload) {
 /* Workflow page: answer the questions still open on a saved workflow. */
 (function () {
   const root = document.querySelector("[data-workflow-answers]"); if (!root) return;
-  wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => location.reload());
+  wireAnswers("/api/workflows/" + encodeURIComponent(root.dataset.workflowAnswers), () => reloadHere());
 })();
 
 /* Workflow page: the model each step runs on and the default for the rest, and the
@@ -216,7 +245,7 @@ function wireAnswers(base, reload) {
       sel.value = sel.dataset.was; return;
     }
     say(msg, "Saving…");
-    try { await postJSON(base + "/" + (what === "model" ? "model" : "skill"), body); location.reload(); }
+    try { await postJSON(base + "/" + (what === "model" ? "model" : "skill"), body); reloadHere(); }
     catch (err) { sel.value = sel.dataset.was; say(msg, err.message, true); }
   };
   const d = root.querySelector("[data-model-default]"); d.dataset.was = d.value;
@@ -247,7 +276,7 @@ function wireAnswers(base, reload) {
      save are kept on the server at once, and the page refreshes when the chat is done. */
   let chatting = false;
   const reload = (msg) => {
-    if (!chatting) return location.reload();
+    if (!chatting) return reloadHere();
     say(msg, "Saved. The page updates when the chat answers.");
   };
 
@@ -310,7 +339,7 @@ function wireAnswers(base, reload) {
       const typing = bubble("msg-assistant msg-typing");
       typing.innerHTML = "<i></i><i></i><i></i>"; typing.setAttribute("aria-label", "Thinking");
       box.value = ""; grow(); box.readOnly = true; say(msg, ""); chatting = true; kept.drop(keyChat);
-      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; location.reload(); }
+      try { await postJSON(base + "/chat", {message: text, about: about}); chatting = false; reloadHere(); }
       catch (err) {
         chatting = false;
         typing.remove(); box.value = text; grow(); box.readOnly = false; keep();
@@ -392,7 +421,7 @@ function wireAnswers(base, reload) {
       const now = shape(d);
       if (seen === null) seen = now;
       const typing = document.activeElement && /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
-      if (now !== seen && !typing) location.reload();
+      if (now !== seen && !typing) reloadHere();
     } catch (e) { /* try again next tick */ }
   };
   tick();
@@ -417,7 +446,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
     try {
       await postJSON("/api/runs/" + f.dataset.answerWait + "/answer",
         {go_deeper: deeper, topics: list, note: (f.querySelector("[name=note]") || {}).value || ""});
-      location.reload();
+      reloadHere();
     } catch (err) { say(msg, err.message, true); }
   });
 });
@@ -429,7 +458,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   const msg = root.querySelector("[data-msg]");
   const save = async (body) => {
     say(msg, "Saving…");
-    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
@@ -468,7 +497,7 @@ document.querySelectorAll("form[data-answer-wait]").forEach(f => {
   const msg = root.querySelector("[data-msg]");
   const save = async (body) => {
     say(msg, "Saving…");
-    try { await postJSON(url, body); location.reload(); } catch (err) { say(msg, err.message, true); }
+    try { await postJSON(url, body); reloadHere(); } catch (err) { say(msg, err.message, true); }
   };
   const num = (form, name) => { const v = form.querySelector("[name=" + name + "]").value; return v === "" ? null : Number(v); };
   const trust = root.querySelector("form[data-trust-default]");
@@ -493,7 +522,7 @@ document.querySelectorAll("form[data-ok]").forEach(f => {
     say(msg, ok ? "Carrying on…" : "Stopping…");
     try {
       await postJSON("/api/runs/" + f.dataset.ok + "/ok", {ok: ok, note: (f.querySelector("[name=note]") || {}).value || ""});
-      location.reload();
+      reloadHere();
     } catch (err) { f.querySelectorAll("button").forEach(b => b.disabled = false); say(msg, err.message, true); }
   });
 });
@@ -505,7 +534,7 @@ document.querySelectorAll("[data-retry]").forEach(box => {
     const then = btn.dataset.then;
     btns.forEach(b => b.disabled = true);
     say(msg, then === "skip" ? "Carrying on without it…" : "Picking it up…");
-    try { await postJSON("/api/runs/" + box.dataset.retry + "/" + then, {}); location.reload(); }
+    try { await postJSON("/api/runs/" + box.dataset.retry + "/" + then, {}); reloadHere(); }
     catch (err) { btns.forEach(b => b.disabled = false); say(msg, err.message, true); }
   }));
 });
@@ -517,7 +546,7 @@ document.querySelectorAll("[data-pause]").forEach(box => {
     const then = btn.dataset.then;
     btns.forEach(b => b.disabled = true);
     say(msg, then === "carry-on" ? "Carrying on…" : "Pausing…");
-    try { await postJSON("/api/runs/" + box.dataset.pause + "/" + then, {}); location.reload(); }
+    try { await postJSON("/api/runs/" + box.dataset.pause + "/" + then, {}); reloadHere(); }
     catch (err) { btns.forEach(b => b.disabled = false); say(msg, err.message, true); }
   }));
 });
