@@ -576,6 +576,21 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
   });
 });
 
+/* Times: "12 min ago", with the full time where you are on hover. A time stored without
+   a zone (SQLite drops it) is UTC, as every time here is written. */
+(function () {
+  const ago = new Intl.RelativeTimeFormat(undefined, {numeric: "auto"});
+  const full = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+  const steps = [[60, "second"], [60, "minute"], [24, "hour"], [7, "day"], [4.35, "week"], [12, "month"], [Infinity, "year"]];
+  document.querySelectorAll("time[data-ago]").forEach(t => {
+    const iso = t.getAttribute("datetime");
+    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+    if (isNaN(d)) return;
+    let n = (d - Date.now()) / 1000, unit = "second";
+    for (const [size, name] of steps) { unit = name; if (Math.abs(n) < size) break; n /= size; }
+    t.textContent = Math.abs(n) < 45 && unit === "second" ? "just now" : ago.format(Math.round(n), unit);
+    t.title = full.format(d);
+  });
 /* Run page: run it again as a dry run, with the same case or inputs, to see whether the
    questions answered since closed the gaps it guessed at. */
 document.querySelectorAll("[data-rerun]").forEach(box => {

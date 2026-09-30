@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_pill, step_squares %}
+{% from "_macros.html" import status_pill, step_squares, when %}
 {% block title %}Runs{% endblock %}
 {% block bar_title %}Runs{% endblock %}
 {% block bar_right %}<span class="muted">Spent in total: ${{ "%.2f" | format(runs | sum(attribute="cost")) }}</span>{% endblock %}
@@ -25,7 +25,7 @@
   <tr data-status="{{ r.status }}">
     <td class="{{ 'indent' if r.level }}" style="--level:{{ r.level }}">
       <a href="/runs/{{ r.id }}"><strong>{{ r.title }}</strong></a>
-      <div class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else r.mode }}{% if r.parent_run_id %} · follow-up, level {{ r.depth }}{% endif %}{% if r.case_name %} · case: {{ r.case_name }}{% endif %} · started {{ (r.started_at or '')[:16] | replace('T', ' ') }}</div>
+      <div class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else r.mode }}{% if r.parent_run_id %} · follow-up, level {{ r.depth }}{% endif %}{% if r.case_name %} · case: {{ r.case_name }}{% endif %} · started {{ when(r.started_at) }}</div>
     </td>
     <td>{{ status_pill(r.status) }}</td>
     <td>{{ step_squares(r.steps) }}</td>
