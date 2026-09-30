@@ -680,7 +680,7 @@ def test_chat_about_a_question_can_remove_the_step_it_rests_on(client):
     ).json()
     aid = audit["id"]
     page = client.get(f"/audits/{aid}").text
-    assert "Chat about this" in page and "Type your answer" not in page
+    assert "Ask me in the chat" in page and "Type your answer" not in page
     fid = audit["questions"][0]["findings"][0]["id"]
 
     c = client.post(f"/api/audits/{aid}/chat", json={"message": "remove export_pdf", "about": fid})
