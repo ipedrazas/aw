@@ -18,11 +18,68 @@ const kept = {
   drop(key) { try { sessionStorage.removeItem("kept:" + key); } catch (e) { /* private mode */ } },
 };
 function say(el, text, isError) {
-  if (!el) { if (isError) alert(text); return; }
+  if (!el) { if (isError) toast(text); return; }
   el.textContent = text;
   el.classList.add("small");
   el.classList.toggle("muted", !isError);
   el.classList.toggle("msg-error", !!isError);
+}
+
+/* A question in the page, in place of the browser's confirm/prompt: each button says
+   what it does. ask({title, text, choices: [{label, value, kind}], field}) resolves to
+   the value chosen (for a field, what was typed), or null when put aside (Escape). */
+function ask(opts) {
+  return new Promise(resolve => {
+    const d = document.createElement("dialog");
+    d.className = "ask";
+    const h = document.createElement("h2"); h.textContent = opts.title || ""; d.appendChild(h);
+    (opts.text ? [].concat(opts.text) : []).forEach(t => { const p = document.createElement("p"); p.textContent = t; d.appendChild(p); });
+    let input = null, hint = null;
+    if (opts.field) {
+      const f = opts.field;
+      const label = document.createElement("label"); label.className = "small muted"; label.textContent = f.label || "";
+      input = document.createElement("input"); input.type = "text"; input.value = f.value || "";
+      label.appendChild(input); d.appendChild(label);
+      hint = document.createElement("div"); hint.className = "small muted"; hint.textContent = f.hint || ""; d.appendChild(hint);
+    }
+    const row = document.createElement("div"); row.className = "actions"; d.appendChild(row);
+    const done = v => { d.close(); d.remove(); resolve(v); };
+    const valid = () => {
+      if (!input || !opts.field.check) return true;
+      const why = opts.field.check(input.value.trim());
+      hint.textContent = why || opts.field.hint || ""; hint.classList.toggle("msg-error", !!why); hint.classList.toggle("muted", !why);
+      return !why;
+    };
+    opts.choices.forEach((c, i) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = c.label;
+      b.className = "btn" + (c.kind === "primary" ? " btn-primary" : c.kind === "danger" ? " btn-danger" : "");
+      b.addEventListener("click", () => {
+        if (c.value === null) return done(null);
+        if (input) { if (!valid()) return input.focus(); return done(input.value.trim()); }
+        done(c.value);
+      });
+      row.appendChild(b);
+      if (c.kind === "primary" || c.kind === "danger") b.dataset.main = "1";
+    });
+    if (input) {
+      input.addEventListener("input", valid);
+      input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); row.querySelector("[data-main]")?.click(); } });
+    }
+    d.addEventListener("cancel", e => { e.preventDefault(); done(null); });
+    document.body.appendChild(d);
+    d.showModal();
+    if (input) { input.focus(); input.select(); } else (row.querySelector("[data-main]") || row.querySelector("button")).focus();
+  });
+}
+
+/* Something went wrong and there is no message line beside what was pressed: say it in
+   a note at the foot of the window that goes by itself, not in a box that must be closed. */
+function toast(text) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.setAttribute("role", "alert"); t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 6000);
+  t.addEventListener("click", () => t.remove());
 }
 
 /* Reload the page and come back to where you were. Not by pixels, which the browser
@@ -76,19 +133,30 @@ document.querySelectorAll("[data-msg]").forEach(el => {
 
 /* Delete a workflow or a draft. One confirm, then say where to go next. */
 document.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", async () => {
-  if (!confirm(b.dataset.deleteConfirm || "Delete this? It cannot be undone.")) return;
+  const yes = await ask({title: b.textContent.trim() + "?", text: [b.dataset.deleteConfirm || "Delete this?", "It cannot be undone."],
+    choices: [{label: "Keep it", value: false}, {label: b.textContent.trim(), value: true, kind: "danger"}]});
+  if (!yes) return;
   b.disabled = true;
   try { await sendJSON("DELETE", b.dataset.delete); location.href = b.dataset.after || location.href; }
-  catch (err) { alert(err.message); b.disabled = false; }
+  catch (err) { toast(err.message); b.disabled = false; }
 }));
 
 /* Rename a workflow: prompt for the new name, then go to its new URL. */
+/* the names the workspace takes (wf.schema.loader _NAME) */
+const NAME_OK = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 document.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("click", async () => {
-  const next = (prompt(b.dataset.renamePrompt || "New name:", b.dataset.renameCurrent || "") || "").trim();
-  if (!next || next === b.dataset.renameCurrent) return;
+  const current = b.dataset.renameCurrent || "";
+  const next = await ask({
+    title: b.dataset.renamePrompt || "New name",
+    text: "Past runs keep the name they ran under.",
+    field: {value: current, label: "New name", hint: "Letters, numbers, dots, dashes and underscores, starting with a letter or number.",
+      check: v => !v ? "Give it a name." : !NAME_OK.test(v) ? "Only letters, numbers, dots, dashes and underscores, starting with a letter or number." : ""},
+    choices: [{label: "Cancel", value: null}, {label: "Rename", value: true, kind: "primary"}],
+  });
+  if (!next || next === current) return;
   b.disabled = true;
   try { const d = await postJSON(b.dataset.rename, {name: next}); location.href = "/workflows/" + encodeURIComponent(d.name); }
-  catch (err) { alert(err.message); b.disabled = false; }
+  catch (err) { toast(err.message); b.disabled = false; }
 }));
 
 /* Toggle any element by id. */
@@ -134,8 +202,9 @@ document.querySelectorAll("form[data-run-workflow]").forEach(f => {
       const more = "moreWork" in f.dataset
         ? "It can start more work as it goes, so it can cost up to the workflow's spending limit."
         : "Every step uses real models, and costs what they cost.";
-      const sends = "sends" in f.dataset ? " It sends what the workflow sends." : " Nothing is sent anywhere.";
-      if (!confirm("Run it for real? " + more + sends)) return;
+      const sends = "sends" in f.dataset ? "It sends what the workflow sends." : "Nothing is sent anywhere.";
+      if (!(await ask({title: "Run it for real?", text: [more, sends],
+          choices: [{label: "Not now", value: false}, {label: "Run it for real", value: true, kind: "primary"}]}))) return;
     }
     say(msg, mode === "live" ? "Starting the real run…" : "Starting…");
     try { const d = await postJSON("/api/workflows/" + encodeURIComponent(name) + "/runs", {...read.body, mode: mode}); location.href = "/runs/" + d.run_id; }
@@ -217,7 +286,7 @@ function wireAnswers(base, reload) {
       try {
         const d = await postJSON(base + "/answer", {finding_id: f.dataset.answer, answer: answer, also: also, from_chat: "fromChat" in f.dataset});
         kept.drop(keyAnswer);
-        if (d.not_taken && d.not_taken.length) alert("Some steps did not take this answer and are still open:\n\n" + d.not_taken.join("\n"));
+        if (d.not_taken && d.not_taken.length) await ask({title: "Some steps did not take this answer", text: ["They are still open, to answer on their own:", ...d.not_taken], choices: [{label: "OK", value: true, kind: "primary"}]});
         reload(msg);
       }
       catch (err) { say(msg, err.message, true); }
@@ -241,7 +310,9 @@ function wireAnswers(base, reload) {
     const msg = sel.parentElement.querySelector("[data-msg]");
     const opt = sel.selectedOptions[0];
     if (opt && opt.dataset.cannot) { sel.value = sel.dataset.was; say(msg, opt.dataset.cannot, true); return; }
-    if (sel.dataset.resets && !confirm("Changing the " + what + " of “" + sel.dataset.title + "” starts its count of accepted runs again, so it asks you before running on its own.")) {
+    if (sel.dataset.resets && !(await ask({title: "Change the " + what + " of “" + sel.dataset.title + "”?",
+        text: "Its count of accepted runs starts again, so it checks with you before it runs on its own.",
+        choices: [{label: "Keep it as it is", value: false}, {label: "Change it", value: true, kind: "primary"}]}))) {
       sel.value = sel.dataset.was; return;
     }
     say(msg, "Saving…");
@@ -256,15 +327,25 @@ function wireAnswers(base, reload) {
   });
   /* Instructions that come with a result of their own: ask whether the step should give
      back theirs too, saying which later steps would lose what they read. */
-  const takesResult = (sel) => {
+  /* resolves to true or false, or null to leave the step as it was */
+  const takesResult = async (sel) => {
     const opt = sel.selectedOptions[0];
     if (!opt || !opt.dataset.result) return false;
-    const loses = opt.dataset.loses ? "\n\n" + opt.dataset.loses : "";
-    return confirm("“" + opt.textContent + "” is written to give back a result of its own, not what “" + sel.dataset.title + "” gives back now." + loses + "\n\nOK: give back theirs as well.\nCancel: keep what it gives back now.");
+    return ask({
+      title: "Use its result too?",
+      text: ["“" + opt.textContent + "” is written to give back a result of its own, not what “" + sel.dataset.title + "” gives back now.",
+        ...(opt.dataset.loses ? opt.dataset.loses.split("\n") : [])],
+      choices: [{label: "Don't change the step", value: null}, {label: "Keep what it gives back now", value: false},
+        {label: "Use their result too", value: true, kind: "primary"}],
+    });
   };
   document.querySelectorAll("[data-skill-step]").forEach(sel => {
     sel.dataset.was = sel.value;
-    sel.addEventListener("change", () => choose(sel, "instructions", {step: sel.dataset.skillStep, skill: sel.value, result: takesResult(sel)}));
+    sel.addEventListener("change", async () => {
+      const result = await takesResult(sel);
+      if (result === null) { sel.value = sel.dataset.was; return; }
+      choose(sel, "instructions", {step: sel.dataset.skillStep, skill: sel.value, result: result});
+    });
   });
 })();
 
@@ -357,13 +438,13 @@ function wireAnswers(base, reload) {
   document.querySelectorAll("[data-undo]").forEach(b => b.addEventListener("click", async () => {
     b.disabled = true;
     try { await postJSON(base + "/undo", {seq: Number(b.dataset.undo)}); reload(); }
-    catch (err) { alert(err.message); b.disabled = false; }
+    catch (err) { toast(err.message); b.disabled = false; }
   }));
 
   const save = document.querySelector("[data-save]");
   if (save) save.addEventListener("click", async () => {
     save.disabled = true;
-    try { await postJSON(base + "/save", {}); reload(); } catch (err) { alert(err.message); save.disabled = false; }
+    try { await postJSON(base + "/save", {}); reload(); } catch (err) { toast(err.message); save.disabled = false; }
   });
 
   const tryForm = document.querySelector("form[data-try]");

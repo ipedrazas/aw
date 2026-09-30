@@ -206,3 +206,11 @@ td select[data-model-step]{width:auto;min-width:170px}
 .dg-out-person{fill:var(--yellow-bg);stroke:#e7c77f}.dg-out-question{fill:var(--red-bg);stroke:var(--red-ink);stroke-dasharray:4 3}
 .dg-question-line{stroke:var(--red-ink);stroke-dasharray:4 3}
 .flow-desc{max-width:760px}
+/* a question in the page (app.js ask) and a note that goes by itself (toast) */
+dialog.ask{border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;max-width:min(520px,calc(100vw - 32px));box-shadow:0 12px 40px rgba(0,0,0,.18)}
+dialog.ask::backdrop{background:rgba(27,31,30,.35)}
+dialog.ask p{margin:0 0 10px}
+dialog.ask label{display:block;margin:6px 0 4px}
+dialog.ask label input{margin-top:4px}
+dialog.ask .actions{justify-content:flex-end;margin-top:16px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:min(560px,calc(100vw - 32px));background:var(--red-ink);color:#fff;padding:10px 16px;border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:10;cursor:pointer}
