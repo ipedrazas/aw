@@ -591,6 +591,8 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     t.textContent = Math.abs(n) < 45 && unit === "second" ? "just now" : ago.format(Math.round(n), unit);
     t.title = full.format(d);
   });
+})();
+
 /* Run page: run it again as a dry run, with the same case or inputs, to see whether the
    questions answered since closed the gaps it guessed at. */
 document.querySelectorAll("[data-rerun]").forEach(box => {
