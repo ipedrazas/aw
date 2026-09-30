@@ -26,7 +26,7 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
-from wf.audit.asking import ask_first, asking, skip
+from wf.audit.asking import ask, ask_first, asking, ordered, plan_of, skip
 from wf.audit.catalog import (
     answered_by_decisions,
     capabilities,
@@ -638,6 +638,29 @@ def create_app(state: AppState | None = None) -> FastAPI:
         )
         return _audit_view(st(), audit_id)
 
+    @app.post("/api/audits/{audit_id}/ask")
+    def ask_in_chat(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Ask this question in the chat now, from the list beside the draft. The one the
+        chat was waiting on is put aside for later, as if skipped; a question skipped
+        before is asked again, since the person chose it."""
+        result, rec = _audit(st(), audit_id)
+        fid = str(body.get("finding_id"))
+        chat = rec.chat or []
+        now = asking(result.findings, chat)
+        if now is not None and now.id == fid:
+            return _audit_view(st(), audit_id)
+        q = next(
+            (q for q in ordered(result.findings) if fid in {q[0].id, *(o.id for o in q[1])}), None
+        )
+        if q is None:
+            raise HTTPException(409, "That question is not open any more.")
+        if now is not None:
+            chat = skip(chat, now.id)
+        chat = ask_first(chat, q[0].id, "")
+        text = plan_of(chat).get("lead", {}).get(q[0].id, "")
+        st().audits.save(audit_id, result, [], by="user", chat=[*chat, ask(*q, text=text)])
+        return _audit_view(st(), audit_id)
+
     @app.post("/api/audits/{audit_id}/edit")
     def edit(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         result, _rec = _audit(st(), audit_id)
@@ -1064,7 +1087,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/workflows/{name}", response_class=HTMLResponse)
     def workflow_page(request: Request, name: str) -> Any:
-        return page(request, "workflow", data=get_workflow(name), name=name, cases=cases())
+        return page(
+            request,
+            "workflow",
+            data=get_workflow(name),
+            name=name,
+            cases=cases(),
+            recent=[r for r in st().runner.list_runs(name, limit=5) if not r["parent_run_id"]],
+            draft=next((a for a in st().audits.list() if a["name"] == name), None),
+        )
 
     @app.get("/workflows/{name}/settings", response_class=HTMLResponse)
     def settings_page(request: Request, name: str) -> Any:
@@ -1110,18 +1141,25 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/audits/{audit_id}", response_class=HTMLResponse)
     def audit_page(request: Request, audit_id: str) -> Any:
+        audit = get_audit(audit_id)
+        saved_as = (
+            audit["name"]
+            if audit["status"] == "saved" and st().ws.definition_path(audit["name"]).exists()
+            else None
+        )
         return page(
             request,
             "audit",
-            audit=get_audit(audit_id),
+            audit=audit,
             docs=process_docs(),
             cases=cases(),
+            saved_as=saved_as,
             unsaved=_unsaved(st(), audit_id),
         )
 
     @app.get("/runs", response_class=HTMLResponse)
-    def runs_page(request: Request) -> Any:
-        return page(request, "runs", runs=list_runs(None))
+    def runs_page(request: Request, workflow: str | None = None) -> Any:
+        return page(request, "runs", runs=list_runs(workflow or None), workflow=workflow)
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str) -> Any:
@@ -1131,11 +1169,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
         for s in run["steps"]:
             s["calls"] = calls.get(s["step_id"], [])
             s["search_limits"] = search_limits.get(s["step_id"])
+        answer_at, can_tell = _where_to_answer(st(), run["workflow"])
         return page(
             request,
             "run",
             run=run,
             others=[r for r in list_runs(None) if r["id"] != run_id],
+            answer_at=answer_at,
+            can_tell=can_tell,
         )
 
     @app.get("/runs/{run_a}/diff/{run_b}", response_class=HTMLResponse)
@@ -1153,6 +1194,32 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
 
 # -- helpers -----------------------------------------------------------------------
+
+
+def _where_to_answer(state: AppState, name: str) -> tuple[dict[str, str], bool]:
+    """Where each question still open about a workflow can be answered: on the workflow's
+    page, else on a draft of it. A guess or open question on a run that is in neither has
+    been answered (or has stopped applying) since. The bool says whether anywhere was
+    looked at, so a run of a deleted workflow does not claim its questions are settled."""
+    links: dict[str, str] = {}
+    found = False
+    try:
+        wf = state.ws.load_definition(name)
+        found = True
+        for f in validate(wf, state.ws).findings:
+            if f.status == "open":
+                links[f.id] = f"/workflows/{name}#q-{f.id}"
+    except WorkspaceError:
+        pass
+    for a in state.audits.list():
+        if a["name"] != name:
+            continue
+        found = True
+        result, _rec = state.audits.load(a["id"])
+        for f in result.findings:
+            if f.status == "open":
+                links.setdefault(f.id, f"/audits/{a['id']}#q-{f.id}")
+    return links, found
 
 
 def _section(path: str) -> str:
