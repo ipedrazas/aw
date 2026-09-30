@@ -2,7 +2,7 @@
 {% from "_macros.html" import status_pill, trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
 {% set s = data.summary %}
 {% block title %}{{ s.name }}{% endblock %}
-{% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span>{% endblock %}
+{% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span> <a class="small" href="/workflows/{{ name }}/history">History</a>{% endblock %}
 {% block bar_right %}<span class="muted">{{ s.step_count }} steps, {{ s.model_count }} models, {{ s.skill_count }} instruction files</span>{% endblock %}
 {% block content %}
 <div class="card-head" style="margin-bottom:14px">

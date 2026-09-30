@@ -63,3 +63,21 @@ def commit_paths(
     if _git(root, *args) is None:
         return None
     return head_commit(root)
+
+
+def file_history(root: Path, rel: str, limit: int = 30) -> list[dict[str, str]]:
+    """The commits that changed ``rel``, newest first: what each was, when and by whom.
+    Empty when there is no git."""
+    out = _git(root, "log", f"-n{limit}", "--format=%H%x1f%aI%x1f%an%x1f%s", "--follow", "--", rel)
+    rows = []
+    for line in (out or "").splitlines():
+        commit, when, who, subject = (line.split("\x1f") + ["", "", "", ""])[:4]
+        rows.append({"commit": commit, "when": when, "who": who, "subject": subject})
+    return rows
+
+
+def file_at(root: Path, rel: str, commit: str) -> str | None:
+    """``rel`` as it was at ``commit`` (relative to ``root``, which may sit inside a larger
+    repository), or None if it did not exist there."""
+    out = _git(root, "show", f"{commit}:./{rel}")
+    return None if out is None else out + "\n"

@@ -781,6 +781,14 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
   });
 });
 
+/* Workflow history: put an earlier version back, as the newest. */
+document.querySelectorAll("[data-history] [data-restore]").forEach(b => b.addEventListener("click", async () => {
+  const name = b.closest("[data-history]").dataset.history, msg = b.parentElement.querySelector("[data-msg]");
+  b.disabled = true; say(msg, "Putting it back…");
+  try { await postJSON("/api/workflows/" + encodeURIComponent(name) + "/restore", {commit: b.dataset.restore}); location.href = "/workflows/" + encodeURIComponent(name); }
+  catch (err) { b.disabled = false; say(msg, err.message, true); }
+}));
+
 /* A select that goes somewhere when chosen, and a filter form that applies as it changes. */
 document.querySelectorAll("select[data-go]").forEach(sel => sel.addEventListener("change", () => { if (sel.value) location.href = sel.value; }));
 document.querySelectorAll("form[data-autosubmit]").forEach(f => f.querySelectorAll("select").forEach(sel => sel.addEventListener("change", () => {

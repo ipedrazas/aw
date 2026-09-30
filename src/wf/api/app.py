@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+import yaml
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -82,7 +83,7 @@ from .plain import (
     starts_more_work,
     trust_label,
 )
-from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view
+from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view, text_diff
 
 WEB = Path(__file__).resolve().parents[1] / "web"
 RUNS_PAGE = 50
@@ -446,6 +447,56 @@ def create_app(state: AppState | None = None) -> FastAPI:
             },
         )
         return {"deleted": name, "removed": removed, "commit": commit, "runs_kept": runs_kept}
+
+    @app.get("/api/workflows/{name}/history")
+    def workflow_history(name: str) -> dict[str, Any]:
+        """Every saved version of the definition, newest first, each with what changed
+        from the one before. Kept by git, so a workspace without it has none."""
+        _load(st(), name)
+        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        rows = gitrepo.file_history(st().ws.root, rel)
+        out = []
+        for i, r in enumerate(rows):
+            now = gitrepo.file_at(st().ws.root, rel, r["commit"]) or ""
+            before = (
+                gitrepo.file_at(st().ws.root, rel, rows[i + 1]["commit"])
+                if i + 1 < len(rows)
+                else ""
+            )
+            out.append({**r, "latest": i == 0, "rows": text_diff(before or "", now)})
+        dirty = bool(rows) and gitrepo.is_dirty(st().ws.root, rel)
+        return {"name": name, "versions": out, "git": gitrepo.is_repo(st().ws.root), "dirty": dirty}
+
+    @app.post("/api/workflows/{name}/restore")
+    def restore_workflow(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Put the definition back as it was at an earlier version, as a new version: the
+        history keeps everything, including what was undone. The instruction files are
+        not touched; the definition pins which version of each its steps read."""
+        _load(st(), name)
+        rel = str(st().ws.definition_path(name).relative_to(st().ws.root))
+        commit = str(body.get("commit") or "")
+        if commit not in {r["commit"] for r in gitrepo.file_history(st().ws.root, rel)}:
+            raise HTTPException(404, "That is not a version of this workflow.")
+        text = gitrepo.file_at(st().ws.root, rel, commit)
+        try:
+            wf = load_workflow_dict(yaml.safe_load(text or ""))
+        except (ValidationError, yaml.YAMLError) as e:
+            raise HTTPException(409, f"That version can no longer be read: {e}") from e
+        if wf.metadata.name != name:
+            raise HTTPException(
+                409, f"That version was called {wf.metadata.name}; rename it back first."
+            )
+        st().ws.definition_path(name).write_text(text or "")
+        new = gitrepo.commit_paths(
+            st().ws.root, [rel], f"{name}: restored to {commit[:10]} from the UI", *st().author
+        )
+        logger.info(
+            "workflow %s restored to %s",
+            name,
+            commit[:10],
+            extra={"fields": {"event": "workflow.restored", "workflow": name, "to": commit}},
+        )
+        return {"restored": commit, "commit": new}
 
     @app.post("/api/workflows/{name}/rename")
     def rename_workflow(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
@@ -1147,6 +1198,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
             recent=[r for r in st().runner.list_runs(name, limit=5) if not r["parent_run_id"]],
             draft=next((a for a in st().audits.list() if a["name"] == name), None),
         )
+
+    @app.get("/workflows/{name}/history", response_class=HTMLResponse)
+    def history_page(request: Request, name: str) -> Any:
+        return page(request, "history", data=workflow_history(name), name=name)
 
     @app.get("/workflows/{name}/settings", response_class=HTMLResponse)
     def settings_page(request: Request, name: str) -> Any:
