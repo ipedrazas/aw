@@ -781,6 +781,21 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
   });
 });
 
+/* Narrow screens: the nav folds behind "Menu", and a table's rows stack, each cell
+   labelled with its column's heading (copied here, so no template has to say it). */
+document.querySelectorAll("[data-nav-toggle]").forEach(b => b.addEventListener("click", () => {
+  const open = document.querySelector(".topbar").classList.toggle("nav-open");
+  b.setAttribute("aria-expanded", open ? "true" : "false");
+}));
+document.querySelectorAll(".tbl table, .card table").forEach(t => {
+  const heads = Array.from(t.querySelectorAll("thead th")).map(th => th.textContent.trim());
+  if (!heads.length) return;
+  t.classList.add("stackable");
+  t.querySelectorAll("tbody tr").forEach(tr => Array.from(tr.children).forEach((td, i) => {
+    if (heads[i] && !td.hasAttribute("colspan")) td.dataset.label = heads[i];
+  }));
+});
+
 /* Workflow history: put an earlier version back, as the newest. */
 document.querySelectorAll("[data-history] [data-restore]").forEach(b => b.addEventListener("click", async () => {
   const name = b.closest("[data-history]").dataset.history, msg = b.parentElement.querySelector("[data-msg]");
