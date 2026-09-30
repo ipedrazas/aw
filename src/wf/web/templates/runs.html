@@ -13,16 +13,30 @@
     <button type="button" role="tab" aria-selected="false" data-filter="done">Done</button>
     <button type="button" role="tab" aria-selected="false" data-filter="stopped">Stopped</button>
   </div>
-  <a class="btn btn-primary" href="/workflows">Start a run</a>
+  {% if names %}
+  <label class="visually-hidden" for="start-run">Start a run of</label>
+  <select id="start-run" class="btn-select" data-go>
+    <option value="">Start a run of…</option>
+    {% for n in names %}<option value="/workflows/{{ n }}">{{ n }}</option>{% endfor %}
+  </select>
+  {% endif %}
 </div>
+
+<form method="get" action="/runs" class="actions filters" data-autosubmit>
+  <label class="small muted">Workflow
+    <select name="workflow"><option value="">Every workflow</option>{% for n in names %}<option value="{{ n }}"{% if n == workflow %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+  <label class="small muted">Kind
+    <select name="mode"><option value="">Dry and real</option><option value="dry"{% if mode == "dry" %} selected{% endif %}>Dry runs</option><option value="live"{% if mode == "live" %} selected{% endif %}>Real runs</option></select></label>
+  <noscript><button class="btn btn-sm" type="submit">Show</button></noscript>
+</form>
 
 <div class="tbl">
 <table>
-  <thead><tr><th>Run and topic</th><th>Status</th><th>Steps</th><th style="text-align:right">Cost</th></tr></thead>
+  <thead><tr><th>Run</th><th>Status</th><th>Steps</th><th style="text-align:right">Cost</th></tr></thead>
   <tbody>
-  {% if not runs %}<tr><td colspan="4" class="muted">No runs yet. Open a workflow and run it with a topic.</td></tr>{% endif %}
+  {% if not runs %}<tr><td colspan="4" class="muted">{% if workflow or mode %}No runs match. <a href="/runs">Show every run</a>.{% else %}No runs yet. Open a workflow and run it: try a dry run first.{% endif %}</td></tr>{% endif %}
   {% for r in runs %}
-  <tr data-status="{{ r.status }}">
+  <tr data-status="{{ r.status }}" data-workflow="{{ r.workflow }}">
     <td class="{{ 'indent' if r.level }}" style="--level:{{ r.level }}">
       <a href="/runs/{{ r.id }}"><strong>{{ r.title }}</strong></a>
       <div class="small muted">{{ r.workflow }} · {{ 'dry run' if r.mode == 'dry' else r.mode }}{% if r.parent_run_id %} · follow-up, level {{ r.depth }}{% endif %}{% if r.case_name %} · case: {{ r.case_name }}{% endif %} · started {{ when(r.started_at) }}</div>
@@ -35,6 +49,13 @@
   </tbody>
 </table>
 </div>
+{% if newer or older %}
+<div class="actions pager">
+  {% if newer %}<a class="btn btn-sm" href="{{ newer }}">Newer</a>{% endif %}
+  <span class="small muted">Page {{ page_no }}</span>
+  {% if older %}<a class="btn btn-sm" href="{{ older }}">Older</a>{% endif %}
+</div>
+{% endif %}
 <div class="legend"><span><span class="sq sq-done"></span>Done</span><span><span class="sq sq-waiting"></span>Needs you</span><span><span class="sq sq-running"></span>Running</span><span><span class="sq"></span>Not started</span><span><span class="sq sq-skipped"></span>Skipped</span><span><span class="sq sq-failed"></span>Could not finish</span></div>
 
 {% if runs | length > 1 %}
@@ -42,9 +63,10 @@
   <h3>Compare two runs</h3>
   <p class="small muted">Steps, limits and checks stay identical between runs. The diff shows where the judgement inside them differed.</p>
   <form data-compare class="actions">
-    <select name="a" style="width:auto">{% for r in runs %}<option value="{{ r.id }}">{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
+    <select name="a" style="width:auto">{% for r in runs %}<option value="{{ r.id }}" data-workflow="{{ r.workflow }}">{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
     <span class="muted">against</span>
-    <select name="b" style="width:auto">{% for r in runs %}<option value="{{ r.id }}" {{ 'selected' if loop.index == 2 }}>{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
+    <select name="b" style="width:auto">{% for r in runs %}<option value="{{ r.id }}" data-workflow="{{ r.workflow }}">{{ r.title }} ({{ r.id[:8] }})</option>{% endfor %}</select>
+    <span class="small muted">Only runs of the same workflow can be compared.</span>
     <button class="btn" type="submit">Compare</button>
   </form>
 </div>

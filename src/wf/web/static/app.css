@@ -213,6 +213,11 @@ td select[data-model-step]{width:auto;min-width:170px}
 .dg-out-person{fill:var(--yellow-bg);stroke:#e7c77f}.dg-out-question{fill:var(--red-bg);stroke:var(--red-ink);stroke-dasharray:4 3}
 .dg-question-line{stroke:var(--red-ink);stroke-dasharray:4 3}
 .flow-desc{max-width:760px}
+.filters{margin:0 0 12px}
+.filters select{width:auto;margin-left:4px}
+.btn-select{width:auto;background:var(--blue);color:#fff;border-color:var(--blue)}
+.pager{margin:10px 0 0}
+
 .rounds{margin:4px 0 0;padding-left:0;list-style:none}
 .rounds li{padding:4px 0 4px calc(18px * (var(--level, 0)));border-bottom:1px dashed var(--line)}
 .rounds li:last-child{border-bottom:none}

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -84,6 +84,7 @@ from .plain import (
 from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view
 
 WEB = Path(__file__).resolve().parents[1] / "web"
+RUNS_PAGE = 50
 
 logger = get_logger("wf.api")
 
@@ -1160,8 +1161,35 @@ def create_app(state: AppState | None = None) -> FastAPI:
         )
 
     @app.get("/runs", response_class=HTMLResponse)
-    def runs_page(request: Request, workflow: str | None = None) -> Any:
-        return page(request, "runs", runs=list_runs(workflow or None), workflow=workflow)
+    def runs_page(
+        request: Request,
+        workflow: str | None = None,
+        mode: str | None = None,
+        page_no: int = Query(1, alias="page"),
+    ) -> Any:
+        """Runs, newest first, a page at a time, for one workflow or all, dry or real."""
+        workflow, mode, page_no = workflow or None, mode or None, max(page_no, 1)
+        runs = st().runner.list_runs(
+            workflow, RUNS_PAGE, mode=mode, offset=(page_no - 1) * RUNS_PAGE
+        )
+        more = st().runner.count_runs(workflow, mode) > page_no * RUNS_PAGE
+
+        def at(n: int) -> str:
+            q = {"workflow": workflow, "mode": mode, "page": n if n > 1 else None}
+            qs = urlencode({k: v for k, v in q.items() if v})
+            return "/runs" + (f"?{qs}" if qs else "")
+
+        return page(
+            request,
+            "runs",
+            runs=runs,
+            workflow=workflow,
+            mode=mode,
+            page_no=page_no,
+            newer=at(page_no - 1) if page_no > 1 else None,
+            older=at(page_no + 1) if more else None,
+            names=st().ws.list_definitions(),
+        )
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str) -> Any:

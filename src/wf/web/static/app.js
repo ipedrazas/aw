@@ -676,6 +676,22 @@ document.querySelectorAll("[data-pause]").forEach(box => {
   const first = Array.from(tabs).find(t => t.dataset.filter === asked);
   if (first) show(first);
   const cmp = document.querySelector("form[data-compare]");
+  /* the second list offers only runs of the first one's workflow, itself left out */
+  if (cmp) {
+    const a = cmp.querySelector("[name=a]"), b = cmp.querySelector("[name=b]");
+    const narrow = () => {
+      const wf = a.selectedOptions[0]?.dataset.workflow;
+      let pick = null;
+      Array.from(b.options).forEach(o => {
+        const ok = o.dataset.workflow === wf && o.value !== a.value;
+        o.hidden = !ok; o.disabled = !ok;
+        if (ok && !pick) pick = o;
+      });
+      if (b.selectedOptions[0]?.disabled || !b.value) b.value = pick ? pick.value : "";
+      cmp.querySelector("button[type=submit]").disabled = !pick;
+    };
+    a.addEventListener("change", narrow); narrow();
+  }
   if (cmp) cmp.addEventListener("submit", e => {
     e.preventDefault();
     const a = cmp.querySelector("[name=a]").value, b = cmp.querySelector("[name=b]").value;
@@ -707,6 +723,15 @@ document.querySelectorAll("form[data-skill-edit]").forEach(f => {
     } catch (err) { say(msg, err.message, true); b.disabled = false; }
   });
 });
+
+/* A select that goes somewhere when chosen, and a filter form that applies as it changes. */
+document.querySelectorAll("select[data-go]").forEach(sel => sel.addEventListener("change", () => { if (sel.value) location.href = sel.value; }));
+document.querySelectorAll("form[data-autosubmit]").forEach(f => f.querySelectorAll("select").forEach(sel => sel.addEventListener("change", () => {
+  /* empty choices stay out of the address */
+  const q = new URLSearchParams(new FormData(f));
+  for (const [k, v] of Array.from(q.entries())) if (!v) q.delete(k);
+  location.href = f.getAttribute("action") + (q.toString() ? "?" + q : "");
+})));
 
 /* "More" menus: close on a click anywhere else, on Escape, and once something in them
    is chosen. */
