@@ -2155,8 +2155,7 @@ def _retry_in_background(state: AppState, run_id: str, wf: Any, *, skip: bool = 
     def work() -> None:
         try:
             pick_up = interp.skip if skip else interp.retry
-            result = pick_up(run, wf, claimed=True)
-            state.runner.rescore_expectations(ledger, result)
+            pick_up(run, wf, claimed=True)
         except Exception as e:  # noqa: BLE001
             ledger.finish_run(
                 run,
@@ -2197,8 +2196,7 @@ def _carry_on_paused_in_background(state: AppState, run_id: str, wf: Any) -> Non
 
     def work() -> None:
         try:
-            result = interp.carry_on_paused(run, wf, paused_as=paused_as)
-            state.runner.rescore_expectations(ledger, result)
+            interp.carry_on_paused(run, wf, paused_as=paused_as)
         except Exception as e:  # noqa: BLE001
             ledger.finish_run(
                 run,
@@ -2258,8 +2256,6 @@ def _start_in_background(
             interp.run_existing(
                 run, wf, inputs, mode, findings=findings, expectation=expectation, budget=budget
             )
-            if expectation:
-                state.runner._record_expectations(ledger, interp.last_result, expectation)
         except Exception as e:  # noqa: BLE001
             ledger.finish_run(
                 run, status="failed", outputs=None, spent_usd=0.0, spent_minutes=0.0, error=str(e)
