@@ -161,7 +161,12 @@ document.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("clic
 
 /* Toggle any element by id. */
 document.querySelectorAll("[data-toggle]").forEach(b => {
-  b.addEventListener("click", () => { const t = document.getElementById(b.dataset.toggle); if (t) t.classList.toggle("hidden"); });
+  b.addEventListener("click", () => {
+    const t = document.getElementById(b.dataset.toggle); if (!t) return;
+    const hidden = t.classList.toggle("hidden");
+    /* a button that says what it will do next: "Show …|Hide …" */
+    if (b.dataset.toggleLabel) b.textContent = b.dataset.toggleLabel.split("|")[hidden ? 0 : 1];
+  });
 });
 
 /* The inputs a run starts with, read from the fields the workflow declares. A past case

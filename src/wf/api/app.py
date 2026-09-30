@@ -1148,7 +1148,13 @@ def create_app(state: AppState | None = None) -> FastAPI:
             else None
         )
         return page(
-            request, "audit", audit=audit, docs=process_docs(), cases=cases(), saved_as=saved_as
+            request,
+            "audit",
+            audit=audit,
+            docs=process_docs(),
+            cases=cases(),
+            saved_as=saved_as,
+            unsaved=_unsaved(st(), audit_id),
         )
 
     @app.get("/runs", response_class=HTMLResponse)
@@ -1228,6 +1234,18 @@ def _needs_you(state: AppState) -> int:
     since a run that stopped for you should not wait until you look at the runs list."""
     with state.db.session() as s:
         return s.query(Run).filter_by(status="waiting").count()
+
+
+def _unsaved(state: AppState, audit_id: str) -> bool:
+    """Whether a saved draft has changed since: its definition as it is now is not the
+    file on disk, or the file differs from what was last committed."""
+    result, _rec = _audit(state, audit_id)
+    wf = result.workflow()
+    path = state.ws.definition_path(wf.metadata.name)
+    if not path.exists() or path.read_text() != dump_workflow(wf):
+        return True
+    rel = str(path.relative_to(state.ws.root))
+    return gitrepo.is_repo(state.ws.root) and gitrepo.is_dirty(state.ws.root, rel)
 
 
 def _load(state: AppState, name: str):

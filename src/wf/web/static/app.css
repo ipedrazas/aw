@@ -220,6 +220,10 @@ td select[data-model-step]{width:auto;min-width:170px}
 .menu > summary::after{content:" ▾";color:var(--muted)}
 .menu-list{position:absolute;right:0;top:calc(100% + 6px);z-index:5;display:flex;flex-direction:column;gap:6px;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .menu-list .btn{text-align:left;width:100%}
+.topbar .menu > summary{color:#fff}
+.topbar .menu-list .btn{color:var(--ink);background:#fff}
+.topbar .menu-list .btn-danger{color:var(--red-ink);border-color:#e6bcb6}
+
 
 /* a question in the page (app.js ask) and a note that goes by itself (toast) */
 dialog.ask{border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;max-width:min(520px,calc(100vw - 32px));box-shadow:0 12px 40px rgba(0,0,0,.18)}
