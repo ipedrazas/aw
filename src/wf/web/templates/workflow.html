@@ -1,20 +1,26 @@
 {% extends "base.html" %}
-{% from "_macros.html" import trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
+{% from "_macros.html" import status_pill, trust_pill, tech_switch, delete_button, rename_button, question, questions_summary, run_inputs %}
 {% set s = data.summary %}
 {% block title %}{{ s.name }}{% endblock %}
 {% block bar_title %}<span class="mono">{{ name }}.yaml</span> <span class="muted">version {{ s.version }}</span> <a class="small" href="/workflows/{{ name }}/history">History</a>{% endblock %}
 {% block bar_right %}<span class="muted">{{ s.step_count }} steps, {{ s.model_count }} models, {{ s.skill_count }} instruction files</span>{% endblock %}
 {% block content %}
 <div class="card-head" style="margin-bottom:14px">
-  <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}</div>
+  <div><h1>{{ s.name }}</h1>{% if s.description %}<p class="sub" style="margin:0">{{ s.description }}</p>{% endif %}
+    {% if draft %}<p class="small" style="margin:4px 0 0"><a href="/audits/{{ draft.id }}">Edit it in the chat</a> <span class="muted">— the draft it was made from, where every change has a reason and can be undone.</span></p>{% endif %}</div>
   <div class="actions">
     {{ tech_switch() }}
     <a class="btn" href="/workflows/{{ name }}/settings">Settings</a>
-    <button class="btn" data-toggle="yaml">Open YAML</button>
-    {{ rename_button("/api/workflows/" ~ name ~ "/rename", s.name) }}
-    {{ delete_button("/api/workflows/" ~ name,
-        "Delete “" ~ s.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.",
-        label="Delete workflow", cls="btn btn-danger") }}
+    <details class="menu">
+      <summary class="btn" aria-label="More actions">More</summary>
+      <div class="menu-list">
+        <button class="btn" type="button" data-toggle="yaml">Show the YAML</button>
+        {{ rename_button("/api/workflows/" ~ name ~ "/rename", s.name) }}
+        {{ delete_button("/api/workflows/" ~ name,
+            "Delete “" ~ s.title ~ "”? The definition and the instruction files written for it go; its past runs are kept.",
+            label="Delete workflow", cls="btn btn-danger") }}
+      </div>
+    </details>
     <button class="btn btn-primary" data-toggle="runform">Run it</button>
   </div>
 </div>
@@ -22,10 +28,17 @@
 <div id="runform" class="card hidden">
   <form data-run-workflow="{{ name }}"{% if data.starts_more_work %} data-more-work{% endif %}{% if data.sends_outside %} data-sends{% endif %}>
     {{ run_inputs(data.run_fields, cases) }}
-    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit" value="dry">Start a dry run</button><button class="btn" type="submit" value="live">Run it for real</button><span class="small muted">A dry run guesses where the workflow is silent and marks what it makes as simulated. A real run uses real judgement and {{ 'live web search (Exa)' if search_live else 'recorded sources' }}{% if data.sends_outside %}, and sends what the workflow sends{% else %}; nothing is sent anywhere{% endif %}.</span><span data-msg class="small"></span></div>
+    <div class="actions" style="margin-top:12px"><button class="btn btn-primary" type="submit" value="dry">Start a dry run</button>{% set left = data.questions | sum(attribute="count") %}<button class="btn" type="submit" value="live"{% if left %} disabled aria-describedby="live-why"{% endif %}>Run it for real</button>{% if left %}<span id="live-why" class="small">A real run needs {{ "its open question" if left == 1 else "its " ~ left ~ " open questions" }} answered first. <a href="#questions" data-goto="questions">Answer {{ "it" if left == 1 else "them" }}</a>.</span>{% endif %}<span class="small muted">A dry run guesses where the workflow is silent and marks what it makes as simulated. A real run uses real judgement and {{ 'live web search (Exa)' if search_live else 'recorded sources' }}{% if data.sends_outside %}, and sends what the workflow sends{% else %}; nothing is sent anywhere{% endif %}.</span><span data-msg class="small"></span></div>
   </form>
 </div>
 <pre id="yaml" class="hidden">{{ data.yaml }}</pre>
+
+
+<div class="card">
+  <div class="card-head"><h2>How it flows</h2><span class="small muted">Including what happens when things do not go as planned</span></div>
+  {{ data.diagram | safe }}
+  <details class="flow-desc small" style="margin-top:8px"><summary>The same, in words</summary><p>{{ data.diagram_text }}</p></details>
+</div>
 
 <div class="model-default" data-models="{{ name }}">
   <label class="small muted" for="default-model">Steps that do not choose their own model run on</label>
@@ -36,13 +49,6 @@
   <span class="tech small muted mono">{{ s.default_model or "" }}</span>
   <span data-msg class="small"></span>
 </div>
-
-<div class="card">
-  <div class="card-head"><h2>How it flows</h2><span class="small muted">Including what happens when things do not go as planned</span></div>
-  {{ data.diagram | safe }}
-  <details class="flow-desc small" style="margin-top:8px"><summary>The same, in words</summary><p>{{ data.diagram_text }}</p></details>
-</div>
-
 <div class="tbl">
 <table>
   <thead><tr><th>Step</th><th>Model</th><th>Instructions</th><th>What you see</th><th>How it runs</th></tr></thead>
@@ -85,6 +91,17 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Recent runs</h2>{% if recent %}<a class="small" href="/runs?workflow={{ name }}">All runs of this workflow</a>{% endif %}</div>
+  {% if not recent %}<p class="muted" style="margin:0">Not run yet. Try it as a dry run first: where your process is silent, it guesses, and says so.</p>{% endif %}
+  {% for r in recent %}
+  <div class="change">
+    <span><a href="/runs/{{ r.id }}">{{ r.title }}</a> <span class="small muted">{{ 'dry run' if r.mode == 'dry' else 'real run' }}{% if r.case_name %} · case: {{ r.case_name }}{% endif %}</span></span>
+    <span>{{ status_pill(r.status) }} <span class="muted small">${{ "%.2f" | format(r.total_cost) }}</span>{% if not loop.first %} <a class="small" href="/runs/{{ recent[0].id }}/diff/{{ r.id }}" title="Compare with the latest run">Compare</a>{% endif %}</span>
+  </div>
+  {% endfor %}
 </div>
 
 <div class="grid3">

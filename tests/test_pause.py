@@ -159,7 +159,7 @@ def _no_gates(ws) -> None:
     write_yaml(ws, DEF, d)
 
 
-def test_the_run_page_offers_pause_only_on_a_running_real_run(tmp_path, sample_ws):
+def test_the_run_page_offers_pause_on_a_running_run_dry_or_real(tmp_path, sample_ws):
     from fastapi.testclient import TestClient
 
     from wf.api.app import AppState, create_app
@@ -181,13 +181,15 @@ def test_the_run_page_offers_pause_only_on_a_running_real_run(tmp_path, sample_w
     assert f'data-pause="{live.id}"' in page and 'data-then="pause"' in page
 
     page = client.get(f"/runs/{dry.id}").text
-    assert f'data-pause="{dry.id}"' not in page, "a dry run has nothing real to pause"
+    assert f'data-pause="{dry.id}"' in page and "Stop after this step" in page, (
+        "a dry run still spends on the models, so it can be stopped too"
+    )
 
     assert client.post(f"/api/runs/{live.id}/pause").status_code == 200
     with state.db.session() as s:
         assert s.get(Run, live.id).pause_requested is True
 
-    assert client.post(f"/api/runs/{dry.id}/pause").status_code == 409
+    assert client.post(f"/api/runs/{dry.id}/pause").status_code == 200
     assert client.post("/api/runs/nope/pause").status_code == 404
     assert client.post(f"/api/runs/{live.id}/carry-on").status_code == 409, (
         "it is running, not paused"

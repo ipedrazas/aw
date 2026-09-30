@@ -329,6 +329,7 @@ class DryRunner:
                         "input": st.input,
                         "cost_usd": st.cost_usd,
                         "duration_s": st.duration_s,
+                        "started_at": st.started_at.isoformat() if st.started_at else None,
                         "model": st.model,
                         "instruction_ref": st.instruction_ref,
                         "instruction_commit": st.instruction_commit,
@@ -451,7 +452,24 @@ class DryRunner:
     def diff(self, run_a: str, run_b: str) -> RunDiff:
         return diff_runs(self.snapshot(run_a), self.snapshot(run_b))
 
-    def list_runs(self, workflow: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def count_runs(self, workflow: str | None = None, mode: str | None = None) -> int:
+        """How many runs a filtered list has in all, to say whether there are older ones."""
+        with self.db.session() as s:
+            q = s.query(Run)
+            if workflow:
+                q = q.filter_by(workflow_name=workflow)
+            if mode:
+                q = q.filter_by(mode=mode)
+            return q.count()
+
+    def list_runs(
+        self,
+        workflow: str | None = None,
+        limit: int = 50,
+        *,
+        mode: str | None = None,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         """The latest runs, newest first, each followed by the follow-ups it started.
 
         A follow-up sits under its parent however long after it started, with ``level``
@@ -463,7 +481,9 @@ class DryRunner:
             q = s.query(Run).order_by(Run.started_at.desc())
             if workflow:
                 q = q.filter_by(workflow_name=workflow)
-            runs = q.limit(limit).all()
+            if mode:
+                q = q.filter_by(mode=mode)
+            runs = q.offset(offset).limit(limit).all()
             # follow-ups the limit or the filter left out still belong under their parent
             have = {r.id for r in runs}
             frontier = list(have)
@@ -575,7 +595,7 @@ def _parts_of(parent: StepRun, steps: list[StepRun]) -> list[dict[str, Any]]:
                 "cost_usd": st.cost_usd,
                 "searches": sum(1 for c in st.tool_calls or [] if c.get("name") == "search"),
                 **(
-                    {"topic": further.get("topic"), "level": further.get("level")}
+                    {k: further.get(k) for k in ("topic", "level", "why", "from")}
                     if isinstance(further, dict)
                     else {}
                 ),

@@ -5,12 +5,13 @@ from __future__ import annotations
 import copy
 import os
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 import yaml
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,7 +28,7 @@ from wf.activities.fake import FakeModel
 from wf.activities.models import build_system
 from wf.activities.safety import data_region
 from wf.audit import AnswerRejected, Auditor, AuditResult, Change, fold_similar, group_questions
-from wf.audit.asking import ask_first, asking, skip
+from wf.audit.asking import ask, ask_first, asking, ordered, plan_of, skip
 from wf.audit.catalog import (
     answered_by_decisions,
     capabilities,
@@ -85,6 +86,7 @@ from .plain import (
 from .skills import SkillError, edit_step_skill, skill_catalog, skill_url, skill_view, text_diff
 
 WEB = Path(__file__).resolve().parents[1] / "web"
+RUNS_PAGE = 50
 
 logger = get_logger("wf.api")
 
@@ -104,6 +106,9 @@ class AppState:
             acts.policy = ActivityPolicy(retries=0)
         self.runner = DryRunner(ws, acts, db, RunConfig(artifacts_dir=artifacts_dir))
         self.audits = AuditStore(db)
+        # drafts being made in the background, by job id: the stage each is at, and
+        # the draft or the error it ended with (one process; lost on a restart)
+        self.jobs: dict[str, dict[str, Any]] = {}
         self.chat_model = chat_model()
         self.author = (
             os.environ.get("WF_AUTHOR_NAME", "Workflow UI"),
@@ -362,7 +367,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
         ``{"reset_steps": true}`` every step back to the workflow's;
         ``{"budget": {"max_usd": n, "max_minutes": n}}`` the spending limit for a run;
         ``{"step": id, "limits": {"max_depth": n, "max_fanout": n}}`` how far a
-        follow-up step may go."""
+        follow-up step may go;
+        ``{"step": id, "search_further": {"levels": n, "max_searches": n, "max_topics": n}}``
+        how far a step that searches further may go."""
         wf = _load(st(), name)
         edits, said = _settings_edits(wf, body)
         if not edits:
@@ -603,30 +610,75 @@ def create_app(state: AppState | None = None) -> FastAPI:
     def list_audits() -> list[dict[str, Any]]:
         return st().audits.list()
 
-    @app.post("/api/audits")
-    def create_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def _document(body: dict[str, Any]) -> tuple[str, str | None]:
         document = str(body.get("document") or "").strip()
         if len(document) < 20:
             raise HTTPException(
                 400, "Describe the process in a few sentences, or paste the document."
             )
-        name = body.get("name") or None
+        return document, body.get("name") or None
+
+    @app.post("/api/audits")
+    def create_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        document, name = _document(body)
         try:
-            result = st().auditor.audit(document, name=name)
+            audit_id = _make_audit(document, name)
         except Exception as e:  # noqa: BLE001 - surface the reason to the UI
             raise HTTPException(502, f"The draft could not be made: {e}") from e
-        plan, settled, changes = _triage(st(), result, document)
-        audit_id = st().audits.create(result, document, plan=plan, settled=settled)
+        return _audit_view(st(), audit_id)
+
+    @app.post("/api/audits/jobs")
+    def start_audit(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Make a draft in the background, and say how far it has got at
+        ``/api/audits/jobs/{id}``: the page shows each stage instead of a spinner."""
+        document, name = _document(body)
+        job_id = uuid.uuid4().hex
+        job: dict[str, Any] = {"id": job_id, "stage": "read", "audit_id": None, "error": None}
+        st().jobs[job_id] = job
+        state = st()
+
+        def work() -> None:
+            try:
+                job["audit_id"] = _make_audit(
+                    document, name, progress=lambda stage: job.update(stage=stage), state=state
+                )
+                job["stage"] = "done"
+            except Exception as e:  # noqa: BLE001 - said on the page
+                logger.exception("drafting failed")
+                job.update(stage="failed", error=f"The draft could not be made: {e}")
+
+        threading.Thread(target=work, daemon=True, name=f"draft-{job_id[:8]}").start()
+        return job
+
+    @app.get("/api/audits/jobs/{job_id}")
+    def audit_job(job_id: str) -> dict[str, Any]:
+        job = st().jobs.get(job_id)
+        if job is None:
+            raise HTTPException(
+                404, "No such draft being made. It may have been lost on a restart."
+            )
+        return job
+
+    def _make_audit(
+        document: str, name: str | None, progress: Any = None, state: AppState | None = None
+    ) -> str:
+        """Read a document into a draft, have the chat sort its questions, and keep it."""
+        state = state or st()
+        result = state.auditor.audit(document, name=name, progress=progress)
+        if progress:
+            progress("triage")
+        plan, settled, changes = _triage(state, result, document)
+        audit_id = state.audits.create(result, document, plan=plan, settled=settled)
         if changes:
-            st().audits.save(audit_id, result, changes, by="assistant")
-        st().sessions.link_audit(result.session_id, audit_id)
+            state.audits.save(audit_id, result, changes, by="assistant")
+        state.sessions.link_audit(result.session_id, audit_id)
         logger.info(
             "drafted %s from a document of %d characters",
             result.name,
             len(document),
             extra={"fields": {"event": "audit.created", "audit": audit_id, "name": result.name}},
         )
-        return _audit_view(st(), audit_id)
+        return audit_id
 
     @app.get("/api/audits/{audit_id}")
     def get_audit(audit_id: str) -> dict[str, Any]:
@@ -687,6 +739,29 @@ def create_app(state: AppState | None = None) -> FastAPI:
         st().audits.save(
             audit_id, result, [], by="user", chat=skip(rec.chat or [], str(body.get("finding_id")))
         )
+        return _audit_view(st(), audit_id)
+
+    @app.post("/api/audits/{audit_id}/ask")
+    def ask_in_chat(audit_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Ask this question in the chat now, from the list beside the draft. The one the
+        chat was waiting on is put aside for later, as if skipped; a question skipped
+        before is asked again, since the person chose it."""
+        result, rec = _audit(st(), audit_id)
+        fid = str(body.get("finding_id"))
+        chat = rec.chat or []
+        now = asking(result.findings, chat)
+        if now is not None and now.id == fid:
+            return _audit_view(st(), audit_id)
+        q = next(
+            (q for q in ordered(result.findings) if fid in {q[0].id, *(o.id for o in q[1])}), None
+        )
+        if q is None:
+            raise HTTPException(409, "That question is not open any more.")
+        if now is not None:
+            chat = skip(chat, now.id)
+        chat = ask_first(chat, q[0].id, "")
+        text = plan_of(chat).get("lead", {}).get(q[0].id, "")
+        st().audits.save(audit_id, result, [], by="user", chat=[*chat, ask(*q, text=text)])
         return _audit_view(st(), audit_id)
 
     @app.post("/api/audits/{audit_id}/edit")
@@ -945,16 +1020,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.post("/api/runs/{run_id}/pause")
     def pause_run(run_id: str) -> dict[str, Any]:
-        """Ask a running real run to pause. It stops after the step it is on finishes,
-        never mid-step, and shows as paused."""
+        """Ask a running run to pause. It stops after the step it is on finishes, never
+        mid-step, and shows as paused. A dry run can be paused too: it can still spend
+        on the models, and it can be carried on the same way."""
         with st().db.session() as s:
             run = s.get(Run, run_id)
             if run is None:
                 raise HTTPException(404, "No such run.")
             if run.status != "running":
                 raise HTTPException(409, "This run is not running, so there is nothing to pause.")
-            if run.mode == "dry":
-                raise HTTPException(409, "This is a dry run; there is nothing real to pause.")
             run.pause_requested = True
         return {"run_id": run_id, "status": "running"}
 
@@ -1115,7 +1189,15 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/workflows/{name}", response_class=HTMLResponse)
     def workflow_page(request: Request, name: str) -> Any:
-        return page(request, "workflow", data=get_workflow(name), name=name, cases=cases())
+        return page(
+            request,
+            "workflow",
+            data=get_workflow(name),
+            name=name,
+            cases=cases(),
+            recent=[r for r in st().runner.list_runs(name, limit=5) if not r["parent_run_id"]],
+            draft=next((a for a in st().audits.list() if a["name"] == name), None),
+        )
 
     @app.get("/workflows/{name}/history", response_class=HTMLResponse)
     def history_page(request: Request, name: str) -> Any:
@@ -1165,11 +1247,52 @@ def create_app(state: AppState | None = None) -> FastAPI:
 
     @app.get("/audits/{audit_id}", response_class=HTMLResponse)
     def audit_page(request: Request, audit_id: str) -> Any:
-        return page(request, "audit", audit=get_audit(audit_id), docs=process_docs(), cases=cases())
+        audit = get_audit(audit_id)
+        saved_as = (
+            audit["name"]
+            if audit["status"] == "saved" and st().ws.definition_path(audit["name"]).exists()
+            else None
+        )
+        return page(
+            request,
+            "audit",
+            audit=audit,
+            docs=process_docs(),
+            cases=cases(),
+            saved_as=saved_as,
+            unsaved=_unsaved(st(), audit_id),
+        )
 
     @app.get("/runs", response_class=HTMLResponse)
-    def runs_page(request: Request) -> Any:
-        return page(request, "runs", runs=list_runs(None))
+    def runs_page(
+        request: Request,
+        workflow: str | None = None,
+        mode: str | None = None,
+        page_no: int = Query(1, alias="page"),
+    ) -> Any:
+        """Runs, newest first, a page at a time, for one workflow or all, dry or real."""
+        workflow, mode, page_no = workflow or None, mode or None, max(page_no, 1)
+        runs = st().runner.list_runs(
+            workflow, RUNS_PAGE, mode=mode, offset=(page_no - 1) * RUNS_PAGE
+        )
+        more = st().runner.count_runs(workflow, mode) > page_no * RUNS_PAGE
+
+        def at(n: int) -> str:
+            q = {"workflow": workflow, "mode": mode, "page": n if n > 1 else None}
+            qs = urlencode({k: v for k, v in q.items() if v})
+            return "/runs" + (f"?{qs}" if qs else "")
+
+        return page(
+            request,
+            "runs",
+            runs=runs,
+            workflow=workflow,
+            mode=mode,
+            page_no=page_no,
+            newer=at(page_no - 1) if page_no > 1 else None,
+            older=at(page_no + 1) if more else None,
+            names=st().ws.list_definitions(),
+        )
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str) -> Any:
@@ -1179,11 +1302,14 @@ def create_app(state: AppState | None = None) -> FastAPI:
         for s in run["steps"]:
             s["calls"] = calls.get(s["step_id"], [])
             s["search_limits"] = search_limits.get(s["step_id"])
+        answer_at, can_tell = _where_to_answer(st(), run["workflow"])
         return page(
             request,
             "run",
             run=run,
             others=[r for r in list_runs(None) if r["id"] != run_id],
+            answer_at=answer_at,
+            can_tell=can_tell,
         )
 
     @app.get("/runs/{run_a}/diff/{run_b}", response_class=HTMLResponse)
@@ -1203,6 +1329,32 @@ def create_app(state: AppState | None = None) -> FastAPI:
 # -- helpers -----------------------------------------------------------------------
 
 
+def _where_to_answer(state: AppState, name: str) -> tuple[dict[str, str], bool]:
+    """Where each question still open about a workflow can be answered: on the workflow's
+    page, else on a draft of it. A guess or open question on a run that is in neither has
+    been answered (or has stopped applying) since. The bool says whether anywhere was
+    looked at, so a run of a deleted workflow does not claim its questions are settled."""
+    links: dict[str, str] = {}
+    found = False
+    try:
+        wf = state.ws.load_definition(name)
+        found = True
+        for f in validate(wf, state.ws).findings:
+            if f.status == "open":
+                links[f.id] = f"/workflows/{name}#q-{f.id}"
+    except WorkspaceError:
+        pass
+    for a in state.audits.list():
+        if a["name"] != name:
+            continue
+        found = True
+        result, _rec = state.audits.load(a["id"])
+        for f in result.findings:
+            if f.status == "open":
+                links.setdefault(f.id, f"/audits/{a['id']}#q-{f.id}")
+    return links, found
+
+
 def _section(path: str) -> str:
     """Which part of the nav a page belongs to: a workflow's settings are the workflow's,
     a draft is a workflow being made, one instruction file is among the instructions."""
@@ -1215,6 +1367,18 @@ def _needs_you(state: AppState) -> int:
     since a run that stopped for you should not wait until you look at the runs list."""
     with state.db.session() as s:
         return s.query(Run).filter_by(status="waiting").count()
+
+
+def _unsaved(state: AppState, audit_id: str) -> bool:
+    """Whether a saved draft has changed since: its definition as it is now is not the
+    file on disk, or the file differs from what was last committed."""
+    result, _rec = _audit(state, audit_id)
+    wf = result.workflow()
+    path = state.ws.definition_path(wf.metadata.name)
+    if not path.exists() or path.read_text() != dump_workflow(wf):
+        return True
+    rel = str(path.relative_to(state.ws.root))
+    return gitrepo.is_repo(state.ws.root) and gitrepo.is_dirty(state.ws.root, rel)
 
 
 def _load(state: AppState, name: str):
@@ -1385,6 +1549,21 @@ def _settings_edits(wf: Workflow, body: dict[str, Any]) -> tuple[list[tuple[str,
             [(f"steps.{sid}.limits", value, "Set in the workflow's settings.")],
             f"{title} goes {value['max_depth']} deep, {value['max_fanout']} at most",
         )
+    if "search_further" in body:
+        if step is None or step.search_further is None:
+            raise HTTPException(400, "Only a step that searches further has these limits.")
+        sf = body["search_further"] or {}
+        value = {
+            **step.search_further.model_dump(),
+            "levels": _positive(sf.get("levels"), "How many rounds", whole=True),
+            "max_searches": _positive(sf.get("max_searches"), "How many searches", whole=True),
+            "max_topics": _positive(sf.get("max_topics"), "How many topics a round", whole=True),
+        }
+        return (
+            [(f"steps.{sid}.search_further", value, "Set in the workflow's settings.")],
+            f"{title} searches {value['levels']} rounds further, {value['max_searches']} "
+            f"searches at most, {value['max_topics']} topics a round",
+        )
     if "domains" in body:
         if step is None or not (step.tools or {}).get("search"):
             raise HTTPException(400, "Only a step that searches has these limits.")
@@ -1458,6 +1637,8 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
         "steps": steps,
         "own_count": sum(1 for s in steps if s["own"] and s["stops"]),
         "budget": wf.spec.budget.model_dump(exclude_none=True) if wf.spec.budget else None,
+        # what a new workflow starts from, to set this one back to it
+        "app": _app_settings_view(state),
         "followups": [
             {
                 "id": s.id,
@@ -1487,6 +1668,11 @@ def _settings_view(state: AppState, wf: Workflow) -> dict[str, Any]:
             }
             for s in wf.spec.steps
             if (s.tools or {}).get("search")
+        ],
+        "further_steps": [
+            {"id": s.id, "title": s.title or s.id, **s.search_further.model_dump()}
+            for s in wf.spec.steps
+            if s.search_further is not None
         ],
     }
 
