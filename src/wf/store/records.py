@@ -220,6 +220,20 @@ class DraftChange(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AuthorSession(Base):
+    """A conversation that writes a workflow (``wf.author``). What was said, in order;
+    the draft it wrote is kept as an audit, so it is saved and tried like any other."""
+
+    __tablename__ = "author_session"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    messages: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    # Not a foreign key: there is no draft until the conversation writes one.
+    audit_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class AgentSession(Base):
     """One agentic session: everything a model was asked during one piece of work.
 

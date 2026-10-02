@@ -839,6 +839,40 @@ function agoTimes() {
 }
 agoTimes();
 
+/* Writing a workflow in conversation (prototype): what you say goes into the log at
+   once, and the page comes back with the reply and the draft as it now stands. */
+(function () {
+  const root = document.querySelector("[data-author]"); if (!root) return;
+  const id = root.dataset.author, form = root.querySelector("form[data-author-chat]");
+  const log = root.querySelector("[data-chat-log]"), box = form.querySelector("textarea");
+  const msg = form.querySelector("[data-msg]"), key = "author:" + id;
+  const toBottom = () => { log.scrollTop = log.scrollHeight; };
+  const grow = () => { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 200) + "px"; };
+  const unsent = kept.get(key);
+  if (unsent && !box.value) { box.value = unsent; grow(); }
+  toBottom();
+  box.addEventListener("input", () => { grow(); box.value.trim() ? kept.set(key, box.value) : kept.drop(key); });
+  box.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const text = box.value.trim(); if (!text) return;
+    const mine = document.createElement("div"); mine.className = "msg msg-user"; mine.textContent = text;
+    log.appendChild(mine);
+    const wait = document.createElement("div"); wait.className = "msg msg-assistant muted"; wait.textContent = "Thinking…";
+    log.appendChild(wait); toBottom();
+    box.value = ""; grow(); box.disabled = true; say(msg, "");
+    try { await postJSON("/api/author/" + id + "/message", {message: text}); kept.drop(key); reloadHere(); }
+    catch (err) { wait.remove(); box.value = text; box.disabled = false; say(msg, err.message, true); }
+  });
+  document.querySelectorAll("[data-author-save]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { const d = await postJSON("/api/audits/" + b.dataset.authorSave + "/save"); toast("Saved as the workflow “" + d.workflow + "”."); reloadHere(); }
+    catch (err) { b.disabled = false; toast(err.message); }
+  }));
+})();
+
 /* Run page: run it again as a dry run, with the same case or inputs, to see whether the
    questions answered since closed the gaps it guessed at. */
 document.querySelectorAll("[data-rerun]").forEach(box => {

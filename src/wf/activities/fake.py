@@ -58,6 +58,14 @@ class FakeModel:
                 },
             )
             return ModelResponse(output=out, decisions=[], usage=Usage())
+        if request.tag == "author:turn":
+            out = fill(
+                request.output_schema,
+                {
+                    "reply": "This is the offline model, so I cannot talk this through or write a draft. Set ANTHROPIC_API_KEY for a real conversation."
+                },
+            )
+            return ModelResponse(output=out, decisions=[], usage=Usage())
         out = fill(request.output_schema)
         if isinstance(out, dict) and "output" in request.output_schema.get("properties", {}):
             pass
