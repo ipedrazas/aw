@@ -188,6 +188,19 @@ def chat_model() -> str:
     return os.environ.get("WF_CHAT_MODEL") or quick_model()
 
 
+def author_model() -> str:
+    """Leads the conversation that writes a workflow (``wf.author``). It writes whole
+    drafts and their instructions, so careful work by default."""
+    return os.environ.get("WF_AUTHOR_MODEL") or careful_model()
+
+
+def authoring_prototype() -> bool:
+    """Whether the home page offers the conversation that writes a workflow, beside
+    the document that makes a draft. ``WF_AUTHORING=on``; the page itself is always
+    there at /author/new."""
+    return (os.environ.get("WF_AUTHORING") or "").strip().lower() in {"1", "on", "true", "yes"}
+
+
 def guess_model() -> str:
     """Fills a gap the document left, when guesses are allowed to ask a model."""
     return os.environ.get("WF_GUESS_MODEL") or quick_model()

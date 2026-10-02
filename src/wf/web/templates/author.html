@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tech_switch %}
+{% block title %}{{ conv.title or "A new workflow" }}{% endblock %}
+{% block bar_title %}{{ conv.title or "A new workflow" }} <span class="pill pill-blue small">Prototype</span>{% endblock %}
+{% block bar_right %}
+  {% if conv.draft %}
+    <button class="btn" type="button" data-author-save="{{ conv.draft.audit_id }}">{{ "Update the workflow" if conv.draft.status == "saved" else "Save as a workflow" }}</button>
+    <a class="btn btn-primary" href="/audits/{{ conv.draft.audit_id }}#tryform">Try it</a>
+  {% endif %}
+{% endblock %}
+{% block content %}
+<div class="grid2" data-author="{{ conv.id }}">
+  <div class="card chat-card">
+    <div class="card-head"><h2>Talk it through</h2>{% if conv.draft %}<span class="small muted">{{ conv.draft.name }}</span>{% endif %}</div>
+    <div class="chat" data-chat-log role="log" aria-live="polite" aria-label="The conversation">
+      {% if not conv.messages %}
+      <div class="msg msg-assistant">What would you like to hand over? Tell me what the work is for and how you do it today, roughly. Or paste a document that describes it, and I'll draft it straight away.</div>
+      {% endif %}
+      {% for m in conv.messages %}
+        <div class="msg msg-{{ m.role }}">{{ m.text }}</div>
+        {% if m.drafts %}<div class="msg-change"><strong>Draft updated.</strong>{% if m.wrote %} <span class="muted small">{{ m.wrote | length }} file{{ 's' if m.wrote | length != 1 }} written.</span>{% endif %}</div>{% endif %}
+        {% if m.check_these %}<div class="msg-change"><strong>Check these, they are yours to decide:</strong> {{ m.check_these | join('; ') }}.</div>{% endif %}
+      {% endfor %}
+    </div>
+    <form class="chat-form" data-author-chat>
+      <div class="chat-box">
+        <textarea rows="2" placeholder="Tell me about the work, or paste your document" aria-label="Message"></textarea>
+        <div class="small muted chat-hint">Enter to send, Shift+Enter for a new line.</div>
+      </div>
+      <div data-msg class="small muted"></div>
+    </form>
+  </div>
+
+  <div>
+    {% if conv.draft %}
+    <div class="card">
+      <div class="card-head">
+        <div><h2>The workflow so far</h2><p class="sub" style="margin:0">{{ conv.draft.summary.step_count }} steps. It changes as we talk.</p></div>
+        <div class="actions"><button class="btn btn-sm" type="button" data-toggle="flowpic" data-toggle-label="Show the picture|Hide the picture">Hide the picture</button>{{ tech_switch() }}</div>
+      </div>
+      <div id="flowpic" style="margin-bottom:12px">
+        {{ conv.draft.diagram | safe }}
+        <details class="flow-desc small"><summary>The same, in words</summary><p>{{ conv.draft.diagram_text }}</p></details>
+      </div>
+      <ol class="steps">
+        {% for st in conv.draft.steps %}
+        <li>
+          <span class="n">{{ st.n }}</span>
+          <span>
+            <div class="t">{{ st.title }}</div>
+            {% if st.description %}<div>{{ st.description }}</div>{% endif %}
+            {% if st.when %}<div class="when">{{ st.when }}</div>{% endif %}
+            <div class="tech mono">{{ st.kind }}{% if st.technical.model %} · {{ st.technical.model }}{% endif %}{% if st.technical.skill %} · <a href="{{ skill_url(st.technical.skill) }}">{{ st.technical.skill }}</a>{% endif %}{% if st.technical.run %} · {{ st.technical.run }}{% endif %}</div>
+          </span>
+          <span class="small muted">{{ st.trust }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Still open</h2><span class="muted">{{ conv.draft.open_points | length }}</span></div>
+      {% if not conv.draft.open_points %}<p class="muted">Nothing the checks can find. A dry run will show the rest.</p>
+      {% else %}
+      <p class="small muted">I'll bring these into the conversation as they matter. You can also just say what you want.</p>
+      <ul class="small">{% for f in conv.draft.open_points %}<li>{{ f.question }}{% if f.step %} <span class="muted">({{ f.step }})</span>{% endif %}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+    <details class="card"><summary><strong>The definition</strong> <span class="small muted">as the system reads it</span></summary><pre class="mono small">{{ conv.draft.yaml }}</pre></details>
+    {% else %}
+    <div class="card"><h2>The workflow</h2><p class="muted">It appears here once we know enough to write it down, and changes as we talk. Nothing runs until you try it.</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

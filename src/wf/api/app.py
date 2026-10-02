@@ -44,6 +44,7 @@ from wf.audit.question import _get, _set, answer_definition
 from wf.audit.restore import restore_missing_files
 from wf.audit.suggest import offers
 from wf.audit.triage import triage
+from wf.author import author_turn, findings_view
 from wf.decisions import is_decisions_model
 from wf.dryrun import DryRunner
 from wf.interpret import OpenFindings, RunConfig
@@ -57,7 +58,7 @@ from wf.schema import (
     dump_workflow,
     load_workflow_dict,
 )
-from wf.settings import chat_model, provider, search_mode
+from wf.settings import author_model, authoring_prototype, chat_model, provider, search_mode
 from wf.startup import announce
 from wf.store import Artifact, Database, Gate, Run
 from wf.store import repo as gitrepo
@@ -74,6 +75,7 @@ from wf.validate.models import (
 )
 
 from .audits import AuditStore
+from .authoring import AuthorStore
 from .diagram import describe, flow, render_svg
 from .plain import (
     TRUST_CHOICES,
@@ -107,10 +109,12 @@ class AppState:
             acts.policy = ActivityPolicy(retries=0)
         self.runner = DryRunner(ws, acts, db, RunConfig(artifacts_dir=artifacts_dir))
         self.audits = AuditStore(db)
+        self.authoring = AuthorStore(db, self.audits)
         # drafts being made in the background, by job id: the stage each is at, and
         # the draft or the error it ended with (one process; lost on a restart)
         self.jobs: dict[str, dict[str, Any]] = {}
         self.chat_model = chat_model()
+        self.author_model = author_model()
         self.author = (
             os.environ.get("WF_AUTHOR_NAME", "Workflow UI"),
             os.environ.get("WF_AUTHOR_EMAIL", "ui@localhost"),
@@ -604,6 +608,59 @@ def create_app(state: AppState | None = None) -> FastAPI:
             },
         )
         return {**result, "commit": commit, "drafts": drafts}
+
+    # -- writing a workflow in conversation (prototype, wf.author) ------------------
+
+    def _author_view(session_id: str) -> dict[str, Any]:
+        try:
+            sess = st().authoring.load(session_id)
+        except KeyError as e:
+            raise HTTPException(404, "No such conversation.") from e
+        view: dict[str, Any] = {**sess, "draft": None}
+        if sess["audit_id"]:
+            result, rec = _audit(st(), sess["audit_id"])
+            wf = result.workflow()
+            view["draft"] = {
+                "audit_id": sess["audit_id"],
+                "name": result.name,
+                "status": rec.status,
+                "summary": plain_summary(wf),
+                "steps": plain_steps(wf),
+                **_picture(wf, result.findings, st().ws),
+                "yaml": dump_workflow(wf),
+                "open_points": findings_view(result.findings),
+            }
+        return view
+
+    @app.post("/api/author")
+    def start_authoring() -> dict[str, Any]:
+        return _author_view(st().authoring.create())
+
+    @app.get("/api/author/{session_id}")
+    def get_authoring(session_id: str) -> dict[str, Any]:
+        return _author_view(session_id)
+
+    @app.post("/api/author/{session_id}/message")
+    def author_message(session_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        message = str(body.get("message") or "").strip()
+        if not message:
+            raise HTTPException(400, "Say something first.")
+        sess = _author_view(session_id)
+        try:
+            outcome = author_turn(
+                st().model,
+                st().ws,
+                sess["messages"],
+                message,
+                st().authoring.definition(sess["audit_id"]),
+                model_name=st().author_model,
+                audit_id=sess["audit_id"],
+            )
+        except Exception as e:  # noqa: BLE001 - said on the page
+            logger.exception("authoring turn failed")
+            raise HTTPException(502, f"I could not answer: {e}") from e
+        st().authoring.record_turn(session_id, message, outcome)
+        return _author_view(session_id)
 
     # -- audits --------------------------------------------------------------
 
@@ -1260,9 +1317,24 @@ def create_app(state: AppState | None = None) -> FastAPI:
             link=link,
         )
 
+    @app.get("/author/new", response_class=HTMLResponse)
+    def new_authoring_page() -> Any:
+        return RedirectResponse(f"/author/{st().authoring.create()}", status_code=303)
+
+    @app.get("/author/{session_id}", response_class=HTMLResponse)
+    def authoring_page(request: Request, session_id: str) -> Any:
+        return page(request, "author", conv=_author_view(session_id))
+
     @app.get("/audits/new", response_class=HTMLResponse)
     def new_audit_page(request: Request) -> Any:
-        return page(request, "audit", audit=None, docs=process_docs(), cases=cases())
+        return page(
+            request,
+            "audit",
+            audit=None,
+            docs=process_docs(),
+            cases=cases(),
+            authoring=authoring_prototype(),
+        )
 
     @app.get("/audits/{audit_id}", response_class=HTMLResponse)
     def audit_page(request: Request, audit_id: str) -> Any:

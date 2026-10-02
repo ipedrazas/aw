@@ -172,9 +172,17 @@ def plain_summary(wf: Workflow) -> dict[str, Any]:
         "default_model_label": model_label(wf.spec.defaults.model, wf),
         "skill_count": len(skills),
         "budget": (
-            f"${b.max_usd:g} and {b.max_minutes:g} minutes per run"
+            " and ".join(
+                part
+                for part in (
+                    f"${b.max_usd:g}" if b.max_usd is not None else "",
+                    f"{b.max_minutes:g} minutes" if b.max_minutes is not None else "",
+                )
+                if part
+            )
+            + " per run"
             + (", shared with any follow-up research" if b.shared_with_children else "")
-            if b
+            if b and (b.max_usd is not None or b.max_minutes is not None)
             else None
         ),
         "budget_on_exceeded": "If either would be exceeded, the run stops." if b else None,

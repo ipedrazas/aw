@@ -611,3 +611,20 @@ every turn, so the model never has to ask. Why: a run's decisions are the one pa
 this chat's context that is both large (every step's full trail) and rarely the
 subject of a given message, so paying for it on every turn would cost far more than
 the questions that actually need it.
+
+**A conversation that writes the workflow, led by a skill (prototype).** `wf.author`
+gives a model the skill in `src/wf/author/skill/` (`SKILL.md` and its references) as
+its instructions, and tools to read what the system can do, read a workflow or an
+instruction file, and write the whole draft. The person talks first; the model writes
+the draft when it knows enough and the validator tells it what is wrong, which it fixes
+or brings into the conversation. Code still holds what the model may not decide: a
+draft that does not load is refused with the reasons; its files go only under
+`skills/<name>/` and `schemas/<name>/`; it cannot take an existing workflow's name;
+and a change to spending, approvals, what leaves the system, check-ins or models is
+said beside the reply. The draft is kept as an ordinary audit, so saving, trying and the
+draft page work unchanged. It lives at `/author/new`, offered from the new-workflow page
+when `WF_AUTHORING=on`; `WF_AUTHOR_MODEL` names its model (careful by default).
+Alternative: keep the extraction pipeline and make its chat warmer. Why: the second round
+of feedback (2026-10-02) said the chat is a wizard; the extract → findings → cards flow
+lets the rules set the agenda, and the chat was told not to ask its own questions. Not
+yet measured against the current pipeline on real documents.

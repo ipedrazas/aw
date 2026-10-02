@@ -35,6 +35,7 @@
     {% if not audit %}
       <form data-new-audit>
         <p class="small muted">Say how you do it today, in your own words, or paste the document you already have. The draft on the right is built from what you say; what you do not say becomes a question.</p>
+        {% if authoring %}<p class="small"><a href="/author/new">Or talk it through with me first</a> <span class="pill pill-blue">Prototype</span></p>{% endif %}
         <p><textarea name="document" style="min-height:260px" placeholder="I want to research a topic in depth. Search the web, write me a report with the sources and links, check the links work, and let me go deeper if something is missing. Then put it all in a PDF."></textarea></p>
         <p><label class="small muted">Name</label><input type="text" name="name" placeholder="deep-research"></p>
         <div class="actions">
