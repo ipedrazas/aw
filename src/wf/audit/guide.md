@@ -8,8 +8,9 @@ Keep it true to the code: when behaviour changes, change this.
 
 - About your draft: what a step does, why it is there, what a question means, what
   would happen if you answered it one way or the other.
-- To change the draft: rename, reword, remove or reorder a step, change what a step
-  is given, answer a question in your own words, or close a question that does not apply.
+- To change the draft: add, rename, reword, remove or reorder a step, change what a
+  step is given, answer a question in your own words, or close a question that does not
+  apply.
 - About your other workflows: which ones exist, what they do, and whether a step in
   this one could hand its work to one of them.
 - About how the system works: anything on this page.
@@ -111,6 +112,9 @@ something that would go, and they are asked about afterwards.
 - A real run ("Run it for real") uses real judgement and real search, starts follow-up
   research, and sends nothing anywhere.
 - Every step records what it decided and why, what it was sent, and every search it made.
+- What a finished run hands back is kept as a file under "What it made": a report as
+  markdown, anything else as JSON. A workflow that makes a PDF has its PDF and markdown
+  there instead.
 - A run stops at a step that needs approval, at a wait, or when it reaches its spending
   limit. There is no pause button yet.
 - A step can check with you before the run carries on: every time, until you have said

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -364,12 +365,14 @@ class Auditor:
 
         Removing a whole step (``steps.<id>`` set to null) is recorded against the step
         list, so undoing it puts the step back where it was and rewires what read it.
+        Adding one (``steps.<new id>`` set to the whole step, with ``after`` naming the
+        step it follows) is recorded the same way.
         Naming a workflow for a step that does the work itself (``steps.<id>.workflow``)
         hands the step's work to that workflow, recorded the same way. A model or a
         step's instructions must be ones the system has, and a model one the step can
         run on; anything else is refused with the reason, and nothing changes.
         """
-        from .question import _get, _set, hand_to_workflow, remove_step
+        from .question import _get, _set, add_step, hand_to_workflow, remove_step
 
         path = self._step_path(result, path)
         bits = path.split(".")
@@ -378,6 +381,20 @@ class Auditor:
             if not any(s["id"] == bits[1] for s in steps):
                 raise AnswerRejected(f"There is no step “{bits[1]}”, so the draft is unchanged.")
             path, value = "spec.steps", remove_step(result.definition, bits[1])
+        elif (
+            isinstance(value, dict)
+            and len(bits) == 2
+            and bits[0] == "steps"
+            and not any(s["id"] == bits[1] for s in steps)
+        ):
+            # a step that is not there yet is added, recorded against the step list so
+            # undoing it takes it out again
+            if not re.fullmatch(r"[a-z][a-z0-9_]{1,30}", bits[1]):
+                raise AnswerRejected(
+                    f"“{bits[1]}” cannot name a step, so the draft is unchanged. "
+                    "A step's name is lower case, with underscores."
+                )
+            path, value = "spec.steps", add_step(result.definition, bits[1], value)
         elif (
             isinstance(value, str)
             and len(bits) == 3

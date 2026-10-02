@@ -66,11 +66,11 @@ CHAT_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "A definition path such as steps.review.title or spec.budget. steps.<id>.workflow set to the name of one of their workflows hands that step's work to it.",
+                        "description": "A definition path such as steps.review.title or spec.budget. steps.<id>.workflow set to the name of one of their workflows hands that step's work to it. steps.<new id> set to a whole step adds it.",
                     },
                     "value_json": {
                         "type": "string",
-                        "description": 'The new value as JSON. "null" removes the field; on a path steps.<id> it removes the whole step.',
+                        "description": 'The new value as JSON. "null" removes the field; on a path steps.<id> it removes the whole step. On steps.<new id>, the whole step as the draft writes one (kind, title, description, input, output, and run or skill or tools), plus "after": the id of the step it follows; without it the step goes at the end.',
                     },
                     "reason": {
                         "type": "string",
@@ -158,6 +158,7 @@ Rules:
 - When their message or their document mentions something you cannot find in the draft, the document, their workflows or what the system can do, such as another process or a system of theirs, do not pretend to know what it is. Ask them what it involves, in one question, and propose no edits in that turn. Ask the same when a request could mean two different changes.
 - Only propose an edit when the person asked for a change or clearly agreed to one. Never change limits, approvals or what leaves the system without them saying so.
 - When the person answers an open question in the chat, record it under answers rather than editing the draft directly.
+- To add a step they asked for, edit steps.<new id> to the whole step, written the way the draft writes its steps, with "after" naming the step it follows. A step that one of the system's routines does names it under run (making a PDF of the report is tools.render_pdf, reading the report from the step that writes it); a judgement step names instructions under skill. Say in your reply what you added and where.
 - A question can rest on a wrong reading of their document: a step that is not really a step, or a step of the wrong sort. When they say so (for example, "getting my topic is how it starts, nobody waits"), fix the draft instead: remove that step or change it, and say what you changed. The question goes away with it.
 - A question can also simply not apply, with nothing in the draft to change: the person says it does not make sense, or what it asks is already settled elsewhere. Close it under dismiss with a one-line reason, and say so. Never close a question just because it is hard; close it only when the person said it does not apply or clearly agreed.
 - You ask them the open questions one at a time; the one you asked last is under "about", unless they picked another. Their message may answer it, ask what it means, or be about something else entirely: take it as it comes. When they answer it, record the answer; when they ask what it means, explain it in their terms, with an example from their own process. Do not write the next question into your reply: the page asks it once this one is answered. You choose which: when what they said makes one open question matter more than the rest, name it under ask_next with how you will put it; otherwise leave it null and the order stays.

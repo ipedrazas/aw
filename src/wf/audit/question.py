@@ -106,6 +106,20 @@ def remove_step(defn: dict[str, Any], sid: str) -> list[dict[str, Any]]:
     return steps
 
 
+def add_step(defn: dict[str, Any], sid: str, value: dict[str, Any]) -> list[dict[str, Any]]:
+    """The steps with a new one, ``sid``, after the step ``value["after"]`` names, or at
+    the end. The step is marked as the system's, at the person's request, like any step
+    the draft adds; whether it can run is the validator's to say once it is in."""
+    step = {k: v for k, v in copy.deepcopy(value).items() if k != "after"}
+    step["id"] = sid
+    step.setdefault("origin", {"by": "system", "kind": "suggested", "reason": "You asked for it."})
+    steps = [copy.deepcopy(s) for s in _steps(defn)]
+    after = value.get("after")
+    at = next((i + 1 for i, s in enumerate(steps) if s["id"] == after), len(steps))
+    steps.insert(at, step)
+    return steps
+
+
 # What a step keeps when it hands its work to another workflow: where it sits and when it
 # runs. How it did the work itself (model, instructions, tools, its own output) goes.
 _KEPT_WHEN_HANDED_OVER = ("id", "title", "description", "when", "for_each", "max_fanout", "origin")
