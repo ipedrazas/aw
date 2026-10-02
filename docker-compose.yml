@@ -64,6 +64,10 @@ services:
       WF_EXTRACTION_MODEL: ${WF_EXTRACTION_MODEL:-}   # reads a document, proposes steps (careful)
       WF_SKILL_MODEL: ${WF_SKILL_MODEL:-}             # writes each step's instructions (extraction)
       WF_CHAT_MODEL: ${WF_CHAT_MODEL:-}               # answers in the draft chat (quick)
+      WF_AUTHOR_MODEL: ${WF_AUTHOR_MODEL:-}           # leads the conversation that writes a workflow (careful)
+      # on shows "talk it through" (the conversation that writes a workflow, a prototype)
+      # on the new-workflow page. /author/new works either way.
+      WF_AUTHORING: ${WF_AUTHORING:-}
       # written | template. template lays each step's instructions out with no model call.
       WF_SKILLS: ${WF_SKILLS:-}
       WF_GUESS_MODEL: ${WF_GUESS_MODEL:-}             # fills a gap the document left (quick)

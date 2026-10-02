@@ -12,7 +12,7 @@ metadata:
 spec:
   inputs:                      # what a run starts from
     topic: { type: string, required: true, description: What to scan. }
-  outputs:                     # what it hands back when another workflow starts it
+  outputs:                     # what it hands back: kept as a file when a run finishes
     report: ${steps.write.output}
   defaults:
     trust: { policy: earned, promote_after: 3 }   # only what they said, or leave out
@@ -20,6 +20,8 @@ spec:
 ```
 
 Input types: `string`, `integer`, `number`, `boolean`, `list`, `object`.
+
+Always name what the workflow hands back under `outputs`. When a run finishes, each output is kept as a file the person can open: a result with `body_md` as a markdown report, anything else as JSON. A PDF needs a step that runs `tools.render_pdf`.
 
 Leave out `budget`, `trust`, `model`, `requires_approval` and `limits` unless the person told you what they should be. The system fills sensible defaults and asks them.
 

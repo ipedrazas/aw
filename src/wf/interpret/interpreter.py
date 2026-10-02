@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ import jsonschema
 import yaml
 
 from wf.activities import Activities, ActivityError, ModelRequest, ToolSpec, run_with_policy
+from wf.activities.render import report_markdown
 from wf.expr import EvalError, ExprError, render
 from wf.expr.template import _TEMPLATE
 from wf.logs import ROOT, get_logger
@@ -27,7 +29,7 @@ from wf.schema import Mode, Step, Workflow, Workspace
 from wf.settings import quick_model
 from wf.store import repo
 from wf.store.ledger import Ledger
-from wf.store.records import Run, StepRun, WorkflowVersion
+from wf.store.records import Artifact, Run, StepRun, WorkflowVersion
 from wf.store.sessions import session_span, step_span
 from wf.validate import Finding, validate
 
@@ -495,6 +497,8 @@ class Interpreter:
                 i += 1
             if status == "done":
                 result.outputs = self._workflow_outputs(wf, state)
+                if depth == 0:
+                    self._deliver(ctx)
         except ActivityError as e:
             status, error = "failed", str(e)
         except Exception as e:  # noqa: BLE001 - the run must record how it broke
@@ -1656,6 +1660,72 @@ class Interpreter:
             if spec.min_length is not None and isinstance(v, str) and len(v) < spec.min_length:
                 raise ActivityError(f"input “{name}” must be at least {spec.min_length} characters")
         return out
+
+    def _deliver(self, ctx: _Ctx) -> None:
+        """What a finished run hands back, kept as files the person can open: each report
+        as markdown, and whatever else it hands back together as JSON. A run that already
+        made files (a PDF step) has delivered; nothing is added. Without this, a workflow
+        with no step that makes a file finished with its report inside a step's result,
+        and the run said it produced nothing."""
+        outputs = {k: v for k, v in (ctx.result.outputs or {}).items() if v not in (None, [], {})}
+        if not outputs or self.ledger.session.query(Artifact).filter_by(run_id=ctx.run.id).count():
+            return
+        simulated = ctx.mode != "live"
+        prefix = "SIMULATED-" if simulated else ""
+        folder = self.config.artifacts_dir / ctx.run.id
+
+        def made_by(name: str) -> StepRun | None:
+            m = re.search(r"steps\.([A-Za-z0-9_]+)", ctx.wf.spec.outputs.get(name, ""))
+            if m is None:
+                return None
+            return (
+                self.ledger.session.query(StepRun)
+                .filter_by(run_id=ctx.run.id, step_id=m.group(1))
+                .order_by(StepRun.seq.desc())
+                .first()
+            )
+
+        def keep(path: Path, text: str, media: str, sr: StepRun, names: list[str]) -> None:
+            folder.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+            art = self.ledger.artifact(
+                ctx.run,
+                sr,
+                name=path.name,
+                path=str(path),
+                media_type=media,
+                simulated=simulated,
+                meta={"step": sr.step_id, "mode": ctx.mode, "outputs": names},
+            )
+            ctx.result.artifacts.append(
+                {"id": art.id, "name": art.name, "path": art.path, "simulated": simulated}
+            )
+
+        rest: dict[str, Any] = {}
+        rest_by: StepRun | None = None
+        for name, value in outputs.items():
+            sr = made_by(name)
+            if sr is None:
+                continue
+            stem = prefix + (re.sub(r"[^A-Za-z0-9_-]+", "-", name) or "result")
+            if isinstance(value, dict) and "body_md" in value:
+                text = report_markdown(
+                    title=str(value.get("title") or name),
+                    report=value,
+                    followups=[],
+                    link_check=None,
+                    simulated=simulated,
+                )
+                keep(folder / f"{stem}.md", text, "text/markdown; charset=utf-8", sr, [name])
+            elif isinstance(value, str) and "\n" in value.strip():
+                text = value.rstrip() + "\n"
+                keep(folder / f"{stem}.md", text, "text/markdown; charset=utf-8", sr, [name])
+            else:
+                rest[name] = value
+                rest_by = rest_by or sr
+        if rest and rest_by is not None:
+            text = json.dumps(rest, indent=2, ensure_ascii=False) + "\n"
+            keep(folder / f"{prefix}result.json", text, "application/json", rest_by, list(rest))
 
     def _workflow_outputs(self, wf: Workflow, state: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
